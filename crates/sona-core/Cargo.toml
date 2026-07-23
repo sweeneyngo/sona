@@ -1,0 +1,18 @@
+[package]
+name = "sona-core"
+description = "Headless perception core: vocal stem -> annotation JSON (raw note events, confidence, f0 contour, energy envelope)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+midly.workspace = true
+pitch-detection.workspace = true
+# CREPE (ONNX via ort) is behind the `crepe` feature — the pYIN default backend
+# needs no ONNX runtime. See ADR-0001 and ticket 11.
+ort = { workspace = true, optional = true }
+
+[features]
+default = []
+crepe = ["dep:ort"]

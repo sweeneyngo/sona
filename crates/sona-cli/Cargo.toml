@@ -1,0 +1,19 @@
+[package]
+name = "sona-cli"
+description = "Command-line front-end to sona-core: stem -> annotation JSON (and optional raw MIDI)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sona"
+path = "src/main.rs"
+
+[dependencies]
+sona-core.workspace = true
+
+[features]
+default = []
+# Forward the CREPE backend feature down to the core.
+crepe = ["sona-core/crepe"]

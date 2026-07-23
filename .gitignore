@@ -1,0 +1,13 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+
+# Cargo lock is kept for binaries (sona-cli); workspace root Cargo.lock is tracked.
+
+# Editor / OS
+.DS_Store
+*.swp
+
+# Machine-local Claude Code settings
+.claude/settings.local.json
