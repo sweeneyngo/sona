@@ -1,6 +1,6 @@
 # 04 — Onset detection
 
-Status: ready-for-agent
+Status: done
 Blocked by: 03
 
 Energy/spectral transient onset detection over the stem. Also compute the energy/RMS envelope (needed for the JSON display aid and for offset steepness in ticket 05).
