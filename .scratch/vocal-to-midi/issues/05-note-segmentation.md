@@ -1,6 +1,6 @@
 # 05 — Note segmentation (offsets + plateau splitting)
 
-Status: ready-for-agent
+Status: done
 Blocked by: 04
 
 Turn f0 contour + onsets + energy envelope into note events. **Highest-error area (spec priority #2) — put the effort here.**
@@ -12,3 +12,7 @@ Turn f0 contour + onsets + energy envelope into note events. **Highest-error are
 Notes come out as raw seconds (no quantization here — that's the UI).
 
 Done when: segmentation yields musically plausible notes on the test stem; each note carries the raw material confidence needs (drop steepness, plateau info).
+
+## Comments
+
+**Done.** `sona-core::segment` (`Segmenter` → `Vec<NoteSegment>`). Hybrid offset is *earliest of two candidates*: next-onset (eligible only within `max_offset_gap_s`) vs. energy-decay to a peak-relative rest floor — so back-to-back notes close on the next onset, staccato notes close on the drop and leave a rest. Pitch-plateau splitting cuts each onset span into MIDI-pitch runs, absorbing sub-`min_plateau_s` excursions so vibrato/slides don't over-split. Each `NoteSegment` carries `onset_strength`, an `OffsetKind`, and an `OffsetInfo::drop_steepness` (0–1, rate of the RMS fall) — the raw material ticket 06 scores. Segmentation stops at `NoteSegment`, not annotation `Note`; confidence composes the scalar/sub-scores downstream. Design recorded in ADR-0007. Verified end-to-end through the real pYIN + onset pipeline in `tests/note_segmentation.rs` (staccato phrase + legato slur).
