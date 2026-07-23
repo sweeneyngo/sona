@@ -4,18 +4,204 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>sona — review surface</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #12141a;
+        --panel: #1b1e27;
+        --line: #2b2f3a;
+        --ink: #e6e8ee;
+        --muted: #9aa0b0;
+        --accent: #6ea8fe;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 20px;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .field > span {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: #262a35;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 14px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      label.toggle {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--muted);
+      }
+      #status {
+        color: var(--muted);
+        font-size: 12px;
+        min-height: 1.4em;
+      }
+      #status.error {
+        color: #ff8080;
+      }
+      main {
+        padding: 16px;
+      }
+      .roll-wrap {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #0d0f14;
+      }
+      #roll {
+        display: block;
+        width: 100%;
+        height: 480px;
+      }
+      #tooltip {
+        position: absolute;
+        pointer-events: none;
+        z-index: 5;
+        max-width: 240px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: #0b0c10f2;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-size: 12px;
+        box-shadow: 0 4px 16px #0008;
+        display: none;
+      }
+      #tooltip .pitch {
+        font-weight: 600;
+      }
+      #tooltip .reason {
+        color: #ffcf70;
+        margin-top: 4px;
+      }
+      #tooltip dl {
+        margin: 6px 0 0;
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 1px 10px;
+        color: var(--muted);
+      }
+      #tooltip dt {
+        white-space: nowrap;
+      }
+      #tooltip dd {
+        margin: 0;
+        text-align: right;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      .legend {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .legend .bar {
+        height: 10px;
+        width: 160px;
+        border-radius: 5px;
+        background: linear-gradient(
+          to right,
+          hsl(0, 70%, 50%),
+          hsl(60, 70%, 50%),
+          hsl(120, 70%, 50%)
+        );
+      }
+    </style>
   </head>
   <body>
-    <main>
+    <header>
       <h1>sona — review surface</h1>
       <p>
-        Placeholder for the web piano-roll (the <em>interpretation</em> half of
-        sona). It loads the annotation JSON emitted by <code>sona-core</code>,
-        plays stem-vs-synth, computes grid anchoring and hard-snap quantization
-        live, supports manual correction, and exports MIDI.
+        Load an annotation JSON + its vocal stem, then play the stem against the
+        synthesized notes. Notes are coloured by confidence; hover a note for its
+        sub-score reason. Grid, quantization, and correction land in tickets 09–10.
       </p>
-      <p>Real UI lands in tickets 08–10. No build tooling is assumed yet.</p>
+    </header>
+
+    <div class="toolbar">
+      <label class="field">
+        <span>Annotation JSON</span>
+        <input id="json-input" type="file" accept="application/json,.json" />
+      </label>
+      <label class="field">
+        <span>Vocal stem (audio)</span>
+        <input id="audio-input" type="file" accept="audio/*" />
+      </label>
+      <button id="play" disabled>▶ Play</button>
+      <button id="stop" disabled>■ Stop</button>
+      <label class="toggle">
+        <input id="mute-stem" type="checkbox" /> mute stem
+      </label>
+      <label class="toggle">
+        <input id="mute-synth" type="checkbox" /> mute synth
+      </label>
+      <span id="status">Waiting for an annotation JSON and a stem…</span>
+    </div>
+
+    <main>
+      <div class="roll-wrap">
+        <canvas id="roll"></canvas>
+        <div id="tooltip"></div>
+      </div>
+      <div class="legend">
+        <span>low confidence</span>
+        <span class="bar" aria-hidden="true"></span>
+        <span>high confidence</span>
+      </div>
     </main>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>
