@@ -1,6 +1,6 @@
 # 06 — Confidence scoring
 
-Status: ready-for-agent
+Status: done
 Blocked by: 05
 
 **Spec priority #1 — highest leverage.** Compose per-note confidence.
