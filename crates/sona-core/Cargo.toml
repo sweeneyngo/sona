@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 midly.workspace = true
 pitch-detection.workspace = true
+serde.workspace = true
 # CREPE (ONNX via ort) is behind the `crepe` feature — the pYIN default backend
 # needs no ONNX runtime. See ADR-0001 and ticket 11.
 ort = { workspace = true, optional = true }
@@ -16,3 +17,6 @@ ort = { workspace = true, optional = true }
 [features]
 default = []
 crepe = ["dep:ort"]
+
+[dev-dependencies]
+serde_json.workspace = true

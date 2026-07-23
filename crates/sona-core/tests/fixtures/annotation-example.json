@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "sample_rate": 44100,
+  "bpm": 174.0,
+  "duration_s": 0.92,
+  "producer": "pyin",
+  "notes": [
+    {
+      "onset_s": 0.086,
+      "offset_s": 0.254,
+      "midi_pitch": 74,
+      "confidence": 0.91,
+      "sub_scores": {
+        "pitch_stability": 0.97,
+        "voicing": 0.93,
+        "onset_clarity": 0.9,
+        "offset_clarity": 0.86
+      }
+    },
+    {
+      "onset_s": 0.34,
+      "offset_s": 0.508,
+      "midi_pitch": 76,
+      "confidence": 0.62,
+      "sub_scores": {
+        "pitch_stability": 0.88,
+        "voicing": 0.71,
+        "onset_clarity": 0.83,
+        "offset_clarity": 0.62
+      }
+    },
+    {
+      "onset_s": 0.6,
+      "offset_s": 0.77,
+      "midi_pitch": 74,
+      "confidence": 0.34,
+      "sub_scores": {
+        "pitch_stability": 0.79,
+        "voicing": 0.34,
+        "onset_clarity": 0.55,
+        "offset_clarity": 0.48
+      }
+    }
+  ],
+  "f0_contour": [
+    { "time_s": 0.086, "frequency_hz": 587.3, "voicing": 0.94 },
+    { "time_s": 0.098, "frequency_hz": 588.1, "voicing": 0.93 },
+    { "time_s": 0.34, "frequency_hz": 659.3, "voicing": 0.72 },
+    { "time_s": 0.6, "frequency_hz": 585.0, "voicing": 0.35 },
+    { "time_s": 0.78, "frequency_hz": 0.0, "voicing": 0.04 }
+  ],
+  "energy_envelope": [
+    { "time_s": 0.086, "rms": 0.21 },
+    { "time_s": 0.17, "rms": 0.19 },
+    { "time_s": 0.254, "rms": 0.03 },
+    { "time_s": 0.6, "rms": 0.08 },
+    { "time_s": 0.78, "rms": 0.01 }
+  ]
+}

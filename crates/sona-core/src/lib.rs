@@ -6,10 +6,14 @@
 //! The core is invariant to musical settings; *interpretation* (grid anchoring,
 //! quantization, correction, MIDI export) is the web review surface's job.
 //!
-//! This crate is currently a scaffold (ticket 01). The pipeline modules —
-//! pitch tracking, onset detection, segmentation, confidence, emit — land in
-//! subsequent tickets. The [`PitchTracker`] seam (ADR-0001) is the first of
-//! those and is intentionally not defined here yet.
+//! The pipeline modules — pitch tracking, onset detection, segmentation,
+//! confidence, emit — land in subsequent tickets. What exists today is the
+//! [`annotation`] contract (ticket 02) that every stage feeds into; the
+//! [`PitchTracker`] seam (ADR-0001) is intentionally not defined here yet.
+
+pub mod annotation;
+
+pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
 
 /// The crate version, surfaced by the CLI.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
