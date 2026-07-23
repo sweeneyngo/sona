@@ -9,9 +9,11 @@ license = "MIT"
 repository = "https://github.com/sweeneyngo/sona"
 
 [workspace.dependencies]
-# Perception core deps
+# Perception core deps.
+# pYIN (ticket 03) is hand-rolled pure-Rust DSP — no pitch crate. `pitch-detection`
+# (the scaffold's placeholder) implements MPM, not YIN; `aubio-rs` binds a C lib.
+# See ADR-0001 / ADR-0005.
 midly = "0.5"
-pitch-detection = "0.3"
 # Annotation JSON contract (ticket 02): the core<->UI artifact is serde-defined.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

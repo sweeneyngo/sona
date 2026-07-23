@@ -6,14 +6,16 @@
 //! The core is invariant to musical settings; *interpretation* (grid anchoring,
 //! quantization, correction, MIDI export) is the web review surface's job.
 //!
-//! The pipeline modules — pitch tracking, onset detection, segmentation,
-//! confidence, emit — land in subsequent tickets. What exists today is the
-//! [`annotation`] contract (ticket 02) that every stage feeds into; the
-//! [`PitchTracker`] seam (ADR-0001) is intentionally not defined here yet.
+//! The remaining pipeline modules — onset detection, segmentation, confidence,
+//! emit — land in subsequent tickets. What exists today is the [`annotation`]
+//! contract (ticket 02) that every stage feeds into, and the [`pitch`] stage
+//! (ticket 03): the [`PitchTracker`] seam (ADR-0001) and its pYIN default.
 
 pub mod annotation;
+pub mod pitch;
 
 pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
+pub use pitch::{PYin, PitchTracker};
 
 /// The crate version, surfaced by the CLI.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

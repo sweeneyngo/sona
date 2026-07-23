@@ -1,6 +1,6 @@
 # 03 — PitchTracker trait + pYIN backend
 
-Status: ready-for-agent
+Status: done
 Blocked by: 02
 
 Define the `PitchTracker` trait (ADR-0001) and implement pYIN as the default backend. Output per-frame f0 + voicing confidence. Median-filter the f0 contour to kill jitter/octave errors; smooth vibrato at the contour stage so it isn't later read as multiple notes.
