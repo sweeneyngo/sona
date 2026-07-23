@@ -79,3 +79,20 @@ test("makeScale maps time to x and pitch to y within the plot rect", () => {
   assert.ok(scale.pitchToY(72) >= 10);
   assert.ok(scale.pitchToY(60) <= 400 - 20);
 });
+
+test("makeScale inverses round-trip time and pitch", () => {
+  const scale = makeScale({
+    durationS: 2,
+    minPitch: 60,
+    maxPitch: 72,
+    width: 800,
+    height: 400,
+    padLeft: 40,
+    padTop: 10,
+    padBottom: 20,
+  });
+  assert.ok(Math.abs(scale.xToTime(scale.timeToX(1.3)) - 1.3) < 1e-9);
+  // pitchToY targets a row's top; sampling the row centre recovers the pitch.
+  const y = scale.pitchToY(65) + scale.rowHeight / 2;
+  assert.equal(scale.yToPitch(y), 65);
+});

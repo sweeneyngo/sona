@@ -25,18 +25,34 @@ press **Play** to hear the stem against the synthesized notes.
 - [`index.html`](index.html) — the page: toolbar (file inputs, transport, mute
   toggles), the `<canvas>` roll, and the confidence legend.
 - [`main.js`](main.js) — the browser layer: JSON/audio loading, canvas
-  rendering (notes, f0 contour, energy envelope, pitch grid, playhead), hover
-  tooltips, and synced Web Audio playback.
-- [`lib/view.js`](lib/view.js), [`lib/synth.js`](lib/synth.js) — the pure
-  geometry / colour / schedule maths, kept free of the DOM so they can be
-  unit-tested with `node --test web/lib/*.test.js`.
+  rendering (notes, grid + phase ruler, f0 contour, energy envelope, pitch grid,
+  playhead), hover/select tooltips, note editing, synced Web Audio playback, and
+  MIDI export.
+- [`lib/*.js`](lib/) — the pure DOM-free maths, unit-tested with
+  `node --test web/lib/*.test.js`:
+  - [`view.js`](lib/view.js) — pitch/colour formatting and the time/pitch scale
+    (+ its inverses, for editing).
+  - [`grid.js`](lib/grid.js) — grid spacing from BPM/division, snapping, grid
+    lines, the hard-snap quantizer with the confidence-aware escape hatch, and
+    flag state.
+  - [`synth.js`](lib/synth.js) — MIDI→freq and the playback schedule.
+  - [`midi.js`](lib/midi.js) — the format-0 Standard MIDI File encoder.
 
-## What ticket 08 ships
+## What it ships (tickets 08–10)
 
-Load an annotation JSON + the stem and the roll draws the notes positioned by
-raw seconds, coloured by the confidence scalar (red → green heatmap), over the
-f0 contour and energy envelope. Hover a note for its sub-score reason. Play
-streams the stem and the synthesized notes together via Web Audio, in sync.
-
-Grid anchoring, hard-snap quantization, manual correction, and MIDI export land
-in tickets 09–10.
+- **Render (08).** Notes positioned by raw seconds, coloured by the confidence
+  scalar (red → green heatmap), over the f0 contour and energy envelope.
+  Hover — or click to pin — a note for its sub-score reason.
+- **Grid + hard-snap (09).** A live grid from the toolbar BPM and division (1/16
+  default), phase auto-anchored to the first onset and draggable via the top
+  ruler. Onsets and offsets hard-snap to the grid, recomputed on any change
+  (ADR-0003). A note that lands far off-grid *with* high onset confidence
+  **escapes** snapping and is flagged (dashed cyan) — the tell of a real
+  triplet/32nd run. The flag-threshold slider drives which notes are flagged
+  (red outline).
+- **Correct + export (10).** Drag a note to move it (time + pitch), drag its
+  right edge to resize, double-click to add, Delete to remove. **Export MIDI**
+  writes the authoritative file from the current snapped + corrected state
+  (ADR-0004).
+- **Playback (08).** The stem and the synthesized (snapped/corrected) notes play
+  together via Web Audio, in sync.

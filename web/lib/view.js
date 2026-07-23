@@ -103,5 +103,14 @@ export function makeScale({
       const rowsFromTop = maxPitch - pitch;
       return padTop + rowsFromTop * rowHeight;
     },
+    // Inverses, for turning mouse coordinates back into musical positions while
+    // editing (ticket 10). `yToPitch` rounds to the nearest semitone row.
+    xToTime(x) {
+      return ((x - padLeft) / plotWidth) * safeDuration;
+    },
+    yToPitch(y) {
+      // Floor, so any y inside a row's band maps to that row's pitch.
+      return maxPitch - Math.floor((y - padTop) / rowHeight);
+    },
   };
 }
