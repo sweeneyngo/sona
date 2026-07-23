@@ -6,24 +6,30 @@
 //! The core is invariant to musical settings; *interpretation* (grid anchoring,
 //! quantization, correction, MIDI export) is the web review surface's job.
 //!
-//! The remaining pipeline module — emit — lands in a subsequent ticket. What
-//! exists today is the [`annotation`] contract (ticket 02) that every stage feeds
-//! into, the [`pitch`] stage (ticket 03): the [`PitchTracker`] seam (ADR-0001)
-//! and its pYIN default, the [`onset`] stage (ticket 04): energy-novelty onset
-//! detection + the RMS envelope, the [`segment`] stage (ticket 05): hybrid
-//! offsets + pitch-plateau splitting into note events, and the [`confidence`]
-//! stage (ticket 06): the four sub-scores + weakest-link soft-min that turn a
-//! segment into an annotation [`Note`].
+//! The stages, in pipeline order: the [`annotation`] contract (ticket 02) that
+//! every stage feeds into, the [`pitch`] stage (ticket 03): the [`PitchTracker`]
+//! seam (ADR-0001) and its pYIN default, the [`onset`] stage (ticket 04):
+//! energy-novelty onset detection + the RMS envelope, the [`segment`] stage
+//! (ticket 05): hybrid offsets + pitch-plateau splitting into note events, and
+//! the [`confidence`] stage (ticket 06): the four sub-scores + weakest-link
+//! soft-min that turn a segment into an annotation [`Note`]. The [`pipeline`]
+//! stage (ticket 07) wires them end to end — a stem (+ BPM) becomes an
+//! [`Annotation`] — and [`midi`] (ticket 07) is the optional raw, unquantized
+//! `.mid` convenience export derived from it.
 
 pub mod annotation;
 pub mod confidence;
+pub mod midi;
 pub mod onset;
+pub mod pipeline;
 pub mod pitch;
 pub mod segment;
 
 pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
 pub use confidence::{soft_min, ConfidenceScorer};
+pub use midi::{to_smf, write_midi};
 pub use onset::{Onset, OnsetDetector, OnsetResult};
+pub use pipeline::Transcriber;
 pub use pitch::{PYin, PitchTracker};
 pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 

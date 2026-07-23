@@ -12,6 +12,11 @@ path = "src/main.rs"
 
 [dependencies]
 sona-core.workspace = true
+# Serialize the annotation contract to stdout (the core defines the serde types).
+serde_json.workspace = true
+# WAV decoding is a CLI (I/O) concern; the core takes mono `&[f32]`. `hound` is
+# pure-Rust, no system codec — a stem is decoded and downmixed to mono here.
+hound.workspace = true
 
 [features]
 default = []

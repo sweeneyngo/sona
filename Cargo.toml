@@ -17,6 +17,9 @@ midly = "0.5"
 # Annotation JSON contract (ticket 02): the core<->UI artifact is serde-defined.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# WAV decode for the CLI (ticket 07): a stem is I/O the core doesn't do — it takes
+# mono `&[f32]`. `hound` is pure-Rust, no system codec.
+hound = "3.5"
 # CREPE backend (ONNX) — feature-gated, wired now, used in a later ticket.
 # `load-dynamic` (no default `download-binaries`) keeps scaffolding free of a
 # network fetch + openssl toolchain; the ONNX runtime is resolved at load time

@@ -1,6 +1,6 @@
 # 07 — CLI: stem + BPM → annotation JSON
 
-Status: ready-for-agent
+Status: done
 Blocked by: 06
 
 Wire the core into `sona-cli`: `sona <stem.wav> --bpm N` → annotation JSON (ticket 02). Optionally emit a raw, unquantized MIDI via `midly` for CLI convenience (not the authoritative export). Set `producer: "pyin"`.
