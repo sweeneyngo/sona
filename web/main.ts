@@ -59,6 +59,9 @@ const el = {
   status: document.getElementById("status") as HTMLElement,
   canvas: document.getElementById("roll") as HTMLCanvasElement,
   tooltip: document.getElementById("tooltip") as HTMLDivElement,
+  help: document.getElementById("help") as HTMLButtonElement,
+  helpOverlay: document.getElementById("help-overlay") as HTMLDivElement,
+  helpClose: document.getElementById("help-close") as HTMLButtonElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -329,6 +332,17 @@ el.outliers.addEventListener("change", () => {
   redraw(); // no invalidate: the outlier flag is cached, only the filter changes.
 });
 el.export.addEventListener("click", exportMidi);
+
+// --- Help modal -------------------------------------------------------------
+
+function setHelp(open: boolean): void {
+  el.helpOverlay.hidden = !open;
+}
+el.help.addEventListener("click", () => setHelp(true));
+el.helpClose.addEventListener("click", () => setHelp(false));
+el.helpOverlay.addEventListener("click", (e) => {
+  if (e.target === el.helpOverlay) setHelp(false); // click the backdrop to close
+});
 
 // --- Layout / geometry ------------------------------------------------------
 
@@ -865,6 +879,7 @@ function setSeek(t: number): void {
     stopPlayback();
     startPlayback();
   } else {
+    followPlayhead(); // keep the (possibly off-screen) seek target in view
     redraw();
   }
 }
@@ -896,9 +911,23 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
 });
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  // Don't hijack keys while a form control (BPM, grid, slider) is focused.
+  // Modal first: Escape closes it, "?" toggles it — regardless of focus.
+  if (e.key === "Escape" && !el.helpOverlay.hidden) {
+    setHelp(false);
+    e.preventDefault();
+    return;
+  }
   const tag = document.activeElement?.tagName;
-  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+  if (e.key === "?" && !inField) {
+    setHelp(el.helpOverlay.hidden);
+    e.preventDefault();
+    return;
+  }
+
+  // Don't hijack the roll shortcuts while a form control is focused or the
+  // help modal is open.
+  if (inField || !el.helpOverlay.hidden) return;
   if (!annotation) return;
 
   const beat = 60 / bpm; // seek step: one beat, or a bar with Shift.
@@ -1197,11 +1226,31 @@ function currentPlayheadS(): number {
 function tickPlayhead(): void {
   if (!playback) return;
   if (currentPlayheadS() >= playback.duration) {
-    stopPlayback();
+    stopPlayback(true); // reached the end → back to the start for the next play
     return;
   }
+  followPlayhead();
   draw();
   playback.raf = requestAnimationFrame(tickPlayhead);
+}
+
+/**
+ * Keep the moving playhead on screen: when it runs past the right edge (or left)
+ * of the visible plot, page the horizontal scroll so it lands back near the left
+ * with lead room. Only meaningful when zoomed in (there's something to scroll).
+ */
+function followPlayhead(): void {
+  if (!scale || maxScrollX() <= 0) return;
+  const w = cssSize().w;
+  const x = scale.timeToX(currentPlayheadS());
+  const rightEdge = w - 24;
+  if (x > rightEdge || x < PAD.left) {
+    const dur = totalDuration();
+    const content = plotWidthPx() * zoomX;
+    const lead = 0.12 * plotWidthPx(); // land the playhead a little in from the gutter
+    scrollX = clampScroll((currentPlayheadS() / dur) * content - lead);
+    syncScale();
+  }
 }
 
 // --- Misc -------------------------------------------------------------------
