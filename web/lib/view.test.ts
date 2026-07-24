@@ -97,3 +97,43 @@ test("makeScale inverses round-trip time and pitch", () => {
   const y = scale.pitchToY(65) + scale.rowHeight / 2;
   assert.equal(scale.yToPitch(y), 65);
 });
+
+const baseScale = {
+  durationS: 2,
+  minPitch: 60,
+  maxPitch: 72,
+  width: 800,
+  height: 400,
+  padLeft: 40,
+  padTop: 10,
+  padBottom: 20,
+};
+
+test("zoomX stretches the timeline about the left gutter", () => {
+  const s = makeScale({ ...baseScale, zoomX: 2 });
+  // t=0 still pinned to the gutter; the plot (760px) now spans 2× that.
+  assert.ok(Math.abs(s.timeToX(0) - 40) < 1e-9);
+  assert.ok(Math.abs(s.timeToX(2) - (40 + 2 * 760)) < 1e-9);
+});
+
+test("scrollX shifts the timeline left by that many pixels", () => {
+  const s = makeScale({ ...baseScale, zoomX: 2, scrollX: 100 });
+  assert.ok(Math.abs(s.timeToX(0) - (40 - 100)) < 1e-9);
+  // A point that was at x under no scroll moves left by exactly scrollX.
+  const noScroll = makeScale({ ...baseScale, zoomX: 2 });
+  assert.ok(Math.abs(s.timeToX(1) - (noScroll.timeToX(1) - 100)) < 1e-9);
+});
+
+test("xToTime inverts timeToX under zoom + scroll", () => {
+  const s = makeScale({ ...baseScale, zoomX: 3.5, scrollX: 220 });
+  for (const t of [0, 0.4, 1.0, 1.9]) {
+    assert.ok(Math.abs(s.xToTime(s.timeToX(t)) - t) < 1e-9);
+  }
+});
+
+test("zoomX defaults to 1 / scrollX to 0 (fit-to-width, unchanged)", () => {
+  const zoomed = makeScale({ ...baseScale });
+  const plain = makeScale({ ...baseScale, zoomX: 1, scrollX: 0 });
+  assert.equal(zoomed.timeToX(2), plain.timeToX(2));
+  assert.ok(Math.abs(zoomed.timeToX(2) - 800) < 1e-9);
+});

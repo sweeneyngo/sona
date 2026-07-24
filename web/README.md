@@ -64,3 +64,7 @@ just static files.
   (ADR-0004).
 - **Playback (08).** The stem and the synthesized (snapped/corrected) notes play
   together via Web Audio, in sync.
+- **Navigation.** Scroll to pan the timeline; ⌘/Ctrl-scroll to zoom horizontally
+  (anchored at the cursor). Click the top ruler to **seek** — the playhead moves
+  there and playback starts from that point (dragging the ruler still shifts the
+  grid phase).

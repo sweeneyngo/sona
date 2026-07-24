@@ -94,6 +94,10 @@ export interface ScaleParams {
   padLeft?: number;
   padTop?: number;
   padBottom?: number;
+  /** Horizontal zoom: 1 = fit-to-width; >1 stretches the timeline. */
+  zoomX?: number;
+  /** Horizontal scroll offset in pixels (how far the timeline is panned left). */
+  scrollX?: number;
 }
 
 export interface Scale {
@@ -122,10 +126,15 @@ export function makeScale({
   padLeft = 0,
   padTop = 0,
   padBottom = 0,
+  zoomX = 1,
+  scrollX = 0,
 }: ScaleParams): Scale {
   const plotWidth = Math.max(1, width - padLeft);
   const plotHeight = Math.max(1, height - padTop - padBottom);
   const safeDuration = durationS > 0 ? durationS : 1;
+  // At zoom 1 the whole timeline fits the plot; higher zoom stretches it, and
+  // `scrollX` pans that stretched content left under the fixed gutter.
+  const contentWidth = plotWidth * zoomX;
   // +1 so the top and bottom pitches each get a full row rather than a zero-
   // height line.
   const pitchSpan = maxPitch - minPitch + 1;
@@ -136,7 +145,7 @@ export function makeScale({
     minPitch,
     maxPitch,
     timeToX(t) {
-      return padLeft + (t / safeDuration) * plotWidth;
+      return padLeft + (t / safeDuration) * contentWidth - scrollX;
     },
     pitchToY(pitch) {
       // Row for `pitch` measured from the top; higher pitch = fewer rows down.
@@ -144,7 +153,7 @@ export function makeScale({
       return padTop + rowsFromTop * rowHeight;
     },
     xToTime(x) {
-      return ((x - padLeft) / plotWidth) * safeDuration;
+      return ((x - padLeft + scrollX) / contentWidth) * safeDuration;
     },
     yToPitch(y) {
       // Floor, so any y inside a row's band maps to that row's pitch.

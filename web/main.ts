@@ -14,19 +14,21 @@
 // plumbing that can only run in a browser.
 
 import { midiToNoteName, confidenceColor, weakestSubScore, pitchRange, makeScale } from "./lib/view";
-import type { Scale } from "./lib/view";
+import type { Scale, PitchWindow } from "./lib/view";
 import { buildSchedule } from "./lib/synth";
 import { clamp01, clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, gridLines, quantizeNote, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import type { Annotation, WorkingNote } from "./lib/annotation";
 
-const RULER_H = 18; // top strip you drag to shift the grid phase.
+const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
 const NOTE_RADIUS = 3;
 const RESIZE_GRAB_PX = 7; // right-edge zone that starts a resize instead of a move.
 const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
+const MIN_ZOOM_X = 1; // 1 = fit-to-width; can't zoom out past the whole song.
+const MAX_ZOOM_X = 60;
 
 const el = {
   json: document.getElementById("json-input") as HTMLInputElement,
@@ -85,6 +87,7 @@ type Drag =
 interface Playback {
   startedAt: number;
   duration: number;
+  from: number; // song time (seconds) playback started from (the seek offset)
   stemSource: AudioBufferSourceNode;
   stemGain: GainNode;
   synthGain: GainNode;
@@ -113,6 +116,15 @@ let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 let flagThreshold = 0.5;
 
+// View transform: horizontal zoom + pan (⌘/Ctrl-scroll to zoom, scroll to pan).
+let zoomX = 1;
+let scrollX = 0;
+// The drawn pitch (Y) window, frozen between loads/resizes so it never reflows
+// mid-drag — recomputed only in rebuild(), not on every redraw.
+let pitchWindow: PitchWindow = { min: 55, max: 79 };
+// Playback start position in seconds; set by clicking the ruler (seek).
+let seekOffset = 0;
+
 const AudioCtx =
   window.AudioContext ||
   (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -129,6 +141,9 @@ el.json.addEventListener("change", async () => {
     annotation = normalizeAnnotation(parsed);
     workingNotes = annotation.notes.map((n) => ({ ...n, sub_scores: { ...n.sub_scores } }));
     selectedNote = null;
+    zoomX = 1;
+    scrollX = 0;
+    seekOffset = 0;
     // Seed the grid from the annotation: BPM as carried, phase on the first onset.
     bpm = annotation.bpm > 0 ? annotation.bpm : 120;
     el.bpm.value = String(bpm);
@@ -251,33 +266,60 @@ function totalDuration(): number {
   return Math.max(noteEnd, audioEnd, 1);
 }
 
-/** Rebuild the scale, redraw, and refresh which controls are usable. */
+/** Plot area width in CSS px (canvas minus the left key gutter). */
+function plotWidthPx(): number {
+  return Math.max(1, cssSize().w - PAD.left);
+}
+
+/** How far the zoomed timeline can be panned left before its end reaches the edge. */
+function maxScrollX(): number {
+  return Math.max(0, plotWidthPx() * zoomX - plotWidthPx());
+}
+
+function clampScroll(s: number): number {
+  return Math.min(maxScrollX(), Math.max(0, s));
+}
+
+/**
+ * (Re)build the scale from the current view state, reusing the frozen
+ * `pitchWindow`. Clamps scroll to range. Called on every redraw — so it must
+ * NOT recompute the pitch window, or the Y axis would reflow mid-drag.
+ */
+function syncScale(): void {
+  if (!annotation) {
+    scale = null;
+    return;
+  }
+  scrollX = clampScroll(scrollX);
+  scale = makeScale({
+    durationS: totalDuration(),
+    minPitch: pitchWindow.min,
+    maxPitch: pitchWindow.max,
+    width: el.canvas.width / devicePixelRatioSafe(),
+    height: el.canvas.height / devicePixelRatioSafe(),
+    padLeft: PAD.left,
+    padTop: PAD.top,
+    padBottom: PAD.bottom,
+    zoomX,
+    scrollX,
+  });
+}
+
+/** Rebuild after a resize/load: re-derive the pitch window, rebuild the scale. */
 function rebuild(): void {
   resizeCanvas();
-  if (annotation) {
-    const { min, max } = pitchRange(workingNotes);
-    scale = makeScale({
-      durationS: totalDuration(),
-      minPitch: min,
-      maxPitch: max,
-      width: el.canvas.width / devicePixelRatioSafe(),
-      height: el.canvas.height / devicePixelRatioSafe(),
-      padLeft: PAD.left,
-      padTop: PAD.top,
-      padBottom: PAD.bottom,
-    });
-  } else {
-    scale = null;
-  }
+  if (annotation) pitchWindow = pitchRange(workingNotes);
+  syncScale();
   draw();
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
   el.stop.disabled = !playback;
   el.export.disabled = !annotation;
 }
 
-/** Redraw without recomputing the scale (grid/edit changes, not resize). */
+/** Redraw after a view/grid/edit change: rebuild the scale (not the canvas). */
 function redraw(): void {
-  draw(playback ? currentPlayheadS() : null);
+  syncScale();
+  draw();
 }
 
 function devicePixelRatioSafe(): number {
@@ -302,7 +344,7 @@ function cssSize(): { w: number; h: number } {
   return { w: el.canvas.width / dpr, h: el.canvas.height / dpr };
 }
 
-function draw(playheadS: number | null = null): void {
+function draw(): void {
   const { w, h } = cssSize();
   ctx2d.clearRect(0, 0, w, h);
   ctx2d.fillStyle = "#0d0f14";
@@ -313,13 +355,24 @@ function draw(playheadS: number | null = null): void {
     return;
   }
 
+  // Pitch rows + note-name labels live partly in the left gutter — draw unclipped.
   drawPitchGrid(w, h);
+  drawRulerBg(w);
+
+  // Everything time-positioned is clipped to the plot area so a zoomed/scrolled
+  // timeline can't spill over the key gutter (x < PAD.left).
+  ctx2d.save();
+  ctx2d.beginPath();
+  ctx2d.rect(PAD.left, 0, w - PAD.left, h);
+  ctx2d.clip();
   drawTimeGrid(w, h);
-  drawRuler(w);
+  drawRulerTicks();
   drawEnergyEnvelope(w, h);
   drawF0Contour();
   drawNotes();
-  if (playheadS != null) drawPlayhead(playheadS, h);
+  // currentPlayheadS() returns the seek offset when stopped, so this covers both.
+  drawPlayhead(currentPlayheadS(), h, !playback);
+  ctx2d.restore();
 }
 
 function drawPlaceholder(w: number, h: number): void {
@@ -380,8 +433,8 @@ function drawTimeGrid(_w: number, h: number): void {
   }
 }
 
-/** The draggable phase ruler across the top, with a tick on each grid line. */
-function drawRuler(w: number): void {
+/** The transport/phase ruler background + its gutter label (drawn unclipped). */
+function drawRulerBg(w: number): void {
   ctx2d.fillStyle = "#171a22";
   ctx2d.fillRect(PAD.left, 0, w - PAD.left, RULER_H);
   ctx2d.strokeStyle = "#2b2f3a";
@@ -389,7 +442,13 @@ function drawRuler(w: number): void {
   ctx2d.moveTo(PAD.left, RULER_H - 0.5);
   ctx2d.lineTo(w, RULER_H - 0.5);
   ctx2d.stroke();
+  ctx2d.fillStyle = "#5b6072";
+  ctx2d.font = "9px system-ui, sans-serif";
+  ctx2d.fillText("seek ▸", 6, RULER_H - 6);
+}
 
+/** A tick on each grid line in the ruler (clipped to the plot area). */
+function drawRulerTicks(): void {
   for (const { x, isBeat } of gridLineInfo()) {
     ctx2d.strokeStyle = isBeat ? "#6c7488" : "#3a4050";
     ctx2d.beginPath();
@@ -397,9 +456,6 @@ function drawRuler(w: number): void {
     ctx2d.lineTo(x, RULER_H - 1);
     ctx2d.stroke();
   }
-  ctx2d.fillStyle = "#5b6072";
-  ctx2d.font = "9px system-ui, sans-serif";
-  ctx2d.fillText("drag ↔ grid", 6, RULER_H - 6);
 }
 
 /** Energy/RMS envelope as a filled area along the bottom — a loudness guide. */
@@ -502,9 +558,10 @@ function roundRect(x: number, y: number, w: number, h: number, r: number): void 
   ctx2d.closePath();
 }
 
-function drawPlayhead(t: number, h: number): void {
+/** The playhead: bright while playing, dim when stopped (the seek marker). */
+function drawPlayhead(t: number, h: number, dim: boolean): void {
   const x = scale!.timeToX(t);
-  ctx2d.strokeStyle = "#ffd166";
+  ctx2d.strokeStyle = dim ? "rgba(255, 209, 102, 0.45)" : "#ffd166";
   ctx2d.lineWidth = 1.5;
   ctx2d.beginPath();
   ctx2d.moveTo(x, 0);
@@ -519,7 +576,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
   if (!scale) return;
   const { x, y } = canvasPoint(e);
 
-  // The top ruler drags the grid phase.
+  // The top ruler: a click seeks the playhead, a drag shifts the grid phase.
   if (y < RULER_H) {
     drag = { mode: "offset", startX: x, startY: y, origAnchor: gridAnchor, moved: false };
     return;
@@ -562,8 +619,12 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
   const dt = scale.xToTime(x) - scale.xToTime(d.startX);
 
   if (d.mode === "offset") {
-    gridAnchor = d.origAnchor + dt;
-    redraw();
+    // Only shift the grid once it's really a drag; a sub-threshold click stays a
+    // seek (handled on mouseup) with the phase untouched.
+    if (d.moved) {
+      gridAnchor = d.origAnchor + dt;
+      redraw();
+    }
     return;
   }
 
@@ -584,13 +645,62 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
 });
 
 window.addEventListener("mouseup", () => {
+  const d = drag;
   drag = null;
+  // A click on the ruler that never became a drag is a seek. (The grid phase is
+  // only written once a drag passes the move threshold, so a click leaves it be.)
+  if (d && d.mode === "offset" && !d.moved && scale) {
+    setSeek(scale.xToTime(d.startX));
+  }
 });
+
+// Horizontal zoom (⌘/Ctrl-scroll, anchored at the cursor) and pan (plain scroll).
+el.canvas.addEventListener(
+  "wheel",
+  (e: WheelEvent) => {
+    if (!scale || !annotation) return;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const { x } = canvasPoint(e);
+      const tAtCursor = scale.xToTime(x);
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      zoomX = Math.min(MAX_ZOOM_X, Math.max(MIN_ZOOM_X, zoomX * factor));
+      // Re-anchor so the time under the cursor stays put across the zoom.
+      const content = plotWidthPx() * zoomX;
+      scrollX = clampScroll(PAD.left + (tAtCursor / totalDuration()) * content - x);
+    } else {
+      // Nothing to pan at fit-to-width — let the wheel scroll the page instead.
+      if (maxScrollX() <= 0) return;
+      e.preventDefault();
+      const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      scrollX = clampScroll(scrollX + dx);
+    }
+    redraw();
+  },
+  { passive: false },
+);
+
+/** Move the playhead / playback start to `t` seconds; restart if playing. */
+function setSeek(t: number): void {
+  seekOffset = Math.min(totalDuration(), Math.max(0, t));
+  if (playback) {
+    stopPlayback();
+    startPlayback();
+  } else {
+    redraw();
+  }
+}
 
 el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   if (!scale || !annotation) return;
   const { x, y } = canvasPoint(e);
-  if (y < RULER_H) return;
+  // Double-click the ruler to reset the zoom/pan back to fit-to-width.
+  if (y < RULER_H) {
+    zoomX = 1;
+    scrollX = 0;
+    redraw();
+    return;
+  }
   const s = spacing();
   const onset = Math.max(0, snapTime(scale.xToTime(x), s, gridAnchor));
   const note: WorkingNote = {
@@ -732,6 +842,9 @@ function startPlayback(): void {
   const ac = ensureAudioContext();
   ac.resume();
   const startedAt = ac.currentTime + 0.05;
+  // Both sources are placed on this shared clock as if the song started at t=0,
+  // then fast-forwarded to `seekOffset` — so they stay in sync from the seek.
+  const from = Math.min(seekOffset, totalDuration());
 
   const stemGain = ac.createGain();
   stemGain.gain.value = el.muteStem.checked ? 0 : 1;
@@ -739,18 +852,19 @@ function startPlayback(): void {
   const stemSource = ac.createBufferSource();
   stemSource.buffer = audioBuffer;
   stemSource.connect(stemGain);
-  stemSource.start(startedAt);
+  // Start the buffer partway in (clamped to its length so we never seek past end).
+  stemSource.start(startedAt, Math.min(from, audioBuffer.duration));
 
   // Synth the snapped/corrected notes, so you hear the interpretation, not the raw.
   const synthGain = ac.createGain();
   synthGain.gain.value = el.muteSynth.checked ? 0 : 1;
   synthGain.connect(ac.destination);
   for (const voice of buildSchedule(midiNotes())) {
-    scheduleVoice(ac, synthGain, voice, startedAt);
+    scheduleVoice(ac, synthGain, voice, startedAt, from);
   }
 
   const duration = totalDuration();
-  playback = { startedAt, duration, stemSource, stemGain, synthGain, raf: 0 };
+  playback = { startedAt, duration, from, stemSource, stemGain, synthGain, raf: 0 };
   stemSource.onended = () => {
     if (playback && playback.stemSource === stemSource) stopPlayback();
   };
@@ -760,19 +874,26 @@ function startPlayback(): void {
   tickPlayhead();
 }
 
-/** One oscillator + envelope per note, started/stopped on the shared clock. */
+/**
+ * One oscillator + envelope per note, on the shared clock, offset so the song
+ * effectively starts at `from` seconds. Notes entirely before the seek are
+ * skipped; a note straddling it starts immediately for its remainder.
+ */
 function scheduleVoice(
   ac: AudioContext,
   out: GainNode,
   voice: { freq: number; start: number; duration: number; gain: number },
   startedAt: number,
+  from: number,
 ): void {
+  const voiceEnd = voice.start + voice.duration;
+  if (voiceEnd <= from) return; // fully before the seek point
+  const t0 = startedAt + Math.max(0, voice.start - from);
+  const t1 = startedAt + (voiceEnd - from);
   const osc = ac.createOscillator();
   osc.type = "triangle";
   osc.frequency.value = voice.freq;
   const g = ac.createGain();
-  const t0 = startedAt + voice.start;
-  const t1 = t0 + voice.duration;
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(voice.gain, t0 + 0.005);
   g.gain.setValueAtTime(voice.gain, Math.max(t0 + 0.005, t1 - 0.01));
@@ -799,9 +920,10 @@ function stopPlayback(): void {
   draw();
 }
 
-/** Seconds elapsed since playback started, on the audio clock. */
+/** Current song time of the playhead: seek offset + elapsed on the audio clock. */
 function currentPlayheadS(): number {
-  return Math.max(0, ensureAudioContext().currentTime - (playback?.startedAt ?? 0));
+  if (!playback) return seekOffset;
+  return playback.from + Math.max(0, ensureAudioContext().currentTime - playback.startedAt);
 }
 
 function tickPlayhead(): void {
@@ -810,7 +932,7 @@ function tickPlayhead(): void {
     stopPlayback();
     return;
   }
-  draw(currentPlayheadS());
+  draw();
   playback.raf = requestAnimationFrame(tickPlayhead);
 }
 
