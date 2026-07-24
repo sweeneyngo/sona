@@ -105,6 +105,7 @@ interface Playback {
   stemSource: AudioBufferSourceNode;
   stemGain: GainNode;
   synthGain: GainNode;
+  voices: OscillatorNode[]; // every scheduled synth osc, so pause can stop them
   raf: number;
 }
 
@@ -596,11 +597,15 @@ function drawEnergyEnvelope(_w: number, h: number): void {
  * continuity, and a bright overlay on the strongly-voiced ones. The pen lifts on
  * unvoiced frames and across time gaps, so distinct phrases aren't joined.
  */
+// Bridge unvoiced dropouts shorter than this (seconds); longer gaps — real rests
+// between notes — still break the line so we never draw pitch that isn't there.
+const CONTOUR_BRIDGE_S = 0.18;
+
 function drawF0Contour(): void {
   if (!annotation || !scale) return;
   const contour = annotation.f0_contour;
-  strokeContour(contour, 0, "rgba(255, 255, 255, 0.4)");
-  strokeContour(contour, 0.6, "rgba(255, 255, 255, 0.9)");
+  strokeContour(contour, 0, "rgba(255, 255, 255, 0.45)");
+  strokeContour(contour, 0.4, "rgba(255, 255, 255, 0.9)");
 }
 
 function strokeContour(
@@ -614,18 +619,17 @@ function strokeContour(
   let pen = false;
   let lastT = 0;
   for (const f of contour) {
-    if (
-      f.frequency_hz <= 0 ||
-      f.voicing < minVoicing ||
-      f.time_s < viewT0 - 0.2 ||
-      f.time_s > viewT1 + 0.2
-    ) {
-      pen = false; // unvoiced / too weak / off-screen: lift the pen
+    // Skip frames that don't qualify — but *don't* force the pen up here. Whether
+    // to break is decided by the time gap to the last drawn point, so brief
+    // dropouts bridge and only real gaps split the line.
+    if (f.frequency_hz <= 0 || f.voicing < minVoicing) continue;
+    if (f.time_s < viewT0 - 0.2 || f.time_s > viewT1 + 0.2) {
+      pen = false; // off-screen: start a fresh sub-path when we re-enter
       continue;
     }
     const x = scale!.timeToX(f.time_s);
     const y = freqToY(f.frequency_hz);
-    if (!pen || f.time_s - lastT > 0.12) ctx2d.moveTo(x, y);
+    if (!pen || f.time_s - lastT > CONTOUR_BRIDGE_S) ctx2d.moveTo(x, y);
     else ctx2d.lineTo(x, y);
     pen = true;
     lastT = f.time_s;
@@ -877,18 +881,71 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
 });
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key !== "Delete" && e.key !== "Backspace") return;
-  // Don't hijack the key while a form control is focused.
+  // Don't hijack keys while a form control (BPM, grid, slider) is focused.
   const tag = document.activeElement?.tagName;
   if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
-  if (!selectedNote) return;
+  if (!annotation) return;
+
+  const beat = 60 / bpm; // seek step: one beat, or a bar with Shift.
+
+  switch (e.key) {
+    case "Delete":
+    case "Backspace":
+      if (!selectedNote) return;
+      workingNotes = workingNotes.filter((n) => n !== selectedNote);
+      selectedNote = null;
+      el.tooltip.style.display = "none";
+      invalidateEffective();
+      redraw();
+      break;
+    case " ": // play / pause
+      togglePlay();
+      break;
+    case "ArrowRight":
+      setSeek(seekOffset + beat * (e.shiftKey ? 4 : 1));
+      break;
+    case "ArrowLeft":
+      setSeek(seekOffset - beat * (e.shiftKey ? 4 : 1));
+      break;
+    case "ArrowUp": // pan pitch up (a semitone, or an octave with Shift)
+      pitchTop = clampPitchTop(pitchTop + (e.shiftKey ? 12 : 1));
+      redraw();
+      break;
+    case "ArrowDown":
+      pitchTop = clampPitchTop(pitchTop - (e.shiftKey ? 12 : 1));
+      redraw();
+      break;
+    case "+":
+    case "=":
+      zoomBy(1.3);
+      break;
+    case "-":
+    case "_":
+      zoomBy(1 / 1.3);
+      break;
+    case "Home":
+      setSeek(0);
+      break;
+    case "0":
+      resetView();
+      redraw();
+      break;
+    default:
+      return; // not a shortcut — leave the event alone
+  }
   e.preventDefault();
-  workingNotes = workingNotes.filter((n) => n !== selectedNote);
-  selectedNote = null;
-  el.tooltip.style.display = "none";
-  invalidateEffective();
-  redraw();
 });
+
+/** Zoom the timeline by `factor` about the centre of the visible plot. */
+function zoomBy(factor: number): void {
+  if (!scale) return;
+  const centerX = PAD.left + plotWidthPx() / 2;
+  const tAtCenter = scale.xToTime(centerX);
+  zoomX = Math.min(MAX_ZOOM_X, Math.max(MIN_ZOOM_X, zoomX * factor));
+  const content = plotWidthPx() * zoomX;
+  scrollX = clampScroll(PAD.left + (tAtCenter / totalDuration()) * content - centerX);
+  redraw();
+}
 
 function updateHover(e: MouseEvent): void {
   const { x, y } = canvasPoint(e);
@@ -990,7 +1047,15 @@ el.play.addEventListener("click", () => {
   if (!annotation || !audioBuffer || playback) return;
   startPlayback();
 });
-el.stop.addEventListener("click", stopPlayback);
+// The transport's "stop" is a pause: it halts audio and leaves the playhead
+// where it was, so the next Play resumes from there.
+el.stop.addEventListener("click", () => stopPlayback());
+
+/** Space toggles play/pause. */
+function togglePlay(): void {
+  if (playback) stopPlayback();
+  else if (annotation && audioBuffer) startPlayback();
+}
 
 el.muteStem.addEventListener("change", () => {
   if (playback) playback.stemGain.gain.value = el.muteStem.checked ? 0 : 1;
@@ -1021,14 +1086,17 @@ function startPlayback(): void {
   const synthGain = ac.createGain();
   synthGain.gain.value = el.muteSynth.checked ? 0 : 1;
   synthGain.connect(ac.destination);
+  const voices: OscillatorNode[] = [];
   for (const voice of buildSchedule(midiNotes())) {
-    scheduleVoice(ac, synthGain, voice, startedAt, from);
+    const osc = scheduleVoice(ac, synthGain, voice, startedAt, from);
+    if (osc) voices.push(osc);
   }
 
   const duration = totalDuration();
-  playback = { startedAt, duration, from, stemSource, stemGain, synthGain, raf: 0 };
+  playback = { startedAt, duration, from, stemSource, stemGain, synthGain, voices, raf: 0 };
   stemSource.onended = () => {
-    if (playback && playback.stemSource === stemSource) stopPlayback();
+    // Natural end: reset the playhead to the start so the next Play replays.
+    if (playback && playback.stemSource === stemSource) stopPlayback(true);
   };
 
   el.play.disabled = true;
@@ -1047,9 +1115,9 @@ function scheduleVoice(
   voice: { freq: number; start: number; duration: number; gain: number },
   startedAt: number,
   from: number,
-): void {
+): OscillatorNode | null {
   const voiceEnd = voice.start + voice.duration;
-  if (voiceEnd <= from) return; // fully before the seek point
+  if (voiceEnd <= from) return null; // fully before the seek point
   const t0 = startedAt + Math.max(0, voice.start - from);
   const t1 = startedAt + (voiceEnd - from);
   const osc = ac.createOscillator();
@@ -1064,11 +1132,20 @@ function scheduleVoice(
   g.connect(out);
   osc.start(t0);
   osc.stop(t1 + 0.02);
+  return osc;
 }
 
-function stopPlayback(): void {
+/**
+ * Halt playback. Crucially this also stops every scheduled synth oscillator —
+ * they're scheduled ahead on the audio clock, so without stopping them they'd
+ * keep sounding after a pause and stack up on the next Play. `resetSeek` sends
+ * the playhead back to the start (used on natural end); otherwise it stays put
+ * so Play resumes from where it paused.
+ */
+function stopPlayback(resetSeek = false): void {
   if (!playback) return;
   const p = playback;
+  const pos = currentPlayheadS();
   playback = null;
   try {
     p.stemSource.onended = null;
@@ -1076,7 +1153,21 @@ function stopPlayback(): void {
   } catch {
     // Already stopped/ended — fine.
   }
+  for (const osc of p.voices) {
+    try {
+      osc.stop();
+      osc.disconnect();
+    } catch {
+      // Already ended — fine.
+    }
+  }
+  try {
+    p.synthGain.disconnect();
+  } catch {
+    // Fine.
+  }
   cancelAnimationFrame(p.raf);
+  seekOffset = resetSeek ? 0 : Math.min(pos, totalDuration());
   el.play.disabled = !(annotation && audioBuffer);
   el.stop.disabled = true;
   draw();
