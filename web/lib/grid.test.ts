@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 import {
@@ -7,7 +7,7 @@ import {
   gridLines,
   quantizeNote,
   noteFlags,
-} from "./grid.js";
+} from "./grid";
 
 test("gridSpacingSeconds: a 16th at 120 BPM is 0.125 s", () => {
   assert.ok(Math.abs(gridSpacingSeconds(120, 16) - 0.125) < 1e-12);

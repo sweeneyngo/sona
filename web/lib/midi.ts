@@ -2,18 +2,29 @@
 // The UI exports the *authoritative* MIDI from the current snapped + corrected
 // state (ADR-0004), so this owns the seconds→ticks conversion and byte layout.
 // A format-0, single-track file is all a monophonic vocal line needs. No deps —
-// hand-rolled so the web surface stays build-tool-free — and DOM-free so it's
-// unit-testable under `node --test`.
+// hand-rolled — and DOM-free so it's unit-testable under Vitest.
+
+import { clampPitch } from "./math";
+import type { Note } from "./annotation";
 
 const NOTE_ON = 0x90;
 const NOTE_OFF = 0x80;
 const DEFAULT_VELOCITY = 100;
 
+/** A note the encoder needs: pitch + timing in seconds (a slice of {@link Note}). */
+export type MidiNote = Pick<Note, "onset_s" | "offset_s" | "midi_pitch">;
+
+interface Event {
+  tick: number;
+  kind: "on" | "off";
+  pitch: number;
+}
+
 /**
  * Variable-length quantity: 7 bits per byte, high bit set on all but the last.
  * Returns an array of byte values. This is how SMF encodes delta times.
  */
-export function writeVarLen(value) {
+export function writeVarLen(value: number): number[] {
   let n = Math.max(0, Math.round(value));
   const bytes = [n & 0x7f];
   n = Math.floor(n / 128);
@@ -30,13 +41,16 @@ export function writeVarLen(value) {
  * division. Notes are sorted by onset; at each tick note-offs are emitted before
  * note-ons so a note ending where the next begins doesn't overlap.
  */
-export function encodeMidiFile(notes, { bpm, ppq = 480 }) {
+export function encodeMidiFile(
+  notes: MidiNote[],
+  { bpm, ppq = 480 }: { bpm: number; ppq?: number },
+): Uint8Array {
   const ticksPerSecond = (bpm / 60) * ppq;
-  const toTicks = (s) => Math.max(0, Math.round(s * ticksPerSecond));
+  const toTicks = (s: number) => Math.max(0, Math.round(s * ticksPerSecond));
 
   // Fan each note out to an on/off pair at absolute ticks, then order by tick
   // (offs first on ties) so the delta-time stream is monotonic.
-  const events = [];
+  const events: Event[] = [];
   for (const note of notes) {
     const pitch = clampPitch(note.midi_pitch);
     const on = toTicks(note.onset_s);
@@ -46,7 +60,7 @@ export function encodeMidiFile(notes, { bpm, ppq = 480 }) {
   }
   events.sort((a, b) => a.tick - b.tick || rank(a.kind) - rank(b.kind));
 
-  const track = [];
+  const track: number[] = [];
   // Tempo meta: microseconds per quarter note.
   const usPerQuarter = Math.round(60_000_000 / bpm);
   track.push(
@@ -84,25 +98,18 @@ export function encodeMidiFile(notes, { bpm, ppq = 480 }) {
 }
 
 // note-off (0) sorts before note-on (1) at the same tick.
-function rank(kind) {
+function rank(kind: "on" | "off"): number {
   return kind === "off" ? 0 : 1;
 }
 
-function clampPitch(p) {
-  const n = Math.round(p);
-  if (n < 0) return 0;
-  if (n > 127) return 127;
-  return n;
-}
-
-function ascii(s) {
+function ascii(s: string): number[] {
   return [...s].map((c) => c.charCodeAt(0));
 }
 
-function u16(n) {
+function u16(n: number): number[] {
   return [(n >> 8) & 0xff, n & 0xff];
 }
 
-function u32(n) {
+function u32(n: number): number[] {
   return [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }

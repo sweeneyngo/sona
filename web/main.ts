@@ -9,21 +9,17 @@
 // MIDI from the current snapped + corrected state (ADR-0004). Stem and
 // synthesized notes play in sync via Web Audio.
 //
-// The pure geometry/colour/grid/schedule/MIDI maths live in ./lib/*.js so they
-// can be unit-tested under `node --test`; this file is the DOM + Web Audio +
-// canvas plumbing that can only run in a browser.
+// The pure geometry/colour/grid/schedule/MIDI maths live in ./lib/*.ts so they
+// can be unit-tested under Vitest; this file is the DOM + Web Audio + canvas
+// plumbing that can only run in a browser.
 
-import {
-  midiToNoteName,
-  confidenceColor,
-  weakestSubScore,
-  pitchRange,
-  makeScale,
-} from "./lib/view.js";
-import { buildSchedule } from "./lib/synth.js";
-import { clamp01 } from "./lib/math.js";
-import { gridSpacingSeconds, snapTime, gridLines, quantizeNote, noteFlags } from "./lib/grid.js";
-import { encodeMidiFile } from "./lib/midi.js";
+import { midiToNoteName, confidenceColor, weakestSubScore, pitchRange, makeScale } from "./lib/view";
+import type { Scale } from "./lib/view";
+import { buildSchedule } from "./lib/synth";
+import { clamp01, clampPitch } from "./lib/math";
+import { gridSpacingSeconds, snapTime, gridLines, quantizeNote, noteFlags } from "./lib/grid";
+import { encodeMidiFile } from "./lib/midi";
+import type { Annotation, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip you drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
@@ -33,39 +29,83 @@ const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
 
 const el = {
-  json: document.getElementById("json-input"),
-  audio: document.getElementById("audio-input"),
-  play: document.getElementById("play"),
-  stop: document.getElementById("stop"),
-  muteStem: document.getElementById("mute-stem"),
-  muteSynth: document.getElementById("mute-synth"),
-  bpm: document.getElementById("bpm"),
-  division: document.getElementById("division"),
-  flag: document.getElementById("flag"),
-  flagVal: document.getElementById("flag-val"),
-  export: document.getElementById("export"),
-  status: document.getElementById("status"),
-  canvas: document.getElementById("roll"),
-  tooltip: document.getElementById("tooltip"),
+  json: document.getElementById("json-input") as HTMLInputElement,
+  audio: document.getElementById("audio-input") as HTMLInputElement,
+  play: document.getElementById("play") as HTMLButtonElement,
+  stop: document.getElementById("stop") as HTMLButtonElement,
+  muteStem: document.getElementById("mute-stem") as HTMLInputElement,
+  muteSynth: document.getElementById("mute-synth") as HTMLInputElement,
+  bpm: document.getElementById("bpm") as HTMLInputElement,
+  division: document.getElementById("division") as HTMLSelectElement,
+  flag: document.getElementById("flag") as HTMLInputElement,
+  flagVal: document.getElementById("flag-val") as HTMLOutputElement,
+  export: document.getElementById("export") as HTMLButtonElement,
+  status: document.getElementById("status") as HTMLElement,
+  canvas: document.getElementById("roll") as HTMLCanvasElement,
+  tooltip: document.getElementById("tooltip") as HTMLDivElement,
 };
-const ctx2d = el.canvas.getContext("2d");
+const ctx2d = el.canvas.getContext("2d")!;
+
+// --- Types -----------------------------------------------------------------
+
+interface EffectiveNote {
+  raw: WorkingNote;
+  onset_s: number;
+  offset_s: number;
+  pitch: number;
+  flagged: boolean;
+  lowConfidence: boolean;
+  escaped: boolean;
+}
+
+interface Hitbox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  note: WorkingNote;
+  effective: EffectiveNote;
+}
+
+interface DragBase {
+  startX: number;
+  startY: number;
+  moved: boolean;
+}
+type Drag =
+  | (DragBase & { mode: "offset"; origAnchor: number })
+  | (DragBase & {
+      mode: "move" | "resize";
+      note: WorkingNote;
+      origOnset: number;
+      origOffset: number;
+      origPitch: number;
+    });
+
+interface Playback {
+  startedAt: number;
+  duration: number;
+  stemSource: AudioBufferSourceNode;
+  stemGain: GainNode;
+  synthGain: GainNode;
+  raf: number;
+}
 
 // --- State -----------------------------------------------------------------
 
-/** @type {import("./annotation.d.ts").Annotation | null} */
-let annotation = null;
+let annotation: Annotation | null = null;
 /** Editable working copy of the notes (raw seconds); the source of truth for edits. */
-let workingNotes = [];
+let workingNotes: WorkingNote[] = [];
 /** Decoded stem, for playback and for the total roll duration. */
-let audioBuffer = null;
+let audioBuffer: AudioBuffer | null = null;
 /** Rendering geometry, rebuilt on load and resize. Null until data arrives. */
-let scale = null;
+let scale: Scale | null = null;
 /** Screen rects of drawn notes, for hover/hit-testing. Each carries its working note. */
-let noteHitboxes = [];
+let noteHitboxes: Hitbox[] = [];
 /** The working note the user selected; null when nothing is selected. */
-let selectedNote = null;
+let selectedNote: WorkingNote | null = null;
 /** In-progress drag (move / resize / grid-offset), or null. */
-let drag = null;
+let drag: Drag | null = null;
 
 // Musical interpretation (ticket 09). Seeded on load; edited via the toolbar.
 let bpm = 120;
@@ -73,8 +113,11 @@ let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 let flagThreshold = 0.5;
 
-let audioCtx = null;
-let playback = null;
+const AudioCtx =
+  window.AudioContext ||
+  (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+let audioCtx: AudioContext | null = null;
+let playback: Playback | null = null;
 
 // --- Loading ---------------------------------------------------------------
 
@@ -90,14 +133,12 @@ el.json.addEventListener("change", async () => {
     bpm = annotation.bpm > 0 ? annotation.bpm : 120;
     el.bpm.value = String(bpm);
     gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
-    setStatus(
-      `Loaded ${workingNotes.length} notes from “${file.name}” (${annotation.producer}).`,
-    );
+    setStatus(`Loaded ${workingNotes.length} notes from “${file.name}” (${annotation.producer}).`);
     rebuild();
   } catch (err) {
     annotation = null;
     workingNotes = [];
-    setStatus(`Could not read annotation JSON: ${err.message}`, true);
+    setStatus(`Could not read annotation JSON: ${(err as Error).message}`, true);
     rebuild();
   }
 });
@@ -112,7 +153,7 @@ el.audio.addEventListener("change", async () => {
     rebuild();
   } catch (err) {
     audioBuffer = null;
-    setStatus(`Could not decode audio: ${err.message}`, true);
+    setStatus(`Could not decode audio: ${(err as Error).message}`, true);
     rebuild();
   }
 });
@@ -121,17 +162,17 @@ el.audio.addEventListener("change", async () => {
  * Validate the shape we depend on and coerce the fields the roll reads. Throws
  * a human-readable error if the file isn't an annotation.
  */
-function normalizeAnnotation(raw) {
+function normalizeAnnotation(raw: any): Annotation {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.notes)) {
     throw new Error("expected an object with a `notes` array");
   }
   return {
-    version: raw.version,
-    sample_rate: raw.sample_rate,
+    version: Number(raw.version) || 0,
+    sample_rate: Number(raw.sample_rate) || 0,
     bpm: Number(raw.bpm) || 0,
     duration_s: Number(raw.duration_s) || 0,
     producer: raw.producer ?? "unknown",
-    notes: raw.notes.map((n) => ({
+    notes: raw.notes.map((n: any) => ({
       onset_s: Number(n.onset_s),
       offset_s: Number(n.offset_s),
       midi_pitch: Number(n.midi_pitch),
@@ -146,7 +187,7 @@ function normalizeAnnotation(raw) {
 // --- Musical interpretation (grid) -----------------------------------------
 
 /** Current grid cell size in seconds. */
-function spacing() {
+function spacing(): number {
   return gridSpacingSeconds(bpm, division);
 }
 
@@ -155,14 +196,15 @@ function spacing() {
  * hard-snapped to the grid (or escaped) plus its flag state. Manual notes never
  * escape — the user placed them deliberately, so they always snap.
  */
-function effectiveNotes() {
+function effectiveNotes(): EffectiveNote[] {
   const s = spacing();
   return workingNotes.map((n) => {
-    // Manual notes never escape — the user placed them, so they always snap.
-    // Everything else uses grid.js's documented escape-hatch defaults (ADR-0003).
-    const opts = { spacing: s, anchor: gridAnchor };
-    if (n.manual) opts.escapeDistanceCells = Infinity;
-    const q = quantizeNote(n, opts);
+    // Manual notes never escape; everything else uses grid.ts's documented
+    // escape-hatch defaults (ADR-0003).
+    const q = quantizeNote(
+      n,
+      n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
+    );
     const flags = noteFlags(n, q, flagThreshold);
     return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags };
   });
@@ -201,7 +243,7 @@ el.export.addEventListener("click", exportMidi);
 // --- Layout / geometry ------------------------------------------------------
 
 /** Total seconds the roll spans: the longer of the notes and the stem. */
-function totalDuration() {
+function totalDuration(): number {
   const noteEnd = workingNotes.length
     ? Math.max(annotation?.duration_s ?? 0, ...workingNotes.map((n) => n.offset_s))
     : (annotation?.duration_s ?? 0);
@@ -210,7 +252,7 @@ function totalDuration() {
 }
 
 /** Rebuild the scale, redraw, and refresh which controls are usable. */
-function rebuild() {
+function rebuild(): void {
   resizeCanvas();
   if (annotation) {
     const { min, max } = pitchRange(workingNotes);
@@ -234,16 +276,16 @@ function rebuild() {
 }
 
 /** Redraw without recomputing the scale (grid/edit changes, not resize). */
-function redraw() {
+function redraw(): void {
   draw(playback ? currentPlayheadS() : null);
 }
 
-function devicePixelRatioSafe() {
+function devicePixelRatioSafe(): number {
   return window.devicePixelRatio || 1;
 }
 
 /** Size the backing store to the CSS box × DPR so lines stay crisp. */
-function resizeCanvas() {
+function resizeCanvas(): void {
   const dpr = devicePixelRatioSafe();
   const rect = el.canvas.getBoundingClientRect();
   el.canvas.width = Math.max(1, Math.round(rect.width * dpr));
@@ -255,12 +297,12 @@ window.addEventListener("resize", rebuild);
 
 // --- Drawing ----------------------------------------------------------------
 
-function cssSize() {
+function cssSize(): { w: number; h: number } {
   const dpr = devicePixelRatioSafe();
   return { w: el.canvas.width / dpr, h: el.canvas.height / dpr };
 }
 
-function draw(playheadS = null) {
+function draw(playheadS: number | null = null): void {
   const { w, h } = cssSize();
   ctx2d.clearRect(0, 0, w, h);
   ctx2d.fillStyle = "#0d0f14";
@@ -280,7 +322,7 @@ function draw(playheadS = null) {
   if (playheadS != null) drawPlayhead(playheadS, h);
 }
 
-function drawPlaceholder(w, h) {
+function drawPlaceholder(w: number, h: number): void {
   ctx2d.fillStyle = "#5b6072";
   ctx2d.font = "13px system-ui, sans-serif";
   ctx2d.textAlign = "center";
@@ -289,7 +331,8 @@ function drawPlaceholder(w, h) {
 }
 
 /** Horizontal rows per semitone, with note names on the octave lines (C). */
-function drawPitchGrid(w, h) {
+function drawPitchGrid(w: number, _h: number): void {
+  if (!scale) return;
   ctx2d.font = "10px system-ui, sans-serif";
   ctx2d.textBaseline = "middle";
   for (let pitch = scale.minPitch; pitch <= scale.maxPitch; pitch++) {
@@ -312,22 +355,22 @@ function drawPitchGrid(w, h) {
   ctx2d.textBaseline = "alphabetic";
 }
 
-function isBlackKey(midi) {
+function isBlackKey(midi: number): boolean {
   return [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12);
 }
 
 /** Each visible grid line's screen x and whether it lands on a beat (quarter). */
-function gridLineInfo() {
+function gridLineInfo(): { x: number; isBeat: boolean }[] {
   const s = spacing();
   const cellsPerBeat = division / 4; // a beat is a quarter note.
   return gridLines(gridAnchor, s, totalDuration()).map((t) => {
     const k = Math.round((t - gridAnchor) / s);
-    return { x: scale.timeToX(t), isBeat: ((k % cellsPerBeat) + cellsPerBeat) % cellsPerBeat === 0 };
+    return { x: scale!.timeToX(t), isBeat: ((k % cellsPerBeat) + cellsPerBeat) % cellsPerBeat === 0 };
   });
 }
 
 /** Vertical grid lines from BPM/division/phase; beat lines drawn stronger. */
-function drawTimeGrid(w, h) {
+function drawTimeGrid(_w: number, h: number): void {
   for (const { x, isBeat } of gridLineInfo()) {
     ctx2d.strokeStyle = isBeat ? "#2f3646" : "#1c2029";
     ctx2d.beginPath();
@@ -338,7 +381,7 @@ function drawTimeGrid(w, h) {
 }
 
 /** The draggable phase ruler across the top, with a tick on each grid line. */
-function drawRuler(w) {
+function drawRuler(w: number): void {
   ctx2d.fillStyle = "#171a22";
   ctx2d.fillRect(PAD.left, 0, w - PAD.left, RULER_H);
   ctx2d.strokeStyle = "#2b2f3a";
@@ -360,7 +403,8 @@ function drawRuler(w) {
 }
 
 /** Energy/RMS envelope as a filled area along the bottom — a loudness guide. */
-function drawEnergyEnvelope(w, h) {
+function drawEnergyEnvelope(_w: number, h: number): void {
+  if (!annotation || !scale) return;
   const env = annotation.energy_envelope;
   if (env.length === 0) return;
   const maxRms = Math.max(...env.map((f) => f.rms), 1e-6);
@@ -378,7 +422,8 @@ function drawEnergyEnvelope(w, h) {
 }
 
 /** f0 contour as a polyline, dimmed where the frame is unvoiced. */
-function drawF0Contour() {
+function drawF0Contour(): void {
+  if (!annotation) return;
   const contour = annotation.f0_contour.filter((f) => f.frequency_hz > 0);
   if (contour.length === 0) return;
   ctx2d.lineWidth = 1.5;
@@ -389,17 +434,17 @@ function drawF0Contour() {
     const voicing = (a.voicing + b.voicing) / 2;
     ctx2d.strokeStyle = `rgba(255, 255, 255, ${0.15 + 0.55 * clamp01(voicing)})`;
     ctx2d.beginPath();
-    ctx2d.moveTo(scale.timeToX(a.time_s), freqToY(a.frequency_hz));
-    ctx2d.lineTo(scale.timeToX(b.time_s), freqToY(b.frequency_hz));
+    ctx2d.moveTo(scale!.timeToX(a.time_s), freqToY(a.frequency_hz));
+    ctx2d.lineTo(scale!.timeToX(b.time_s), freqToY(b.frequency_hz));
     ctx2d.stroke();
   }
   ctx2d.lineWidth = 1;
 }
 
 /** Map a raw f0 (Hz) to the same pitch axis as the notes, via fractional MIDI. */
-function freqToY(hz) {
+function freqToY(hz: number): number {
   const midi = 69 + 12 * Math.log2(hz / 440);
-  return scale.pitchToY(midi) + scale.rowHeight / 2;
+  return scale!.pitchToY(midi) + scale!.rowHeight / 2;
 }
 
 /**
@@ -407,7 +452,8 @@ function freqToY(hz) {
  * red outline, escaped notes a dashed cyan outline, the selected note a white
  * ring. Hitboxes carry the working note so edits mutate the source of truth.
  */
-function drawNotes() {
+function drawNotes(): void {
+  if (!scale) return;
   noteHitboxes = [];
   const barH = Math.max(3, scale.rowHeight - 2);
   for (const eff of effectiveNotes()) {
@@ -445,7 +491,7 @@ function drawNotes() {
   }
 }
 
-function roundRect(x, y, w, h, r) {
+function roundRect(x: number, y: number, w: number, h: number, r: number): void {
   const radius = Math.min(r, w / 2, h / 2);
   ctx2d.beginPath();
   ctx2d.moveTo(x + radius, y);
@@ -456,8 +502,8 @@ function roundRect(x, y, w, h, r) {
   ctx2d.closePath();
 }
 
-function drawPlayhead(t, h) {
-  const x = scale.timeToX(t);
+function drawPlayhead(t: number, h: number): void {
+  const x = scale!.timeToX(t);
   ctx2d.strokeStyle = "#ffd166";
   ctx2d.lineWidth = 1.5;
   ctx2d.beginPath();
@@ -469,13 +515,13 @@ function drawPlayhead(t, h) {
 
 // --- Interaction: select, drag (move/resize), grid-offset, add, delete ------
 
-el.canvas.addEventListener("mousedown", (e) => {
+el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
   if (!scale) return;
   const { x, y } = canvasPoint(e);
 
   // The top ruler drags the grid phase.
   if (y < RULER_H) {
-    drag = { mode: "offset", startX: x, origAnchor: gridAnchor, moved: false };
+    drag = { mode: "offset", startX: x, startY: y, origAnchor: gridAnchor, moved: false };
     return;
   }
 
@@ -504,29 +550,33 @@ el.canvas.addEventListener("mousedown", (e) => {
   }
 });
 
-window.addEventListener("mousemove", (e) => {
+window.addEventListener("mousemove", (e: MouseEvent) => {
   if (!scale) return;
-  if (!drag) return updateHover(e);
+  if (!drag) {
+    updateHover(e);
+    return;
+  }
+  const d = drag;
   const { x, y } = canvasPoint(e);
-  drag.moved = drag.moved || Math.abs(x - drag.startX) > 2 || Math.abs(y - (drag.startY ?? 0)) > 2;
-  const dt = scale.xToTime(x) - scale.xToTime(drag.startX);
+  d.moved = d.moved || Math.abs(x - d.startX) > 2 || Math.abs(y - d.startY) > 2;
+  const dt = scale.xToTime(x) - scale.xToTime(d.startX);
 
-  if (drag.mode === "offset") {
-    gridAnchor = drag.origAnchor + dt;
+  if (d.mode === "offset") {
+    gridAnchor = d.origAnchor + dt;
     redraw();
     return;
   }
 
-  const n = drag.note;
-  if (drag.mode === "move") {
-    n.onset_s = Math.max(0, drag.origOnset + dt);
-    n.offset_s = n.onset_s + (drag.origOffset - drag.origOnset);
-    const dRows = scale.yToPitch(y) - scale.yToPitch(drag.startY);
-    n.midi_pitch = clampPitch(drag.origPitch + dRows);
+  const n = d.note;
+  if (d.mode === "move") {
+    n.onset_s = Math.max(0, d.origOnset + dt);
+    n.offset_s = n.onset_s + (d.origOffset - d.origOnset);
+    const dRows = scale.yToPitch(y) - scale.yToPitch(d.startY);
+    n.midi_pitch = clampPitch(d.origPitch + dRows);
     n.manual = true;
-  } else if (drag.mode === "resize") {
-    // Keep at least a hair of length; the grid snap will round it to a cell.
-    n.offset_s = Math.max(n.onset_s + spacing() / 2, drag.origOffset + dt);
+  } else {
+    // resize: keep at least a hair of length; the grid snap rounds it to a cell.
+    n.offset_s = Math.max(n.onset_s + spacing() / 2, d.origOffset + dt);
     n.manual = true;
   }
   redraw();
@@ -537,13 +587,13 @@ window.addEventListener("mouseup", () => {
   drag = null;
 });
 
-el.canvas.addEventListener("dblclick", (e) => {
+el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   if (!scale || !annotation) return;
   const { x, y } = canvasPoint(e);
   if (y < RULER_H) return;
   const s = spacing();
   const onset = Math.max(0, snapTime(scale.xToTime(x), s, gridAnchor));
-  const note = {
+  const note: WorkingNote = {
     onset_s: onset,
     offset_s: onset + s,
     midi_pitch: clampPitch(scale.yToPitch(y)),
@@ -557,7 +607,7 @@ el.canvas.addEventListener("dblclick", (e) => {
   showSelectedTooltip();
 });
 
-window.addEventListener("keydown", (e) => {
+window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key !== "Delete" && e.key !== "Backspace") return;
   // Don't hijack the key while a form control is focused.
   const tag = document.activeElement?.tagName;
@@ -570,7 +620,7 @@ window.addEventListener("keydown", (e) => {
   redraw();
 });
 
-function updateHover(e) {
+function updateHover(e: MouseEvent): void {
   const { x, y } = canvasPoint(e);
   const hit = hitTest(x, y);
   // Cursor cues: resize on the right edge, move on the body, grid on the ruler.
@@ -588,17 +638,17 @@ el.canvas.addEventListener("mouseleave", () => {
   else el.tooltip.style.display = "none";
 });
 
-function canvasPoint(e) {
+function canvasPoint(e: MouseEvent): { x: number; y: number } {
   const rect = el.canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-function showSelectedTooltip() {
+function showSelectedTooltip(): void {
   const box = noteHitboxes.find((b) => b.note === selectedNote);
   if (box) showTooltip(box.note, box.effective, box.x + box.w / 2, box.y);
 }
 
-function hitTest(px, py) {
+function hitTest(px: number, py: number): Hitbox | null {
   for (let i = noteHitboxes.length - 1; i >= 0; i--) {
     const b = noteHitboxes[i];
     if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b;
@@ -606,7 +656,7 @@ function hitTest(px, py) {
   return null;
 }
 
-function showTooltip(note, effective, px, py) {
+function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px: number, py: number): void {
   const weakest = weakestSubScore(note.sub_scores);
   const rows = Object.entries(note.sub_scores)
     .map(([k, v]) => `<dt>${k.replace(/_/g, " ")}</dt><dd>${fmt(v)}</dd>`)
@@ -629,14 +679,11 @@ function showTooltip(note, effective, px, py) {
   el.tooltip.style.top = `${py + 12}px`;
 }
 
-function fmt(v) {
+function fmt(v: number): string {
   return Number.isFinite(v) ? v.toFixed(2) : "–";
 }
-function fmt3(v) {
+function fmt3(v: number): string {
   return Number.isFinite(v) ? v.toFixed(3) : "–";
-}
-function clampPitch(p) {
-  return Math.min(127, Math.max(0, Math.round(p)));
 }
 
 // --- Export -----------------------------------------------------------------
@@ -646,11 +693,11 @@ function clampPitch(p) {
  * state, seconds→ticks at the chosen BPM. Escaped notes export at their raw
  * position, as shown.
  */
-function exportMidi() {
+function exportMidi(): void {
   if (!annotation) return;
   const notes = midiNotes();
   const bytes = encodeMidiFile(notes, { bpm });
-  const blob = new Blob([bytes], { type: "audio/midi" });
+  const blob = new Blob([bytes as BlobPart], { type: "audio/midi" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -662,8 +709,8 @@ function exportMidi() {
 
 // --- Playback ---------------------------------------------------------------
 
-function ensureAudioContext() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function ensureAudioContext(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioCtx();
   return audioCtx;
 }
 
@@ -680,7 +727,8 @@ el.muteSynth.addEventListener("change", () => {
   if (playback) playback.synthGain.gain.value = el.muteSynth.checked ? 0 : 1;
 });
 
-function startPlayback() {
+function startPlayback(): void {
+  if (!audioBuffer) return;
   const ac = ensureAudioContext();
   ac.resume();
   const startedAt = ac.currentTime + 0.05;
@@ -713,7 +761,12 @@ function startPlayback() {
 }
 
 /** One oscillator + envelope per note, started/stopped on the shared clock. */
-function scheduleVoice(ac, out, voice, startedAt) {
+function scheduleVoice(
+  ac: AudioContext,
+  out: GainNode,
+  voice: { freq: number; start: number; duration: number; gain: number },
+  startedAt: number,
+): void {
   const osc = ac.createOscillator();
   osc.type = "triangle";
   osc.frequency.value = voice.freq;
@@ -730,7 +783,7 @@ function scheduleVoice(ac, out, voice, startedAt) {
   osc.stop(t1 + 0.02);
 }
 
-function stopPlayback() {
+function stopPlayback(): void {
   if (!playback) return;
   const p = playback;
   playback = null;
@@ -747,11 +800,11 @@ function stopPlayback() {
 }
 
 /** Seconds elapsed since playback started, on the audio clock. */
-function currentPlayheadS() {
-  return Math.max(0, ensureAudioContext().currentTime - playback.startedAt);
+function currentPlayheadS(): number {
+  return Math.max(0, ensureAudioContext().currentTime - (playback?.startedAt ?? 0));
 }
 
-function tickPlayhead() {
+function tickPlayhead(): void {
   if (!playback) return;
   if (currentPlayheadS() >= playback.duration) {
     stopPlayback();
@@ -763,7 +816,7 @@ function tickPlayhead() {
 
 // --- Misc -------------------------------------------------------------------
 
-function setStatus(msg, isError = false) {
+function setStatus(msg: string, isError = false): void {
   el.status.textContent = msg;
   el.status.classList.toggle("error", isError);
 }

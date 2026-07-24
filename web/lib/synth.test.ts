@@ -1,7 +1,7 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
-import { midiToFreq, buildSchedule } from "./synth.js";
+import { midiToFreq, buildSchedule } from "./synth";
 
 test("midiToFreq anchors A4 (69) to 440 Hz", () => {
   assert.equal(midiToFreq(69), 440);

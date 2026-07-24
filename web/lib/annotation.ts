@@ -4,12 +4,12 @@
  * emits it; this review surface interprets it (grid anchoring, hard-snap
  * quantization, correction, MIDI export).
  *
- * This declaration mirrors the Serde types one-for-one — keep the two in sync.
- * All timing is in **seconds** (raw, unquantized): snapping is a UI concern.
+ * These types mirror the Serde types one-for-one — keep the two in sync. All
+ * timing is in **seconds** (raw, unquantized): snapping is a UI concern.
  */
 
 /** Current annotation schema version (`SCHEMA_VERSION` in the Rust core). */
-export declare const SCHEMA_VERSION: 1;
+export const SCHEMA_VERSION = 1;
 
 /** The backend or adapter that produced an annotation. */
 export type Producer = "pyin" | "crepe" | "basic-pitch";
@@ -68,7 +68,8 @@ export interface EnergyFrame {
 /**
  * A complete annotation: the perception core's output for one vocal stem.
  * Timing is in seconds throughout. `bpm` is carried only to seed the UI grid —
- * the core never uses it (ADR-0004).
+ * the core never uses it (ADR-0004). `producer` is widened to `string` because
+ * the loader tolerates an unknown/absent value for display.
  */
 export interface Annotation {
   /** Schema version; see {@link SCHEMA_VERSION}. */
@@ -79,12 +80,25 @@ export interface Annotation {
   bpm: number;
   /** Total stem duration, in seconds. */
   duration_s: number;
-  /** Which backend/adapter produced this annotation. */
-  producer: Producer;
+  /**
+   * Which backend/adapter produced this annotation. The `& {}` keeps the
+   * {@link Producer} literals as autocomplete suggestions while still tolerating
+   * an unknown/absent value the loader may substitute for display.
+   */
+  producer: Producer | (string & {});
   /** Detected note events, in onset order. */
   notes: Note[];
   /** Per-frame fundamental-frequency contour (display aid). */
   f0_contour: F0Frame[];
   /** Per-frame energy/RMS envelope (display aid). */
   energy_envelope: EnergyFrame[];
+}
+
+/**
+ * A note in the UI's editable working set: the raw annotation note plus a
+ * `manual` flag marking notes the user placed/edited (which never escape the
+ * grid — see `main.ts`).
+ */
+export interface WorkingNote extends Note {
+  manual?: boolean;
 }

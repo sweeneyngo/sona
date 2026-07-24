@@ -1,9 +1,9 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
-import { writeVarLen, encodeMidiFile } from "./midi.js";
+import { writeVarLen, encodeMidiFile } from "./midi";
 
-const ascii = (bytes, start, len) =>
+const ascii = (bytes: Uint8Array, start: number, len: number) =>
   String.fromCharCode(...bytes.slice(start, start + len));
 
 test("writeVarLen encodes small values as a single byte", () => {
@@ -88,11 +88,11 @@ test("encodeMidiFile sorts unordered notes by onset", () => {
   assert.ok(on60 > 0 && on72 > 0 && on60 < on72);
 });
 
-function containsSequence(bytes, seq) {
+function containsSequence(bytes: Uint8Array, seq: number[]) {
   return indexOfSequence(bytes, seq) !== -1;
 }
 
-function indexOfSequence(bytes, seq) {
+function indexOfSequence(bytes: Uint8Array, seq: number[]) {
   outer: for (let i = 0; i + seq.length <= bytes.length; i++) {
     for (let j = 0; j < seq.length; j++) {
       if (bytes[i + j] !== seq[j]) continue outer;

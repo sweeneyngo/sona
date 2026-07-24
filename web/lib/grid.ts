@@ -3,17 +3,43 @@
 // interprets them against a user-chosen BPM/grid/phase. Kept DOM-free so the
 // snapping and the confidence-aware escape hatch are unit-testable.
 
+import type { Note, SubScores } from "./annotation";
+
+/** The bits of a note this module reads: timing plus (optional) onset clarity. */
+export interface QuantizableNote extends Pick<Note, "onset_s" | "offset_s"> {
+  sub_scores?: Partial<SubScores>;
+}
+
+export interface QuantizeOptions {
+  spacing: number;
+  anchor?: number;
+  escapeDistanceCells?: number;
+  onsetConfidenceThreshold?: number;
+}
+
+export interface QuantizedNote {
+  onset_s: number;
+  offset_s: number;
+  escaped: boolean;
+}
+
+export interface NoteFlags {
+  flagged: boolean;
+  lowConfidence: boolean;
+  escaped: boolean;
+}
+
 /**
  * Seconds per grid cell for a note-value `division` (4 = quarter, 8 = eighth,
  * 16 = sixteenth, …) at `bpm`. A whole note is 4 beats, so a 1/division cell is
  * `4/division` beats: `240 / (bpm × division)` seconds.
  */
-export function gridSpacingSeconds(bpm, division) {
+export function gridSpacingSeconds(bpm: number, division: number): number {
   return 240 / (bpm * division);
 }
 
 /** Nearest grid line to `t`, where lines sit at `anchor + k·spacing`. */
-export function snapTime(t, spacing, anchor) {
+export function snapTime(t: number, spacing: number, anchor: number): number {
   return anchor + Math.round((t - anchor) / spacing) * spacing;
 }
 
@@ -22,8 +48,8 @@ export function snapTime(t, spacing, anchor) {
  * directions. The anchor fixes the grid *phase* (ADR: auto-anchored to the
  * first onset, draggable for pickups); this is what the UI draws.
  */
-export function gridLines(anchor, spacing, duration) {
-  const lines = [];
+export function gridLines(anchor: number, spacing: number, duration: number): number[] {
+  const lines: number[] = [];
   const firstK = Math.ceil((0 - anchor) / spacing - 1e-9);
   for (let k = firstK; ; k++) {
     const t = anchor + k * spacing;
@@ -45,9 +71,9 @@ export function gridLines(anchor, spacing, duration) {
  * Returns `{ onset_s, offset_s, escaped }`; never mutates the input.
  */
 export function quantizeNote(
-  note,
-  { spacing, anchor = 0, escapeDistanceCells = 0.25, onsetConfidenceThreshold = 0.8 },
-) {
+  note: QuantizableNote,
+  { spacing, anchor = 0, escapeDistanceCells = 0.25, onsetConfidenceThreshold = 0.8 }: QuantizeOptions,
+): QuantizedNote {
   const snappedOnset = snapTime(note.onset_s, spacing, anchor);
   const deviationCells = Math.abs(note.onset_s - snappedOnset) / spacing;
   const onsetClarity = note.sub_scores?.onset_clarity ?? 0;
@@ -67,7 +93,11 @@ export function quantizeNote(
  * when the escape hatch spared it from snapping. Both facts are surfaced so the
  * UI can say *why*.
  */
-export function noteFlags(note, quantized, threshold) {
+export function noteFlags(
+  note: { confidence: number },
+  quantized: { escaped?: boolean },
+  threshold: number,
+): NoteFlags {
   const lowConfidence = note.confidence < threshold;
   const escaped = !!quantized.escaped;
   return { flagged: lowConfidence || escaped, lowConfidence, escaped };

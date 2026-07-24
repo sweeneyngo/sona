@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 import {
@@ -7,7 +7,7 @@ import {
   weakestSubScore,
   pitchRange,
   makeScale,
-} from "./view.js";
+} from "./view";
 
 test("midiToNoteName names the anchor and octave boundaries", () => {
   assert.equal(midiToNoteName(69), "A4");
@@ -38,6 +38,7 @@ test("weakestSubScore picks the lowest dimension and labels it", () => {
     offset_clarity: 0.4,
   };
   const weakest = weakestSubScore(sub);
+  assert.ok(weakest);
   assert.equal(weakest.key, "offset_clarity");
   assert.equal(weakest.value, 0.4);
   assert.match(weakest.label, /offset/i);

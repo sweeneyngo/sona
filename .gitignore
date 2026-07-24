@@ -5,6 +5,10 @@
 
 # Cargo lock is kept for binaries (sona-cli); workspace root Cargo.lock is tracked.
 
+# Web review surface (Vite + TS, ADR-0009)
+web/node_modules
+web/dist
+
 # Editor / OS
 .DS_Store
 *.swp

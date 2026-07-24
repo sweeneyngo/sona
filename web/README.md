@@ -6,37 +6,45 @@ JSON from `sona-core`, plays stem-vs-synth, computes grid anchoring and
 hard-snap 16th quantization live, lets the user correct flagged notes, and
 exports MIDI.
 
-The annotation JSON contract it consumes is declared in
-[`annotation.d.ts`](annotation.d.ts), mirroring the Serde types in
-`crates/sona-core/src/annotation.rs` (ADR-0004) — keep the two in sync.
+The annotation JSON contract it consumes is the TypeScript in
+[`lib/annotation.ts`](lib/annotation.ts), mirroring the Serde types in
+`crates/sona-core/src/annotation.rs` (ADR-0004) — keep the two in sync. Because
+the whole app is typed against it, a drifting field is a compile error, not a
+silent bug.
 
-Static assets only — no build tooling. Serve the directory with any static
-file server, e.g.:
+Built with **Vite + TypeScript** (ADR-0009); tests run under **Vitest**.
 
 ```sh
-python3 -m http.server --directory web 8000
+cd web
+npm install
+npm run dev        # Vite dev server (HMR) at http://localhost:5173
+npm test           # Vitest — the pure lib/*.test.ts
+npm run typecheck  # tsc --noEmit
+npm run build      # type-check + emit static site to dist/
 ```
 
-Then open <http://localhost:8000>, choose an annotation JSON and its stem, and
-press **Play** to hear the stem against the synthesized notes.
+Then open the dev URL, choose an annotation JSON and its stem, and press
+**Play** to hear the stem against the synthesized notes. `npm run build` emits
+a plain static bundle (relative asset paths), so a production deploy is still
+just static files.
 
 ## Layout
 
-- [`index.html`](index.html) — the page: toolbar (file inputs, transport, mute
-  toggles), the `<canvas>` roll, and the confidence legend.
-- [`main.js`](main.js) — the browser layer: JSON/audio loading, canvas
-  rendering (notes, grid + phase ruler, f0 contour, energy envelope, pitch grid,
+- [`index.html`](index.html) — the page: toolbars (file inputs, transport, mute
+  toggles, BPM/grid/flag controls, export), the `<canvas>` roll, and the legend.
+- [`main.ts`](main.ts) — the browser layer: JSON/audio loading, canvas rendering
+  (notes, grid + phase ruler, f0 contour, energy envelope, pitch grid,
   playhead), hover/select tooltips, note editing, synced Web Audio playback, and
   MIDI export.
-- [`lib/*.js`](lib/) — the pure DOM-free maths, unit-tested with
-  `node --test web/lib/*.test.js`:
-  - [`view.js`](lib/view.js) — pitch/colour formatting and the time/pitch scale
+- [`lib/*.ts`](lib/) — the pure DOM-free maths, unit-tested with Vitest:
+  - [`annotation.ts`](lib/annotation.ts) — the core↔UI JSON contract types.
+  - [`view.ts`](lib/view.ts) — pitch/colour formatting and the time/pitch scale
     (+ its inverses, for editing).
-  - [`grid.js`](lib/grid.js) — grid spacing from BPM/division, snapping, grid
+  - [`grid.ts`](lib/grid.ts) — grid spacing from BPM/division, snapping, grid
     lines, the hard-snap quantizer with the confidence-aware escape hatch, and
     flag state.
-  - [`synth.js`](lib/synth.js) — MIDI→freq and the playback schedule.
-  - [`midi.js`](lib/midi.js) — the format-0 Standard MIDI File encoder.
+  - [`synth.ts`](lib/synth.ts) — MIDI→freq and the playback schedule.
+  - [`midi.ts`](lib/midi.ts) — the format-0 Standard MIDI File encoder.
 
 ## What it ships (tickets 08–10)
 
