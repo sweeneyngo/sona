@@ -1,0 +1,876 @@
+{
+  "notes": [
+    {
+      "onset_s": 0.1,
+      "offset_s": 1.0,
+      "midi_pitch": 69
+    }
+  ],
+  "f0": [
+    {
+      "time_s": 0.0,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.005804988662131519,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.011609977324263039,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.017414965986394557,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.023219954648526078,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.029024943310657598,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.034829931972789115,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.040634920634920635,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.046439909297052155,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.052244897959183675,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.058049886621315196,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.06385487528344672,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.06965986394557823,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.07546485260770976,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.08126984126984127,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.08707482993197278,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.09287981859410431,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.09868480725623582,
+      "frequency_hz": 0.0,
+      "voiced": false
+    },
+    {
+      "time_s": 0.10448979591836735,
+      "frequency_hz": 432.78424,
+      "voiced": true
+    },
+    {
+      "time_s": 0.11029478458049886,
+      "frequency_hz": 431.44077,
+      "voiced": true
+    },
+    {
+      "time_s": 0.11609977324263039,
+      "frequency_hz": 430.5047,
+      "voiced": true
+    },
+    {
+      "time_s": 0.1219047619047619,
+      "frequency_hz": 430.01794,
+      "voiced": true
+    },
+    {
+      "time_s": 0.12770975056689343,
+      "frequency_hz": 430.00217,
+      "voiced": true
+    },
+    {
+      "time_s": 0.13351473922902493,
+      "frequency_hz": 430.4581,
+      "voiced": true
+    },
+    {
+      "time_s": 0.13931972789115646,
+      "frequency_hz": 431.36542,
+      "voiced": true
+    },
+    {
+      "time_s": 0.14512471655328799,
+      "frequency_hz": 432.6835,
+      "voiced": true
+    },
+    {
+      "time_s": 0.1509297052154195,
+      "frequency_hz": 434.3529,
+      "voiced": true
+    },
+    {
+      "time_s": 0.156734693877551,
+      "frequency_hz": 436.29752,
+      "voiced": true
+    },
+    {
+      "time_s": 0.16253968253968254,
+      "frequency_hz": 438.4275,
+      "voiced": true
+    },
+    {
+      "time_s": 0.16834467120181407,
+      "frequency_hz": 440.64316,
+      "voiced": true
+    },
+    {
+      "time_s": 0.17414965986394557,
+      "frequency_hz": 442.83914,
+      "voiced": true
+    },
+    {
+      "time_s": 0.1799546485260771,
+      "frequency_hz": 444.90955,
+      "voiced": true
+    },
+    {
+      "time_s": 0.18575963718820862,
+      "frequency_hz": 446.75308,
+      "voiced": true
+    },
+    {
+      "time_s": 0.19156462585034015,
+      "frequency_hz": 448.27847,
+      "voiced": true
+    },
+    {
+      "time_s": 0.19736961451247165,
+      "frequency_hz": 449.40927,
+      "voiced": true
+    },
+    {
+      "time_s": 0.20317460317460317,
+      "frequency_hz": 450.08844,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2089795918367347,
+      "frequency_hz": 450.28143,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2147845804988662,
+      "frequency_hz": 449.97845,
+      "voiced": true
+    },
+    {
+      "time_s": 0.22058956916099773,
+      "frequency_hz": 449.19492,
+      "voiced": true
+    },
+    {
+      "time_s": 0.22639455782312926,
+      "frequency_hz": 447.97055,
+      "voiced": true
+    },
+    {
+      "time_s": 0.23219954648526078,
+      "frequency_hz": 446.36713,
+      "voiced": true
+    },
+    {
+      "time_s": 0.23800453514739228,
+      "frequency_hz": 444.46472,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2438095238095238,
+      "frequency_hz": 442.35736,
+      "voiced": true
+    },
+    {
+      "time_s": 0.24961451247165534,
+      "frequency_hz": 440.14777,
+      "voiced": true
+    },
+    {
+      "time_s": 0.25541950113378686,
+      "frequency_hz": 437.9422,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2612244897959184,
+      "frequency_hz": 435.84512,
+      "voiced": true
+    },
+    {
+      "time_s": 0.26702947845804986,
+      "frequency_hz": 433.95447,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2728344671201814,
+      "frequency_hz": 432.35724,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2786394557823129,
+      "frequency_hz": 431.1261,
+      "voiced": true
+    },
+    {
+      "time_s": 0.28444444444444444,
+      "frequency_hz": 430.3165,
+      "voiced": true
+    },
+    {
+      "time_s": 0.29024943310657597,
+      "frequency_hz": 429.96457,
+      "voiced": true
+    },
+    {
+      "time_s": 0.2960544217687075,
+      "frequency_hz": 430.086,
+      "voiced": true
+    },
+    {
+      "time_s": 0.301859410430839,
+      "frequency_hz": 430.6754,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3076643990929705,
+      "frequency_hz": 431.7065,
+      "voiced": true
+    },
+    {
+      "time_s": 0.313469387755102,
+      "frequency_hz": 433.13303,
+      "voiced": true
+    },
+    {
+      "time_s": 0.31927437641723355,
+      "frequency_hz": 434.89047,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3250793650793651,
+      "frequency_hz": 436.8984,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3308843537414966,
+      "frequency_hz": 439.06375,
+      "voiced": true
+    },
+    {
+      "time_s": 0.33668934240362813,
+      "frequency_hz": 441.28464,
+      "voiced": true
+    },
+    {
+      "time_s": 0.34249433106575966,
+      "frequency_hz": 443.4551,
+      "voiced": true
+    },
+    {
+      "time_s": 0.34829931972789113,
+      "frequency_hz": 445.47,
+      "voiced": true
+    },
+    {
+      "time_s": 0.35410430839002266,
+      "frequency_hz": 447.2304,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3599092970521542,
+      "frequency_hz": 448.6488,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3657142857142857,
+      "frequency_hz": 449.65396,
+      "voiced": true
+    },
+    {
+      "time_s": 0.37151927437641724,
+      "frequency_hz": 450.19507,
+      "voiced": true
+    },
+    {
+      "time_s": 0.37732426303854877,
+      "frequency_hz": 450.2446,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3831292517006803,
+      "frequency_hz": 449.80002,
+      "voiced": true
+    },
+    {
+      "time_s": 0.38893424036281177,
+      "frequency_hz": 448.88394,
+      "voiced": true
+    },
+    {
+      "time_s": 0.3947392290249433,
+      "frequency_hz": 447.5428,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4005442176870748,
+      "frequency_hz": 445.844,
+      "voiced": true
+    },
+    {
+      "time_s": 0.40634920634920635,
+      "frequency_hz": 443.8722,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4121541950113379,
+      "frequency_hz": 441.72446,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4179591836734694,
+      "frequency_hz": 439.5051,
+      "voiced": true
+    },
+    {
+      "time_s": 0.42376417233560093,
+      "frequency_hz": 437.32037,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4295691609977324,
+      "frequency_hz": 435.27332,
+      "voiced": true
+    },
+    {
+      "time_s": 0.43537414965986393,
+      "frequency_hz": 433.4591,
+      "voiced": true
+    },
+    {
+      "time_s": 0.44117913832199546,
+      "frequency_hz": 431.96097,
+      "voiced": true
+    },
+    {
+      "time_s": 0.446984126984127,
+      "frequency_hz": 430.8468,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4527891156462585,
+      "frequency_hz": 430.16663,
+      "voiced": true
+    },
+    {
+      "time_s": 0.45859410430839004,
+      "frequency_hz": 429.95087,
+      "voiced": true
+    },
+    {
+      "time_s": 0.46439909297052157,
+      "frequency_hz": 430.20908,
+      "voiced": true
+    },
+    {
+      "time_s": 0.47020408163265304,
+      "frequency_hz": 430.92975,
+      "voiced": true
+    },
+    {
+      "time_s": 0.47600907029478456,
+      "frequency_hz": 432.08075,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4818140589569161,
+      "frequency_hz": 433.61032,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4876190476190476,
+      "frequency_hz": 435.44907,
+      "voiced": true
+    },
+    {
+      "time_s": 0.49342403628117915,
+      "frequency_hz": 437.5125,
+      "voiced": true
+    },
+    {
+      "time_s": 0.4992290249433107,
+      "frequency_hz": 439.70465,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5050340136054422,
+      "frequency_hz": 441.92194,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5108390022675737,
+      "frequency_hz": 444.05807,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5166439909297053,
+      "frequency_hz": 446.00916,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5224489795918368,
+      "frequency_hz": 447.67905,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5282539682539683,
+      "frequency_hz": 448.98447,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5340589569160997,
+      "frequency_hz": 449.85974,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5398639455782313,
+      "frequency_hz": 450.2605,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5456689342403628,
+      "frequency_hz": 450.16632,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5514739229024943,
+      "frequency_hz": 449.58203,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5572789115646258,
+      "frequency_hz": 448.53732,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5630839002267574,
+      "frequency_hz": 447.08502,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5688888888888889,
+      "frequency_hz": 445.29797,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5746938775510204,
+      "frequency_hz": 443.26495,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5804988662131519,
+      "frequency_hz": 441.0856,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5863038548752835,
+      "frequency_hz": 438.8654,
+      "voiced": true
+    },
+    {
+      "time_s": 0.592108843537415,
+      "frequency_hz": 436.7101,
+      "voiced": true
+    },
+    {
+      "time_s": 0.5979138321995465,
+      "frequency_hz": 434.72104,
+      "voiced": true
+    },
+    {
+      "time_s": 0.603718820861678,
+      "frequency_hz": 432.99026,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6095238095238096,
+      "frequency_hz": 431.59686,
+      "voiced": true
+    },
+    {
+      "time_s": 0.615328798185941,
+      "frequency_hz": 430.60385,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6211337868480725,
+      "frequency_hz": 430.05573,
+      "voiced": true
+    },
+    {
+      "time_s": 0.626938775510204,
+      "frequency_hz": 429.9769,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6327437641723356,
+      "frequency_hz": 430.3709,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6385487528344671,
+      "frequency_hz": 431.22018,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6443537414965986,
+      "frequency_hz": 432.48676,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6501587301587302,
+      "frequency_hz": 434.11353,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6559637188208617,
+      "frequency_hz": 436.0265,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6617687074829932,
+      "frequency_hz": 438.13742,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6675736961451247,
+      "frequency_hz": 440.3477,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6733786848072563,
+      "frequency_hz": 442.55243,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6791836734693878,
+      "frequency_hz": 444.6455,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6849886621315193,
+      "frequency_hz": 446.52472,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6907936507936508,
+      "frequency_hz": 448.0971,
+      "voiced": true
+    },
+    {
+      "time_s": 0.6965986394557823,
+      "frequency_hz": 449.2841,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7024036281179138,
+      "frequency_hz": 450.02573,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7082086167800453,
+      "frequency_hz": 450.2844,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7140136054421768,
+      "frequency_hz": 450.04694,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7198185941043084,
+      "frequency_hz": 449.32544,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7256235827664399,
+      "frequency_hz": 448.15652,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7314285714285714,
+      "frequency_hz": 446.5992,
+      "voiced": true
+    },
+    {
+      "time_s": 0.737233560090703,
+      "frequency_hz": 444.73135,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7430385487528345,
+      "frequency_hz": 442.64542,
+      "voiced": true
+    },
+    {
+      "time_s": 0.748843537414966,
+      "frequency_hz": 440.4433,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7546485260770975,
+      "frequency_hz": 438.2311,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7604535147392291,
+      "frequency_hz": 436.1138,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7662585034013606,
+      "frequency_hz": 434.19043,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7720634920634921,
+      "frequency_hz": 432.5497,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7778684807256235,
+      "frequency_hz": 431.26636,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7836734693877551,
+      "frequency_hz": 430.39822,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7894784580498866,
+      "frequency_hz": 429.98416,
+      "voiced": true
+    },
+    {
+      "time_s": 0.7952834467120181,
+      "frequency_hz": 430.0426,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8010884353741496,
+      "frequency_hz": 430.57092,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8068934240362812,
+      "frequency_hz": 431.5456,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8126984126984127,
+      "frequency_hz": 432.92294,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8185034013605442,
+      "frequency_hz": 434.64075,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8243083900226758,
+      "frequency_hz": 436.62054,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8301133786848073,
+      "frequency_hz": 438.7707,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8359183673469388,
+      "frequency_hz": 440.99026,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8417233560090703,
+      "frequency_hz": 443.17355,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8475283446712019,
+      "frequency_hz": 445.215,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8533333333333334,
+      "frequency_hz": 447.01453,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8591383219954648,
+      "frequency_hz": 448.48285,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8649433106575963,
+      "frequency_hz": 449.54633,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8707482993197279,
+      "frequency_hz": 450.15118,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8765532879818594,
+      "frequency_hz": 450.2667,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8823582766439909,
+      "frequency_hz": 449.88696,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8881632653061224,
+      "frequency_hz": 449.03134,
+      "voiced": true
+    },
+    {
+      "time_s": 0.893968253968254,
+      "frequency_hz": 447.74316,
+      "voiced": true
+    },
+    {
+      "time_s": 0.8997732426303855,
+      "frequency_hz": 446.08734,
+      "voiced": true
+    },
+    {
+      "time_s": 0.905578231292517,
+      "frequency_hz": 444.14642,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9113832199546485,
+      "frequency_hz": 442.01614,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9171882086167801,
+      "frequency_hz": 439.80017,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9229931972789116,
+      "frequency_hz": 437.6048,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9287981859410431,
+      "frequency_hz": 435.53375,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9346031746031747,
+      "frequency_hz": 433.68353,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9404081632653061,
+      "frequency_hz": 432.13913,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9462131519274376,
+      "frequency_hz": 430.97067,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9520181405895691,
+      "frequency_hz": 430.23068,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9578231292517007,
+      "frequency_hz": 429.9522,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9636281179138322,
+      "frequency_hz": 430.14767,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9694331065759637,
+      "frequency_hz": 430.80835,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9752380952380952,
+      "frequency_hz": 431.90475,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9810430839002268,
+      "frequency_hz": 433.3877,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9868480725623583,
+      "frequency_hz": 435.18994,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9926530612244898,
+      "frequency_hz": 437.22888,
+      "voiced": true
+    },
+    {
+      "time_s": 0.9984580498866213,
+      "frequency_hz": 439.40976,
+      "voiced": true
+    }
+  ]
+}

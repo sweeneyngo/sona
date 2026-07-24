@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sona-core", "crates/sona-cli"]
+members = ["crates/sona-core", "crates/sona-cli", "crates/sona-eval"]
 
 [workspace.package]
 version = "0.1.0"

@@ -302,6 +302,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sona-eval"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "serde",
+ "serde_json",
+ "sona-core",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

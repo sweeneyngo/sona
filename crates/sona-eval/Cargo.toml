@@ -1,0 +1,27 @@
+[package]
+name = "sona-eval"
+description = "Offline evaluation harness (ADR-0011): measure the perception pipeline against labeled vocal data (Vocadito + golden fixtures). Not shipped to users — it is the ruler, not the product."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Reuse the core's Hz->MIDI conversion and (later tickets) run the pipeline.
+sona-core.workspace = true
+# The common reference type + golden-fixture ground truth are serde JSON.
+serde.workspace = true
+serde_json.workspace = true
+# Decode fixture WAVs. The core is deliberately I/O-free (it takes mono `&[f32]`),
+# so WAV decoding lives here, as it does in the CLI.
+hound.workspace = true
+
+# The report harness (metrics land in ticket 02; this scaffold verifies loading).
+[[bin]]
+name = "sona-eval-report"
+path = "src/bin/report.rs"
+
+# Regenerates the committed golden fixtures (WAV + ground-truth reference JSON).
+[[bin]]
+name = "sona-eval-gen-fixtures"
+path = "src/bin/gen_fixtures.rs"

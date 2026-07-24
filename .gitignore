@@ -9,6 +9,9 @@
 web/node_modules
 web/dist
 
+# Eval harness: the Vocadito corpus is fetched locally, never committed (ADR-0011)
+crates/sona-eval/data/
+
 # Editor / OS
 .DS_Store
 *.swp
