@@ -22,6 +22,10 @@
         font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         background: var(--bg);
         color: var(--ink);
+        /* Fill the viewport so the roll can take all the height that's left. */
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
       }
       header {
         padding: 12px 16px;
@@ -110,6 +114,11 @@
       }
       main {
         padding: 16px;
+        /* Grow to fill the viewport; min-height:0 lets the roll actually shrink. */
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
       }
       .roll-wrap {
         position: relative;
@@ -117,11 +126,18 @@
         border-radius: 8px;
         overflow: hidden;
         background: #0d0f14;
+        /* Take all the space left in <main> above the legend, with a floor. */
+        flex: 1 1 auto;
+        min-height: 320px;
       }
       #roll {
         display: block;
+        /* Absolute-fill the wrap: a canvas ignores height:100% and falls back to
+           its intrinsic (attribute) height, so pin it to the box instead. */
+        position: absolute;
+        inset: 0;
         width: 100%;
-        height: 480px;
+        height: 100%;
       }
       #tooltip {
         position: absolute;
