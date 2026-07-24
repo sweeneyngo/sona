@@ -133,6 +133,8 @@ let noteHitboxes: Hitbox[] = [];
 let selectedNote: WorkingNote | null = null;
 /** In-progress drag (move / resize / grid-offset), or null. */
 let drag: Drag | null = null;
+/** True while the pointer is over the roll — gates the occupied-pitch highlight. */
+let overRoll = false;
 
 // Musical interpretation (ticket 09). Seeded on load; edited via the toolbar.
 let bpm = 120;
@@ -505,6 +507,7 @@ function draw(): void {
   ctx2d.rect(PAD.left, PAD.top, w - PAD.left, h - PAD.top);
   ctx2d.clip();
   drawTimeGrid(w, h);
+  if (overRoll || drag) drawPitchHighlights(w); // occupied-pitch guide on hover/edit
   drawEnergyEnvelope(w, h);
   drawF0Contour();
   drawNotes();
@@ -548,6 +551,23 @@ function drawPitchGrid(w: number, _h: number): void {
 
 function isBlackKey(midi: number): boolean {
   return [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12);
+}
+
+/**
+ * Faintly band the pitch rows that visible notes occupy — a guide, shown while
+ * hovering or editing, for the set of pitches in play ("the chord of the song").
+ * Distinct pitches only, within the visible time window and the 2-octave band.
+ */
+function drawPitchHighlights(w: number): void {
+  if (!scale) return;
+  const seen = new Set<number>();
+  for (const e of visibleNotes()) {
+    if (e.offset_s < viewT0 || e.onset_s > viewT1) continue;
+    if (e.pitch < scale.minPitch || e.pitch > scale.maxPitch || seen.has(e.pitch)) continue;
+    seen.add(e.pitch);
+    ctx2d.fillStyle = "rgba(189, 181, 145, 0.1)"; // accent, faint
+    ctx2d.fillRect(PAD.left, scale.pitchToY(e.pitch), w - PAD.left, scale.rowHeight);
+  }
 }
 
 /**
@@ -1044,9 +1064,15 @@ function updateHover(e: MouseEvent): void {
   else el.tooltip.style.display = "none";
 }
 
+el.canvas.addEventListener("mouseenter", () => {
+  overRoll = true;
+  redraw(); // reveal the occupied-pitch highlight
+});
 el.canvas.addEventListener("mouseleave", () => {
+  overRoll = false;
   if (selectedNote) showSelectedTooltip();
   else el.tooltip.style.display = "none";
+  redraw(); // hide the highlight
 });
 
 function canvasPoint(e: MouseEvent): { x: number; y: number } {
@@ -1076,7 +1102,9 @@ function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px
     ? `<div class="reason" style="color:${OUTLIER_COLOR}">◇ pitch outlier (wrong octave?)</div>`
     : effective?.escaped
       ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
-      : weakest
+      : // Only warn if the weakest dimension is actually shaky — a perfect note
+        // (all sub-scores 1.00, e.g. a manual one) needs no ⚠ reason.
+        weakest && weakest.value < 1
         ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
         : "";
   el.tooltip.innerHTML = `
