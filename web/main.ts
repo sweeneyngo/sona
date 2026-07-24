@@ -22,6 +22,7 @@ import {
   defaultPitchTop,
   pitchTopRange,
   pitchOutlierFlags,
+  pitchSlopeStPerSec,
 } from "./lib/view";
 import type { Scale } from "./lib/view";
 import { buildSchedule } from "./lib/synth";
@@ -600,6 +601,11 @@ function drawEnergyEnvelope(_w: number, h: number): void {
 // Bridge unvoiced dropouts shorter than this (seconds); longer gaps — real rests
 // between notes — still break the line so we never draw pitch that isn't there.
 const CONTOUR_BRIDGE_S = 0.18;
+// A frame reached by a steeper pitch slope than this (semitones/sec) is an
+// octave/tracking artifact — no voice slides that fast — so it's dropped and the
+// line bridges across it. An octave in one ~10ms frame is ~1200; real slides are
+// tens of semitones/sec, so 150 cleanly separates them.
+const MAX_CONTOUR_SLOPE_ST_PER_S = 150;
 
 function drawF0Contour(): void {
   if (!annotation || !scale) return;
@@ -618,6 +624,7 @@ function strokeContour(
   ctx2d.beginPath();
   let pen = false;
   let lastT = 0;
+  let lastHz = 0;
   for (const f of contour) {
     // Skip frames that don't qualify — but *don't* force the pen up here. Whether
     // to break is decided by the time gap to the last drawn point, so brief
@@ -627,12 +634,20 @@ function strokeContour(
       pen = false; // off-screen: start a fresh sub-path when we re-enter
       continue;
     }
+    const dt = f.time_s - lastT;
+    // Octave/tracking artifact: reached by an impossibly steep slope while the
+    // line is live. Drop it and keep `last` put so we bridge to the next sane
+    // sample instead of drawing the spike.
+    if (pen && dt <= CONTOUR_BRIDGE_S && pitchSlopeStPerSec(lastHz, f.frequency_hz, dt) > MAX_CONTOUR_SLOPE_ST_PER_S) {
+      continue;
+    }
     const x = scale!.timeToX(f.time_s);
     const y = freqToY(f.frequency_hz);
-    if (!pen || f.time_s - lastT > CONTOUR_BRIDGE_S) ctx2d.moveTo(x, y);
+    if (!pen || dt > CONTOUR_BRIDGE_S) ctx2d.moveTo(x, y);
     else ctx2d.lineTo(x, y);
     pen = true;
     lastT = f.time_s;
+    lastHz = f.frequency_hz;
   }
   ctx2d.stroke();
   ctx2d.lineWidth = 1;

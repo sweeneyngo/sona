@@ -111,6 +111,19 @@ export function pitchOutlierFlags(
 }
 
 /**
+ * Magnitude of the pitch slope between two f0 samples, in semitones per second.
+ * A real voice can't change pitch arbitrarily fast, so an implausibly large
+ * slope (e.g. an octave in one ~10ms frame) marks a tracking artifact — an
+ * octave jump — rather than real singing. `dt <= 0` is treated as infinitely
+ * steep so duplicate/backwards timestamps are always rejected.
+ */
+export function pitchSlopeStPerSec(hzA: number, hzB: number, dtS: number): number {
+  if (dtS <= 0) return Infinity;
+  const semitones = Math.abs(12 * Math.log2(hzB / hzA));
+  return semitones / dtS;
+}
+
+/**
  * Horizontal zoom that makes roughly `targetSeconds` of the timeline fill the
  * view (a sensible zoomed-in default instead of the whole song). Clamped to
  * `[minZoom, maxZoom]`.
