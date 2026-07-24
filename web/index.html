@@ -360,6 +360,15 @@
         color: var(--muted);
         font-size: 13px;
       }
+      .setting {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .setting input[type="range"] {
+        width: 220px;
+      }
       .shortcuts {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -400,13 +409,6 @@
 
       <div class="controls">
         <div class="cluster">
-          <input id="json-input" type="file" accept="application/json,.json" title="Annotation JSON" />
-          <input id="audio-input" type="file" accept="audio/*" title="Vocal stem" />
-        </div>
-
-        <div class="divider" aria-hidden="true"></div>
-
-        <div class="cluster">
           <button id="play" class="icon-btn primary" title="Play (Space)" disabled>▶</button>
           <button id="stop" class="icon-btn" title="Pause (Space)" disabled>⏸</button>
           <label class="toggle" title="Mute the stem"><input id="mute-stem" type="checkbox" /> stem</label>
@@ -429,10 +431,6 @@
               <option value="32">1/32</option>
             </select>
           </span>
-          <span class="field">
-            <label for="flag">Flag ≤ <output id="flag-val">0.50</output></label>
-            <input id="flag" type="range" min="0" max="1" step="0.01" value="0.5" />
-          </span>
           <label class="toggle" title="Hide wrong-octave pitch outliers">
             <input id="hide-outliers" type="checkbox" checked /> outliers
           </label>
@@ -445,7 +443,8 @@
 
         <div class="spacer"></div>
 
-        <span id="status">Load an annotation JSON and a stem to begin.</span>
+        <span id="status">Open ⚙ to load an annotation JSON and a stem.</span>
+        <button id="settings" class="round" title="Settings — load files, flag threshold" aria-label="Settings">⚙</button>
         <button id="help" class="round" title="Help &amp; keyboard shortcuts" aria-label="Help">?</button>
       </div>
     </header>
@@ -516,6 +515,32 @@
               <div><span class="kbd">?</span> this help</div>
             </div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-head">
+          <h2 id="settings-title">Settings</h2>
+          <button id="settings-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting">
+            <h3>Annotation / session JSON</h3>
+            <input id="json-input" type="file" accept="application/json,.json" />
+            <p>The core's annotation, or a saved session to resume editing.</p>
+          </div>
+          <div class="setting">
+            <h3>Vocal stem (audio)</h3>
+            <input id="audio-input" type="file" accept="audio/*" />
+            <p>Played against the synthesized notes. Any format the browser decodes.</p>
+          </div>
+          <div class="setting">
+            <h3>Flag threshold <output id="flag-val">0.50</output></h3>
+            <input id="flag" type="range" min="0" max="1" step="0.01" value="0.5" />
+            <p>Notes below this confidence are outlined red for review. Calibrate by ear per song.</p>
+          </div>
         </div>
       </div>
     </div>

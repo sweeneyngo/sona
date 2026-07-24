@@ -64,6 +64,9 @@ const el = {
   help: document.getElementById("help") as HTMLButtonElement,
   helpOverlay: document.getElementById("help-overlay") as HTMLDivElement,
   helpClose: document.getElementById("help-close") as HTMLButtonElement,
+  settings: document.getElementById("settings") as HTMLButtonElement,
+  settingsOverlay: document.getElementById("settings-overlay") as HTMLDivElement,
+  settingsClose: document.getElementById("settings-close") as HTMLButtonElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -351,15 +354,29 @@ el.outliers.addEventListener("change", () => {
 });
 el.export.addEventListener("click", exportMidi);
 
-// --- Help modal -------------------------------------------------------------
+// --- Modals (help + settings) -----------------------------------------------
 
-function setHelp(open: boolean): void {
-  el.helpOverlay.hidden = !open;
+function setModal(overlay: HTMLElement, open: boolean): void {
+  // Only one modal at a time; opening one closes the other.
+  if (open) {
+    el.helpOverlay.hidden = true;
+    el.settingsOverlay.hidden = true;
+  }
+  overlay.hidden = !open;
 }
-el.help.addEventListener("click", () => setHelp(true));
-el.helpClose.addEventListener("click", () => setHelp(false));
+function anyModalOpen(): boolean {
+  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden;
+}
+
+el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
+el.helpClose.addEventListener("click", () => setModal(el.helpOverlay, false));
 el.helpOverlay.addEventListener("click", (e) => {
-  if (e.target === el.helpOverlay) setHelp(false); // click the backdrop to close
+  if (e.target === el.helpOverlay) setModal(el.helpOverlay, false);
+});
+el.settings.addEventListener("click", () => setModal(el.settingsOverlay, el.settingsOverlay.hidden));
+el.settingsClose.addEventListener("click", () => setModal(el.settingsOverlay, false));
+el.settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === el.settingsOverlay) setModal(el.settingsOverlay, false);
 });
 
 // --- Layout / geometry ------------------------------------------------------
@@ -500,7 +517,7 @@ function drawPlaceholder(w: number, h: number): void {
   ctx2d.fillStyle = "#5b6072";
   ctx2d.font = "13px system-ui, sans-serif";
   ctx2d.textAlign = "center";
-  ctx2d.fillText("Load an annotation JSON to render the roll.", w / 2, h / 2);
+  ctx2d.fillText("Open ⚙ Settings to load an annotation JSON.", w / 2, h / 2);
   ctx2d.textAlign = "left";
 }
 
@@ -933,23 +950,24 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
 });
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  // Modal first: Escape closes it, "?" toggles it — regardless of focus.
-  if (e.key === "Escape" && !el.helpOverlay.hidden) {
-    setHelp(false);
+  // Modal first: Escape closes any open modal, "?" toggles help — regardless of focus.
+  if (e.key === "Escape" && anyModalOpen()) {
+    setModal(el.helpOverlay, false);
+    setModal(el.settingsOverlay, false);
     e.preventDefault();
     return;
   }
   const tag = document.activeElement?.tagName;
   const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
   if (e.key === "?" && !inField) {
-    setHelp(el.helpOverlay.hidden);
+    setModal(el.helpOverlay, el.helpOverlay.hidden);
     e.preventDefault();
     return;
   }
 
-  // Don't hijack the roll shortcuts while a form control is focused or the
-  // help modal is open.
-  if (inField || !el.helpOverlay.hidden) return;
+  // Don't hijack the roll shortcuts while a form control is focused or a modal
+  // is open.
+  if (inField || anyModalOpen()) return;
   if (!annotation) return;
 
   const beat = 60 / bpm; // seek step: one beat, or a bar with Shift.
