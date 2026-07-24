@@ -135,6 +135,8 @@ let selectedNote: WorkingNote | null = null;
 let drag: Drag | null = null;
 /** True while the pointer is over the roll — gates the occupied-pitch highlight. */
 let overRoll = false;
+/** Unsaved edits since the last autosave (drives the 20s autosave tick). */
+let dirty = false;
 
 // Musical interpretation (ticket 09). Seeded on load; edited via the toolbar.
 let bpm = 120;
@@ -172,38 +174,14 @@ el.json.addEventListener("change", async () => {
   if (!file) return;
   try {
     const parsed = JSON.parse(await file.text());
-    annotation = normalizeAnnotation(parsed);
-    // Build the editable set straight from the parsed notes so a saved session's
-    // `manual` flags and exact raw positions survive the round-trip.
-    workingNotes = (parsed.notes as any[]).map((n) => ({
-      onset_s: Number(n.onset_s),
-      offset_s: Number(n.offset_s),
-      midi_pitch: Number(n.midi_pitch),
-      confidence: Number(n.confidence),
-      sub_scores: n.sub_scores ?? {},
-      ...(n.manual ? { manual: true as const } : {}),
-    }));
-    selectedNote = null;
-    seekOffset = 0;
-    invalidateEffective();
-
-    const session = parsed.session;
-    if (session && typeof session === "object") {
-      restoreSession(session); // a saved session carries its own review settings
-    } else {
-      // A fresh annotation: seed BPM from the file, grid phase on the first onset.
-      bpm = annotation.bpm > 0 ? annotation.bpm : 120;
-      el.bpm.value = String(bpm);
-      gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
-    }
-    resetView(); // zoomed-in default + 2-octave window centred on the notes.
-    const hidden = effectiveNotes().filter((e) => e.outlier).length;
+    const session = applyLoadedJson(parsed);
     const what = session ? "session" : "annotation";
+    const hidden = effectiveNotes().filter((e) => e.outlier).length;
     setStatus(
       `Loaded ${what}: ${workingNotes.length} notes from “${file.name}”.` +
         (hideOutliers && hidden ? ` Hiding ${hidden} outlier${hidden > 1 ? "s" : ""}.` : ""),
     );
-    rebuild();
+    dirty = false; // a freshly loaded file is not unsaved work
   } catch (err) {
     annotation = null;
     workingNotes = [];
@@ -211,6 +189,41 @@ el.json.addEventListener("change", async () => {
     rebuild();
   }
 });
+
+/**
+ * Apply a parsed annotation/session object to the editing state (used by the
+ * file loader and autosave restore). Returns whether it carried a `session`
+ * block. Does not set a filename-specific status.
+ */
+function applyLoadedJson(parsed: any): boolean {
+  annotation = normalizeAnnotation(parsed);
+  // Build the editable set straight from the parsed notes so a saved session's
+  // `manual` flags and exact raw positions survive the round-trip.
+  workingNotes = (parsed.notes as any[]).map((n) => ({
+    onset_s: Number(n.onset_s),
+    offset_s: Number(n.offset_s),
+    midi_pitch: Number(n.midi_pitch),
+    confidence: Number(n.confidence),
+    sub_scores: n.sub_scores ?? {},
+    ...(n.manual ? { manual: true as const } : {}),
+  }));
+  selectedNote = null;
+  seekOffset = 0;
+  invalidateEffective();
+
+  const session = parsed.session;
+  if (session && typeof session === "object") {
+    restoreSession(session); // a saved session carries its own review settings
+  } else {
+    // A fresh annotation: seed BPM from the file, grid phase on the first onset.
+    bpm = annotation.bpm > 0 ? annotation.bpm : 120;
+    el.bpm.value = String(bpm);
+    gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
+  }
+  resetView(); // zoomed-in default + 2-octave window centred on the notes.
+  rebuild();
+  return !!(session && typeof session === "object");
+}
 
 el.audio.addEventListener("change", async () => {
   const file = el.audio.files?.[0];
@@ -336,22 +349,26 @@ el.bpm.addEventListener("input", () => {
   if (v > 0 && Number.isFinite(v)) {
     bpm = v;
     invalidateEffective();
+    markDirty();
     redraw();
   }
 });
 el.division.addEventListener("change", () => {
   division = Number(el.division.value);
   invalidateEffective();
+  markDirty();
   redraw();
 });
 el.flag.addEventListener("input", () => {
   flagThreshold = Number(el.flag.value);
   el.flagVal.textContent = flagThreshold.toFixed(2);
   invalidateEffective();
+  markDirty();
   redraw();
 });
 el.outliers.addEventListener("change", () => {
   hideOutliers = el.outliers.checked;
+  markDirty();
   redraw(); // no invalidate: the outlier flag is cached, only the filter changes.
 });
 el.export.addEventListener("click", exportMidi);
@@ -861,6 +878,7 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
     if (d.moved) {
       gridAnchor = d.origAnchor + dt;
       invalidateEffective(); // snapping depends on the phase
+      markDirty();
       redraw();
     }
     return;
@@ -879,6 +897,7 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
     n.manual = true;
   }
   invalidateEffective(); // the note's quantized position changed
+  markDirty();
   redraw();
   showSelectedTooltip();
 });
@@ -967,6 +986,7 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   workingNotes.push(note);
   selectedNote = note;
   invalidateEffective();
+  markDirty();
   redraw();
   showSelectedTooltip();
 });
@@ -1002,6 +1022,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       selectedNote = null;
       el.tooltip.style.display = "none";
       invalidateEffective();
+      markDirty();
       redraw();
       break;
     case " ": // play / pause
@@ -1151,19 +1172,87 @@ interface SessionState {
 }
 
 /**
- * Save the full editing session as JSON: the annotation (f0 contour, energy,
- * per-note confidence — all preserved) with `notes` replaced by the current
- * working set (raw seconds + `manual` flags) and the review settings appended.
- * Loading it via the annotation input restores everything, unlike a MIDI export
- * which keeps only the snapped pitches/timings.
+ * The full editing session: the annotation (f0 contour, energy, per-note
+ * confidence — all preserved) with `notes` replaced by the current working set
+ * (raw seconds + `manual` flags) and the review settings appended.
+ */
+function buildSessionFile(): object {
+  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, hideOutliers };
+  return { ...annotation, notes: workingNotes, session };
+}
+
+/**
+ * Save the session to a JSON file. Loading it via the annotation input restores
+ * everything, unlike a MIDI export which keeps only the snapped pitches/timings.
  */
 function saveSession(): void {
   if (!annotation) return;
-  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, hideOutliers };
-  const file = { ...annotation, notes: workingNotes, session };
-  download(JSON.stringify(file), "sona-session.json", "application/json");
+  download(JSON.stringify(buildSessionFile()), "sona-session.json", "application/json");
+  dirty = false;
   setStatus(`Saved session: ${workingNotes.length} notes → sona-session.json.`);
 }
+
+// --- Autosave (localStorage) ------------------------------------------------
+
+const AUTOSAVE_KEY = "sona.autosave.v1";
+const AUTOSAVE_MS = 20_000;
+
+function markDirty(): void {
+  dirty = true;
+}
+
+/**
+ * Persist the session to localStorage (not a download — that would spam the
+ * Downloads folder). Retries without the immutable f0/energy tracks if the full
+ * session exceeds the storage quota, so at least the edits + settings survive.
+ */
+function autosave(): void {
+  if (!annotation) return;
+  const file = buildSessionFile();
+  const savedAt = new Date().toISOString();
+  const write = (payload: object) => localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+  try {
+    write({ savedAt, file });
+  } catch {
+    try {
+      write({ savedAt, file: { ...file, f0_contour: [], energy_envelope: [] }, lite: true });
+    } catch {
+      return; // storage unavailable / still too big — give up quietly
+    }
+  }
+  dirty = false;
+  setStatus(`Autosaved ${new Date(savedAt).toLocaleTimeString()} · ${workingNotes.length} notes.`);
+}
+
+/** Restore the last autosaved session on startup, if one exists. */
+function restoreAutosave(): void {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(AUTOSAVE_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  try {
+    const record = JSON.parse(raw);
+    applyLoadedJson(record.file);
+    dirty = false;
+    const when = record.savedAt ? new Date(record.savedAt).toLocaleString() : "earlier";
+    setStatus(
+      `Restored autosave (${workingNotes.length} notes) from ${when}. Re-load the stem to play.`,
+    );
+  } catch (err) {
+    console.error("sona: could not restore autosave", err);
+  }
+}
+
+// Tick every 20s; only writes when there are unsaved edits. Also flush on close.
+window.setInterval(() => {
+  if (dirty) autosave();
+}, AUTOSAVE_MS);
+window.addEventListener("beforeunload", () => {
+  if (dirty) autosave();
+});
 
 /** Restore review settings from a saved session's `session` block. */
 function restoreSession(s: any): void {
@@ -1382,5 +1471,25 @@ function setStatus(msg: string, isError = false): void {
   el.status.classList.toggle("error", isError);
 }
 
-// First paint (placeholder) once the layout has a size.
-requestAnimationFrame(rebuild);
+// First paint (placeholder) once the layout has a size, then restore any
+// autosaved session so a reload/crash resumes where you left off. localStorage
+// can lag a frame behind a reload in sandboxed environments, so retry briefly
+// until it's readable (and stop if the user loads a file in the meantime).
+function attemptRestore(tries = 0): void {
+  if (annotation) return;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(AUTOSAVE_KEY);
+  } catch {
+    return; // storage unavailable
+  }
+  if (raw) restoreAutosave();
+  else if (tries < 8) setTimeout(() => attemptRestore(tries + 1), 120);
+}
+// setTimeout, not requestAnimationFrame: rAF is paused while the tab is
+// backgrounded, which would leave the initial paint and autosave restore
+// hanging until the tab is focused.
+setTimeout(() => {
+  rebuild();
+  attemptRestore();
+}, 0);
