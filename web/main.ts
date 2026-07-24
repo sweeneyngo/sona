@@ -524,15 +524,17 @@ function drawPlaceholder(w: number, h: number): void {
   ctx2d.textAlign = "left";
 }
 
-/** Horizontal rows per semitone, with note names on the octave lines (C). */
+/** Horizontal rows per semitone, each labelled with its note name in the gutter. */
 function drawPitchGrid(w: number, _h: number): void {
   if (!scale) return;
-  ctx2d.font = "10px system-ui, sans-serif";
+  ctx2d.font = '9px "Space Mono", ui-monospace, monospace';
+  ctx2d.textAlign = "center";
   ctx2d.textBaseline = "middle";
   for (let pitch = scale.minPitch; pitch <= scale.maxPitch; pitch++) {
     const y = scale.pitchToY(pitch);
     const isC = pitch % 12 === 0;
-    if (isBlackKey(pitch)) {
+    const black = isBlackKey(pitch);
+    if (black) {
       ctx2d.fillStyle = "#171a22";
       ctx2d.fillRect(PAD.left, y, w - PAD.left, scale.rowHeight);
     }
@@ -541,11 +543,11 @@ function drawPitchGrid(w: number, _h: number): void {
     ctx2d.moveTo(PAD.left, y);
     ctx2d.lineTo(w, y);
     ctx2d.stroke();
-    if (isC) {
-      ctx2d.fillStyle = "#7a8090";
-      ctx2d.fillText(midiToNoteName(pitch), 6, y + scale.rowHeight / 2);
-    }
+    // Label every row, centred in the key gutter; C brighter, black keys dimmer.
+    ctx2d.fillStyle = isC ? "#9aa0b0" : black ? "#565c6a" : "#787e8c";
+    ctx2d.fillText(midiToNoteName(pitch), PAD.left / 2, y + scale.rowHeight / 2);
   }
+  ctx2d.textAlign = "left";
   ctx2d.textBaseline = "alphabetic";
 }
 
