@@ -33,7 +33,8 @@ import type { Annotation, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
-const NOTE_RADIUS = 3;
+const NOTE_RADIUS = 6; // rounder note corners (clamped to the bar half-extent)
+const NOTE_FILL_ALPHA = 0.62; // translucent fill so the f0 contour shows through
 const RESIZE_GRAB_PX = 7; // right-edge zone that starts a resize instead of a move.
 const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
@@ -687,9 +688,12 @@ function drawNotes(): void {
     const x = scale.timeToX(eff.onset_s);
     const y = scale.pitchToY(eff.pitch) + (scale.rowHeight - barH) / 2;
     const wNote = Math.max(3, scale.timeToX(eff.offset_s) - x);
+    // Translucent fill so the f0 contour drawn underneath reads through the note.
     ctx2d.fillStyle = confidenceColor(eff.raw.confidence);
+    ctx2d.globalAlpha = NOTE_FILL_ALPHA;
     roundRect(x, y, wNote, barH, NOTE_RADIUS);
     ctx2d.fill();
+    ctx2d.globalAlpha = 1; // outlines and everything after stay fully opaque
 
     // Outline: outlier (dashed magenta), escaped (dashed cyan), flagged (red)
     // are the review cues. Outliers only reach here when "hide outliers" is off.
