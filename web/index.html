@@ -440,6 +440,7 @@
 
         <div class="divider" aria-hidden="true"></div>
 
+        <button id="save" title="Save session (JSON) — reload it to resume editing" disabled>⤒ Save</button>
         <button id="export" title="Export MIDI" disabled>⤓ MIDI</button>
 
         <div class="spacer"></div>
@@ -476,6 +477,9 @@
               synthesized notes. Notes hard-snap to the grid live (set BPM · division ·
               drag the ruler for phase); a confident off-grid note escapes snapping and is
               flagged. Fix flagged notes, then export the corrected MIDI.
+              <b>Save</b> writes a session JSON — reload it through the annotation
+              input to resume editing exactly where you left off (MIDI can't do
+              that: it keeps only the snapped notes).
             </p>
           </section>
 

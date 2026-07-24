@@ -56,6 +56,7 @@ const el = {
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
   outliers: document.getElementById("hide-outliers") as HTMLInputElement,
+  save: document.getElementById("save") as HTMLButtonElement,
   export: document.getElementById("export") as HTMLButtonElement,
   status: document.getElementById("status") as HTMLElement,
   canvas: document.getElementById("roll") as HTMLCanvasElement,
@@ -167,18 +168,34 @@ el.json.addEventListener("change", async () => {
   try {
     const parsed = JSON.parse(await file.text());
     annotation = normalizeAnnotation(parsed);
-    workingNotes = annotation.notes.map((n) => ({ ...n, sub_scores: { ...n.sub_scores } }));
+    // Build the editable set straight from the parsed notes so a saved session's
+    // `manual` flags and exact raw positions survive the round-trip.
+    workingNotes = (parsed.notes as any[]).map((n) => ({
+      onset_s: Number(n.onset_s),
+      offset_s: Number(n.offset_s),
+      midi_pitch: Number(n.midi_pitch),
+      confidence: Number(n.confidence),
+      sub_scores: n.sub_scores ?? {},
+      ...(n.manual ? { manual: true as const } : {}),
+    }));
     selectedNote = null;
     seekOffset = 0;
     invalidateEffective();
-    // Seed the grid from the annotation: BPM as carried, phase on the first onset.
-    bpm = annotation.bpm > 0 ? annotation.bpm : 120;
-    el.bpm.value = String(bpm);
-    gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
+
+    const session = parsed.session;
+    if (session && typeof session === "object") {
+      restoreSession(session); // a saved session carries its own review settings
+    } else {
+      // A fresh annotation: seed BPM from the file, grid phase on the first onset.
+      bpm = annotation.bpm > 0 ? annotation.bpm : 120;
+      el.bpm.value = String(bpm);
+      gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
+    }
     resetView(); // zoomed-in default + 2-octave window centred on the notes.
     const hidden = effectiveNotes().filter((e) => e.outlier).length;
+    const what = session ? "session" : "annotation";
     setStatus(
-      `Loaded ${workingNotes.length} notes from “${file.name}” (${annotation.producer}).` +
+      `Loaded ${what}: ${workingNotes.length} notes from “${file.name}”.` +
         (hideOutliers && hidden ? ` Hiding ${hidden} outlier${hidden > 1 ? "s" : ""}.` : ""),
     );
     rebuild();
@@ -405,6 +422,7 @@ function rebuild(): void {
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
   el.stop.disabled = !playback;
   el.export.disabled = !annotation;
+  el.save.disabled = !annotation;
 }
 
 /** Redraw after a view/grid/edit change: rebuild the scale (not the canvas). */
@@ -1063,7 +1081,66 @@ function fmt3(v: number): string {
   return Number.isFinite(v) ? v.toFixed(3) : "–";
 }
 
-// --- Export -----------------------------------------------------------------
+// --- Save / export ----------------------------------------------------------
+
+/** Trigger a browser download of `data` as `filename`. */
+function download(data: BlobPart, filename: string, mime: string): void {
+  const url = URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** The review settings a saved session restores on load. */
+interface SessionState {
+  bpm: number;
+  division: number;
+  gridAnchor: number;
+  flagThreshold: number;
+  hideOutliers: boolean;
+}
+
+/**
+ * Save the full editing session as JSON: the annotation (f0 contour, energy,
+ * per-note confidence — all preserved) with `notes` replaced by the current
+ * working set (raw seconds + `manual` flags) and the review settings appended.
+ * Loading it via the annotation input restores everything, unlike a MIDI export
+ * which keeps only the snapped pitches/timings.
+ */
+function saveSession(): void {
+  if (!annotation) return;
+  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, hideOutliers };
+  const file = { ...annotation, notes: workingNotes, session };
+  download(JSON.stringify(file), "sona-session.json", "application/json");
+  setStatus(`Saved session: ${workingNotes.length} notes → sona-session.json.`);
+}
+
+/** Restore review settings from a saved session's `session` block. */
+function restoreSession(s: any): void {
+  if (Number(s.bpm) > 0) bpm = Number(s.bpm);
+  el.bpm.value = String(bpm);
+  const div = Number(s.division);
+  if ([4, 8, 16, 32].includes(div)) {
+    division = div;
+    el.division.value = String(div);
+  }
+  gridAnchor = Number.isFinite(Number(s.gridAnchor))
+    ? Number(s.gridAnchor)
+    : workingNotes.length
+      ? Math.min(...workingNotes.map((n) => n.onset_s))
+      : 0;
+  if (Number.isFinite(Number(s.flagThreshold))) {
+    flagThreshold = Math.min(1, Math.max(0, Number(s.flagThreshold)));
+    el.flag.value = String(flagThreshold);
+    el.flagVal.textContent = flagThreshold.toFixed(2);
+  }
+  hideOutliers = s.hideOutliers !== false;
+  el.outliers.checked = hideOutliers;
+}
+
+el.save.addEventListener("click", saveSession);
 
 /**
  * Export the authoritative MIDI (ADR-0004): the current snapped + corrected
@@ -1073,14 +1150,7 @@ function fmt3(v: number): string {
 function exportMidi(): void {
   if (!annotation) return;
   const notes = midiNotes();
-  const bytes = encodeMidiFile(notes, { bpm });
-  const blob = new Blob([bytes as BlobPart], { type: "audio/midi" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "sona.mid";
-  a.click();
-  URL.revokeObjectURL(url);
+  download(encodeMidiFile(notes, { bpm }) as BlobPart, "sona.mid", "audio/midi");
   setStatus(`Exported ${notes.length} notes to sona.mid at ${bpm} BPM.`);
 }
 
