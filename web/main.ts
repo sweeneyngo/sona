@@ -13,11 +13,20 @@
 // can be unit-tested under Vitest; this file is the DOM + Web Audio + canvas
 // plumbing that can only run in a browser.
 
-import { midiToNoteName, confidenceColor, weakestSubScore, pitchRange, makeScale } from "./lib/view";
-import type { Scale, PitchWindow } from "./lib/view";
+import {
+  midiToNoteName,
+  confidenceColor,
+  weakestSubScore,
+  makeScale,
+  zoomToShowSeconds,
+  defaultPitchTop,
+  pitchTopRange,
+  pitchOutlierFlags,
+} from "./lib/view";
+import type { Scale } from "./lib/view";
 import { buildSchedule } from "./lib/synth";
-import { clamp01, clampPitch } from "./lib/math";
-import { gridSpacingSeconds, snapTime, gridLines, quantizeNote, noteFlags } from "./lib/grid";
+import { clampPitch } from "./lib/math";
+import { gridSpacingSeconds, snapTime, quantizeNote, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import type { Annotation, WorkingNote } from "./lib/annotation";
 
@@ -27,8 +36,11 @@ const NOTE_RADIUS = 3;
 const RESIZE_GRAB_PX = 7; // right-edge zone that starts a resize instead of a move.
 const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
+const OUTLIER_COLOR = "#d98cff";
 const MIN_ZOOM_X = 1; // 1 = fit-to-width; can't zoom out past the whole song.
 const MAX_ZOOM_X = 60;
+const VISIBLE_SEMITONES = 24; // the roll shows ~2 octaves at a time; scroll for more.
+const DEFAULT_VISIBLE_SECONDS = 10; // zoomed-in default view width.
 
 const el = {
   json: document.getElementById("json-input") as HTMLInputElement,
@@ -41,6 +53,7 @@ const el = {
   division: document.getElementById("division") as HTMLSelectElement,
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
+  outliers: document.getElementById("hide-outliers") as HTMLInputElement,
   export: document.getElementById("export") as HTMLButtonElement,
   status: document.getElementById("status") as HTMLElement,
   canvas: document.getElementById("roll") as HTMLCanvasElement,
@@ -58,6 +71,7 @@ interface EffectiveNote {
   flagged: boolean;
   lowConfidence: boolean;
   escaped: boolean;
+  outlier: boolean;
 }
 
 interface Hitbox {
@@ -116,14 +130,22 @@ let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 let flagThreshold = 0.5;
 
-// View transform: horizontal zoom + pan (⌘/Ctrl-scroll to zoom, scroll to pan).
+// View transform. Horizontal: zoom (⌘/Ctrl-scroll) + scrollX pan (shift-scroll).
+// Vertical: a fixed 2-octave window whose top MIDI pitch is `pitchTop` (scroll).
 let zoomX = 1;
 let scrollX = 0;
-// The drawn pitch (Y) window, frozen between loads/resizes so it never reflows
-// mid-drag — recomputed only in rebuild(), not on every redraw.
-let pitchWindow: PitchWindow = { min: 55, max: 79 };
+let pitchTop = 79; // top visible MIDI pitch; window = [pitchTop-23, pitchTop].
 // Playback start position in seconds; set by clicking the ruler (seek).
 let seekOffset = 0;
+// Hide wrong-octave pitch outliers (e.g. a bleed C1) from render/play/export.
+let hideOutliers = true;
+// Cache of the interpreted notes; rebuilt lazily, invalidated on any edit/setting.
+let effectiveCache: EffectiveNote[] | null = null;
+// Visible time window (seconds), recomputed each draw() and used to cull grid
+// lines / notes / contour / envelope to what's on screen — the perf lever on
+// long stems.
+let viewT0 = 0;
+let viewT1 = 0;
 
 const AudioCtx =
   window.AudioContext ||
@@ -141,14 +163,18 @@ el.json.addEventListener("change", async () => {
     annotation = normalizeAnnotation(parsed);
     workingNotes = annotation.notes.map((n) => ({ ...n, sub_scores: { ...n.sub_scores } }));
     selectedNote = null;
-    zoomX = 1;
-    scrollX = 0;
     seekOffset = 0;
+    invalidateEffective();
     // Seed the grid from the annotation: BPM as carried, phase on the first onset.
     bpm = annotation.bpm > 0 ? annotation.bpm : 120;
     el.bpm.value = String(bpm);
     gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
-    setStatus(`Loaded ${workingNotes.length} notes from “${file.name}” (${annotation.producer}).`);
+    resetView(); // zoomed-in default + 2-octave window centred on the notes.
+    const hidden = effectiveNotes().filter((e) => e.outlier).length;
+    setStatus(
+      `Loaded ${workingNotes.length} notes from “${file.name}” (${annotation.producer}).` +
+        (hideOutliers && hidden ? ` Hiding ${hidden} outlier${hidden > 1 ? "s" : ""}.` : ""),
+    );
     rebuild();
   } catch (err) {
     annotation = null;
@@ -206,14 +232,23 @@ function spacing(): number {
   return gridSpacingSeconds(bpm, division);
 }
 
+/** Drop the cached interpretation; next `effectiveNotes()` recomputes it. */
+function invalidateEffective(): void {
+  effectiveCache = null;
+}
+
 /**
  * The notes as interpreted for display, playback, and export: each working note
- * hard-snapped to the grid (or escaped) plus its flag state. Manual notes never
- * escape — the user placed them deliberately, so they always snap.
+ * hard-snapped to the grid (or escaped), its flag state, and whether it's a
+ * pitch outlier. Manual notes never escape — the user placed them deliberately,
+ * so they always snap. Cached: recomputing this per frame was a big part of the
+ * playback jank on long stems.
  */
 function effectiveNotes(): EffectiveNote[] {
+  if (effectiveCache) return effectiveCache;
   const s = spacing();
-  return workingNotes.map((n) => {
+  const outliers = pitchOutlierFlags(workingNotes.map((n) => n.midi_pitch));
+  effectiveCache = workingNotes.map((n, i) => {
     // Manual notes never escape; everything else uses grid.ts's documented
     // escape-hatch defaults (ADR-0003).
     const q = quantizeNote(
@@ -221,18 +256,49 @@ function effectiveNotes(): EffectiveNote[] {
       n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
     );
     const flags = noteFlags(n, q, flagThreshold);
-    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags };
+    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags, outlier: outliers[i] };
   });
+  return effectiveCache;
 }
 
-/** The effective notes reshaped for the MIDI encoder / synth (seconds + pitch). */
+/** Effective notes actually shown/played/exported: outliers dropped when hidden. */
+function visibleNotes(): EffectiveNote[] {
+  const all = effectiveNotes();
+  return hideOutliers ? all.filter((e) => !e.outlier) : all;
+}
+
+/** The visible notes reshaped for the MIDI encoder / synth (seconds + pitch). */
 function midiNotes() {
-  return effectiveNotes().map((e) => ({
+  return visibleNotes().map((e) => ({
     onset_s: e.onset_s,
     offset_s: e.offset_s,
     midi_pitch: e.pitch,
     confidence: e.raw.confidence,
   }));
+}
+
+/** MIDI pitch extent of the non-outlier notes, for centring the default window. */
+function noteMidiExtent(): { min: number; max: number } {
+  const pitches = effectiveNotes()
+    .filter((e) => !e.outlier)
+    .map((e) => e.pitch);
+  if (pitches.length === 0) return { min: 60, max: 72 };
+  return { min: Math.min(...pitches), max: Math.max(...pitches) };
+}
+
+/** Clamp `pitchTop` so the 2-octave window stays over the (non-outlier) notes. */
+function clampPitchTop(top: number): number {
+  const { min, max } = noteMidiExtent();
+  const r = pitchTopRange(min, max, VISIBLE_SEMITONES);
+  return Math.min(r.max, Math.max(r.min, top));
+}
+
+/** Reset the view to the zoomed-in default: ~10s wide, window centred on notes. */
+function resetView(): void {
+  zoomX = zoomToShowSeconds(totalDuration(), DEFAULT_VISIBLE_SECONDS, MAX_ZOOM_X, MIN_ZOOM_X);
+  scrollX = 0;
+  const { min, max } = noteMidiExtent();
+  pitchTop = clampPitchTop(defaultPitchTop(min, max, VISIBLE_SEMITONES));
 }
 
 // --- Toolbar controls -------------------------------------------------------
@@ -241,17 +307,24 @@ el.bpm.addEventListener("input", () => {
   const v = Number(el.bpm.value);
   if (v > 0 && Number.isFinite(v)) {
     bpm = v;
+    invalidateEffective();
     redraw();
   }
 });
 el.division.addEventListener("change", () => {
   division = Number(el.division.value);
+  invalidateEffective();
   redraw();
 });
 el.flag.addEventListener("input", () => {
   flagThreshold = Number(el.flag.value);
   el.flagVal.textContent = flagThreshold.toFixed(2);
+  invalidateEffective();
   redraw();
+});
+el.outliers.addEventListener("change", () => {
+  hideOutliers = el.outliers.checked;
+  redraw(); // no invalidate: the outlier flag is cached, only the filter changes.
 });
 el.export.addEventListener("click", exportMidi);
 
@@ -281,9 +354,10 @@ function clampScroll(s: number): number {
 }
 
 /**
- * (Re)build the scale from the current view state, reusing the frozen
- * `pitchWindow`. Clamps scroll to range. Called on every redraw — so it must
- * NOT recompute the pitch window, or the Y axis would reflow mid-drag.
+ * (Re)build the scale from the current view state: a fixed 2-octave pitch window
+ * topped at `pitchTop`, plus the horizontal zoom/pan. Clamps both scrolls to
+ * range. Called on every redraw, so it stays cheap and never reflows the axes
+ * from note data (the window size is fixed).
  */
 function syncScale(): void {
   if (!annotation) {
@@ -291,10 +365,11 @@ function syncScale(): void {
     return;
   }
   scrollX = clampScroll(scrollX);
+  pitchTop = clampPitchTop(pitchTop);
   scale = makeScale({
     durationS: totalDuration(),
-    minPitch: pitchWindow.min,
-    maxPitch: pitchWindow.max,
+    minPitch: pitchTop - (VISIBLE_SEMITONES - 1),
+    maxPitch: pitchTop,
     width: el.canvas.width / devicePixelRatioSafe(),
     height: el.canvas.height / devicePixelRatioSafe(),
     padLeft: PAD.left,
@@ -305,10 +380,9 @@ function syncScale(): void {
   });
 }
 
-/** Rebuild after a resize/load: re-derive the pitch window, rebuild the scale. */
+/** Rebuild after a resize/load: rebuild the scale, redraw. */
 function rebuild(): void {
   resizeCanvas();
-  if (annotation) pitchWindow = pitchRange(workingNotes);
   syncScale();
   draw();
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
@@ -355,18 +429,30 @@ function draw(): void {
     return;
   }
 
+  // The visible time window — everything below culls to this so a zoomed-in
+  // view of a long stem only touches on-screen frames/notes/grid lines.
+  viewT0 = scale.xToTime(PAD.left);
+  viewT1 = scale.xToTime(w);
+
   // Pitch rows + note-name labels live partly in the left gutter — draw unclipped.
   drawPitchGrid(w, h);
   drawRulerBg(w);
 
-  // Everything time-positioned is clipped to the plot area so a zoomed/scrolled
-  // timeline can't spill over the key gutter (x < PAD.left).
+  // Ruler ticks: clipped to the ruler strip so they don't run into the gutter.
   ctx2d.save();
   ctx2d.beginPath();
-  ctx2d.rect(PAD.left, 0, w - PAD.left, h);
+  ctx2d.rect(PAD.left, 0, w - PAD.left, RULER_H);
+  ctx2d.clip();
+  drawRulerTicks();
+  ctx2d.restore();
+
+  // Plot content: clipped to the plot area (below the ruler, right of the
+  // gutter) so notes outside the 2-octave window and off-screen x are cut off.
+  ctx2d.save();
+  ctx2d.beginPath();
+  ctx2d.rect(PAD.left, PAD.top, w - PAD.left, h - PAD.top);
   ctx2d.clip();
   drawTimeGrid(w, h);
-  drawRulerTicks();
   drawEnergyEnvelope(w, h);
   drawF0Contour();
   drawNotes();
@@ -412,14 +498,25 @@ function isBlackKey(midi: number): boolean {
   return [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12);
 }
 
-/** Each visible grid line's screen x and whether it lands on a beat (quarter). */
+/**
+ * The grid lines *within the visible time window* — screen x plus whether each
+ * lands on a beat. Culled to `[viewT0, viewT1]` so a fine grid over a long stem
+ * only produces the handful of lines actually on screen.
+ */
 function gridLineInfo(): { x: number; isBeat: boolean }[] {
   const s = spacing();
   const cellsPerBeat = division / 4; // a beat is a quarter note.
-  return gridLines(gridAnchor, s, totalDuration()).map((t) => {
-    const k = Math.round((t - gridAnchor) / s);
-    return { x: scale!.timeToX(t), isBeat: ((k % cellsPerBeat) + cellsPerBeat) % cellsPerBeat === 0 };
-  });
+  const from = Math.max(0, viewT0);
+  const to = Math.min(totalDuration(), viewT1);
+  const kStart = Math.ceil((from - gridAnchor) / s - 1e-9);
+  const kEnd = Math.floor((to - gridAnchor) / s + 1e-9);
+  const out: { x: number; isBeat: boolean }[] = [];
+  for (let k = kStart; k <= kEnd; k++) {
+    const t = gridAnchor + k * s;
+    if (t < -1e-9) continue;
+    out.push({ x: scale!.timeToX(t), isBeat: ((k % cellsPerBeat) + cellsPerBeat) % cellsPerBeat === 0 });
+  }
+  return out;
 }
 
 /** Vertical grid lines from BPM/division/phase; beat lines drawn stronger. */
@@ -458,7 +555,11 @@ function drawRulerTicks(): void {
   }
 }
 
-/** Energy/RMS envelope as a filled area along the bottom — a loudness guide. */
+/**
+ * Energy/RMS envelope as a filled area along the bottom — a loudness guide.
+ * Culled to the visible time window (one frame of margin each side) and drawn as
+ * a single filled path.
+ */
 function drawEnergyEnvelope(_w: number, h: number): void {
   if (!annotation || !scale) return;
   const env = annotation.energy_envelope;
@@ -466,34 +567,70 @@ function drawEnergyEnvelope(_w: number, h: number): void {
   const maxRms = Math.max(...env.map((f) => f.rms), 1e-6);
   const band = Math.min(70, h * 0.18);
   const base = h - PAD.bottom;
+  let started = false;
+  let lastX = 0;
   ctx2d.beginPath();
-  ctx2d.moveTo(scale.timeToX(env[0].time_s), base);
-  for (const f of env) {
-    ctx2d.lineTo(scale.timeToX(f.time_s), base - (f.rms / maxRms) * band);
+  for (let i = 0; i < env.length; i++) {
+    const f = env[i];
+    if (f.time_s < viewT0 && env[i + 1]?.time_s < viewT0) continue; // keep one before
+    if (f.time_s > viewT1 && env[i - 1]?.time_s > viewT1) break; // and one after
+    const x = scale.timeToX(f.time_s);
+    if (!started) {
+      ctx2d.moveTo(x, base);
+      started = true;
+    }
+    ctx2d.lineTo(x, base - (f.rms / maxRms) * band);
+    lastX = x;
   }
-  ctx2d.lineTo(scale.timeToX(env[env.length - 1].time_s), base);
+  if (!started) return;
+  ctx2d.lineTo(lastX, base);
   ctx2d.closePath();
   ctx2d.fillStyle = "rgba(110, 168, 254, 0.12)";
   ctx2d.fill();
 }
 
-/** f0 contour as a polyline, dimmed where the frame is unvoiced. */
+/**
+ * f0 contour, culled to the visible window. Two passes (one stroke each) so the
+ * confidently-voiced parts read brighter without the per-segment stroking that
+ * was the main playback-jank source: a dim base over every voiced frame for
+ * continuity, and a bright overlay on the strongly-voiced ones. The pen lifts on
+ * unvoiced frames and across time gaps, so distinct phrases aren't joined.
+ */
 function drawF0Contour(): void {
-  if (!annotation) return;
-  const contour = annotation.f0_contour.filter((f) => f.frequency_hz > 0);
-  if (contour.length === 0) return;
+  if (!annotation || !scale) return;
+  const contour = annotation.f0_contour;
+  strokeContour(contour, 0, "rgba(255, 255, 255, 0.4)");
+  strokeContour(contour, 0.6, "rgba(255, 255, 255, 0.9)");
+}
+
+function strokeContour(
+  contour: { time_s: number; frequency_hz: number; voicing: number }[],
+  minVoicing: number,
+  style: string,
+): void {
+  ctx2d.strokeStyle = style;
   ctx2d.lineWidth = 1.5;
-  for (let i = 1; i < contour.length; i++) {
-    const a = contour[i - 1];
-    const b = contour[i];
-    if (b.time_s - a.time_s > 0.12) continue;
-    const voicing = (a.voicing + b.voicing) / 2;
-    ctx2d.strokeStyle = `rgba(255, 255, 255, ${0.15 + 0.55 * clamp01(voicing)})`;
-    ctx2d.beginPath();
-    ctx2d.moveTo(scale!.timeToX(a.time_s), freqToY(a.frequency_hz));
-    ctx2d.lineTo(scale!.timeToX(b.time_s), freqToY(b.frequency_hz));
-    ctx2d.stroke();
+  ctx2d.beginPath();
+  let pen = false;
+  let lastT = 0;
+  for (const f of contour) {
+    if (
+      f.frequency_hz <= 0 ||
+      f.voicing < minVoicing ||
+      f.time_s < viewT0 - 0.2 ||
+      f.time_s > viewT1 + 0.2
+    ) {
+      pen = false; // unvoiced / too weak / off-screen: lift the pen
+      continue;
+    }
+    const x = scale!.timeToX(f.time_s);
+    const y = freqToY(f.frequency_hz);
+    if (!pen || f.time_s - lastT > 0.12) ctx2d.moveTo(x, y);
+    else ctx2d.lineTo(x, y);
+    pen = true;
+    lastT = f.time_s;
   }
+  ctx2d.stroke();
   ctx2d.lineWidth = 1;
 }
 
@@ -512,7 +649,8 @@ function drawNotes(): void {
   if (!scale) return;
   noteHitboxes = [];
   const barH = Math.max(3, scale.rowHeight - 2);
-  for (const eff of effectiveNotes()) {
+  for (const eff of visibleNotes()) {
+    if (eff.offset_s < viewT0 || eff.onset_s > viewT1) continue; // cull off-screen
     const x = scale.timeToX(eff.onset_s);
     const y = scale.pitchToY(eff.pitch) + (scale.rowHeight - barH) / 2;
     const wNote = Math.max(3, scale.timeToX(eff.offset_s) - x);
@@ -520,9 +658,14 @@ function drawNotes(): void {
     roundRect(x, y, wNote, barH, NOTE_RADIUS);
     ctx2d.fill();
 
-    // Outline: escaped (dashed cyan) and flagged (red) are the review cues.
+    // Outline: outlier (dashed magenta), escaped (dashed cyan), flagged (red)
+    // are the review cues. Outliers only reach here when "hide outliers" is off.
     ctx2d.save();
-    if (eff.escaped) {
+    if (eff.outlier) {
+      ctx2d.setLineDash([3, 3]);
+      ctx2d.strokeStyle = OUTLIER_COLOR;
+      ctx2d.lineWidth = 2;
+    } else if (eff.escaped) {
       ctx2d.setLineDash([4, 3]);
       ctx2d.strokeStyle = ESCAPE_COLOR;
       ctx2d.lineWidth = 2;
@@ -623,6 +766,7 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
     // seek (handled on mouseup) with the phase untouched.
     if (d.moved) {
       gridAnchor = d.origAnchor + dt;
+      invalidateEffective(); // snapping depends on the phase
       redraw();
     }
     return;
@@ -640,6 +784,7 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
     n.offset_s = Math.max(n.onset_s + spacing() / 2, d.origOffset + dt);
     n.manual = true;
   }
+  invalidateEffective(); // the note's quantized position changed
   redraw();
   showSelectedTooltip();
 });
@@ -654,7 +799,8 @@ window.addEventListener("mouseup", () => {
   }
 });
 
-// Horizontal zoom (⌘/Ctrl-scroll, anchored at the cursor) and pan (plain scroll).
+// Wheel: ⌘/Ctrl = horizontal zoom (anchored at cursor); Shift or horizontal
+// gesture = pan time; plain vertical = pan pitch (the roll only shows 2 octaves).
 el.canvas.addEventListener(
   "wheel",
   (e: WheelEvent) => {
@@ -668,17 +814,30 @@ el.canvas.addEventListener(
       // Re-anchor so the time under the cursor stays put across the zoom.
       const content = plotWidthPx() * zoomX;
       scrollX = clampScroll(PAD.left + (tAtCursor / totalDuration()) * content - x);
-    } else {
-      // Nothing to pan at fit-to-width — let the wheel scroll the page instead.
+    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      // Pan time. Nothing to scroll at fit-to-width → let the page scroll.
       if (maxScrollX() <= 0) return;
       e.preventDefault();
       const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
       scrollX = clampScroll(scrollX + dx);
+    } else {
+      // Pan pitch. If the notes already fit the window there's nothing to scroll.
+      const r = pitchTopBounds();
+      if (r.min >= r.max) return;
+      e.preventDefault();
+      const rows = Math.max(1, Math.round(Math.abs(e.deltaY) / 40));
+      pitchTop = clampPitchTop(pitchTop - Math.sign(e.deltaY) * rows);
     }
     redraw();
   },
   { passive: false },
 );
+
+/** Current allowed range for `pitchTop` (for deciding whether pitch can scroll). */
+function pitchTopBounds(): { min: number; max: number } {
+  const { min, max } = noteMidiExtent();
+  return pitchTopRange(min, max, VISIBLE_SEMITONES);
+}
 
 /** Move the playhead / playback start to `t` seconds; restart if playing. */
 function setSeek(t: number): void {
@@ -694,10 +853,9 @@ function setSeek(t: number): void {
 el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   if (!scale || !annotation) return;
   const { x, y } = canvasPoint(e);
-  // Double-click the ruler to reset the zoom/pan back to fit-to-width.
+  // Double-click the ruler to reset zoom/pan/pitch back to the default view.
   if (y < RULER_H) {
-    zoomX = 1;
-    scrollX = 0;
+    resetView();
     redraw();
     return;
   }
@@ -713,6 +871,7 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   };
   workingNotes.push(note);
   selectedNote = note;
+  invalidateEffective();
   redraw();
   showSelectedTooltip();
 });
@@ -727,6 +886,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   workingNotes = workingNotes.filter((n) => n !== selectedNote);
   selectedNote = null;
   el.tooltip.style.display = "none";
+  invalidateEffective();
   redraw();
 });
 
@@ -771,11 +931,13 @@ function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px
   const rows = Object.entries(note.sub_scores)
     .map(([k, v]) => `<dt>${k.replace(/_/g, " ")}</dt><dd>${fmt(v)}</dd>`)
     .join("");
-  const cue = effective?.escaped
-    ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
-    : weakest
-      ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
-      : "";
+  const cue = effective?.outlier
+    ? `<div class="reason" style="color:${OUTLIER_COLOR}">◇ pitch outlier (wrong octave?)</div>`
+    : effective?.escaped
+      ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
+      : weakest
+        ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
+        : "";
   el.tooltip.innerHTML = `
     <div class="pitch">${midiToNoteName(note.midi_pitch)} · conf ${fmt(note.confidence)}${note.manual ? " · manual" : ""}</div>
     <div>${fmt3(effective?.onset_s ?? note.onset_s)}s – ${fmt3(effective?.offset_s ?? note.offset_s)}s</div>

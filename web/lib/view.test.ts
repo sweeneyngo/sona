@@ -7,6 +7,10 @@ import {
   weakestSubScore,
   pitchRange,
   makeScale,
+  zoomToShowSeconds,
+  defaultPitchTop,
+  pitchTopRange,
+  pitchOutlierFlags,
 } from "./view";
 
 test("midiToNoteName names the anchor and octave boundaries", () => {
@@ -129,6 +133,50 @@ test("xToTime inverts timeToX under zoom + scroll", () => {
   for (const t of [0, 0.4, 1.0, 1.9]) {
     assert.ok(Math.abs(s.xToTime(s.timeToX(t)) - t) < 1e-9);
   }
+});
+
+test("zoomToShowSeconds picks the zoom that fits ~target seconds in view", () => {
+  assert.equal(zoomToShowSeconds(240, 10, 60), 24); // 240s / 10s visible
+  assert.equal(zoomToShowSeconds(5, 10, 60), 1); // short song → can't zoom out past 1
+  assert.equal(zoomToShowSeconds(6000, 10, 60), 60); // clamped to max zoom
+});
+
+test("defaultPitchTop centres the note span in a 2-octave window", () => {
+  // span 24 rows; centre of 60..64 is 62, window top = 62 + 12 = 74.
+  assert.equal(defaultPitchTop(60, 64, 24), 74);
+  // window [74-23, 74] = [51, 74] contains both notes.
+  assert.ok(74 - 23 <= 60 && 74 >= 64);
+  assert.ok(defaultPitchTop(0, 0, 24) >= 23); // never below the span floor
+});
+
+test("pitchTopRange lets a 2-octave window scroll over a wide span", () => {
+  const r = pitchTopRange(50, 90, 24, 2); // padded to 48..92, span 41 > 24
+  assert.equal(r.min, 71); // window bottom at 48 → top 48+23
+  assert.equal(r.max, 92); // window top at 92
+  assert.ok(r.min < r.max);
+});
+
+test("pitchTopRange pins a window when the span already fits", () => {
+  const r = pitchTopRange(60, 64, 24); // 5-semitone span < 24 → fixed
+  assert.equal(r.min, r.max);
+  assert.equal(r.min, defaultPitchTop(60, 64, 24));
+});
+
+test("pitchOutlierFlags marks a wrong-octave note (C1 under a C4 vocal)", () => {
+  const flags = pitchOutlierFlags([60, 62, 64, 63, 61, 24]);
+  assert.deepEqual(flags, [false, false, false, false, false, true]);
+});
+
+test("pitchOutlierFlags keeps a normal ~2-octave vocal span intact", () => {
+  const pitches = [55, 57, 60, 62, 64, 67, 69, 72];
+  assert.deepEqual(
+    pitchOutlierFlags(pitches),
+    pitches.map(() => false),
+  );
+});
+
+test("pitchOutlierFlags is empty for no notes", () => {
+  assert.deepEqual(pitchOutlierFlags([]), []);
 });
 
 test("zoomX defaults to 1 / scrollX to 0 (fit-to-width, unchanged)", () => {

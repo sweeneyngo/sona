@@ -85,6 +85,78 @@ export function pitchRange(
   };
 }
 
+/** Median of a numeric array (average of the middle pair for even lengths). */
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * Flag pitch outliers — notes whose MIDI pitch sits far from the central
+ * tendency, e.g. a wrong-octave C1 from separation bleed under a C4 vocal. Uses
+ * a robust median ± max(`madK`×MAD, `floor`) band so a tight cluster isn't
+ * over-trimmed and a normal ~2-octave span stays intact. Returns one boolean
+ * per input pitch, in order.
+ */
+export function pitchOutlierFlags(
+  pitches: number[],
+  { madK = 3, floor = 15 }: { madK?: number; floor?: number } = {},
+): boolean[] {
+  if (pitches.length === 0) return [];
+  const med = median(pitches);
+  const mad = median(pitches.map((p) => Math.abs(p - med)));
+  const spread = Math.max(madK * mad, floor);
+  return pitches.map((p) => Math.abs(p - med) > spread);
+}
+
+/**
+ * Horizontal zoom that makes roughly `targetSeconds` of the timeline fill the
+ * view (a sensible zoomed-in default instead of the whole song). Clamped to
+ * `[minZoom, maxZoom]`.
+ */
+export function zoomToShowSeconds(
+  totalDuration: number,
+  targetSeconds: number,
+  maxZoom: number,
+  minZoom = 1,
+): number {
+  if (targetSeconds <= 0 || totalDuration <= 0) return minZoom;
+  return Math.min(maxZoom, Math.max(minZoom, totalDuration / targetSeconds));
+}
+
+/**
+ * The top-of-window MIDI pitch that centres `[minNote, maxNote]` in a `span`-row
+ * window (the visible window is `[top - (span-1), top]`). Clamped so the window
+ * stays within the MIDI range.
+ */
+export function defaultPitchTop(minNote: number, maxNote: number, span: number): number {
+  const center = Math.round((minNote + maxNote) / 2);
+  return Math.min(127, Math.max(span - 1, center + Math.floor(span / 2)));
+}
+
+/**
+ * The allowed range of `pitchTop` so a `span`-row window can scroll to cover the
+ * padded note span `[minNote-pad, maxNote+pad]`. When that span already fits in
+ * one window, both bounds pin to the centred default (nothing to scroll).
+ */
+export function pitchTopRange(
+  minNote: number,
+  maxNote: number,
+  span: number,
+  pad = 2,
+): { min: number; max: number } {
+  const lo = Math.max(0, minNote - pad);
+  const hi = Math.min(127, maxNote + pad);
+  const min = Math.max(span - 1, lo + (span - 1)); // window bottom at `lo`
+  const max = Math.min(127, hi); // window top at `hi`
+  if (min > max) {
+    const c = defaultPitchTop(minNote, maxNote, span);
+    return { min: c, max: c };
+  }
+  return { min, max };
+}
+
 export interface ScaleParams {
   durationS: number;
   minPitch: number;

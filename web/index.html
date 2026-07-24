@@ -223,8 +223,9 @@
         synthesized notes. Notes snap to the grid live (BPM · division · draggable
         offset); confident off-grid notes escape and are flagged. Drag a note to
         move it, its right edge to resize, double-click to add, Delete to remove,
-        then export the corrected MIDI. Scroll to pan, ⌘/Ctrl-scroll to zoom
-        (double-click the ruler to reset); click the top ruler to seek (drag it
+        then export the corrected MIDI. The roll shows ~2 octaves at a time:
+        scroll to move pitch, Shift-scroll to move time, ⌘/Ctrl-scroll to zoom
+        (double-click the ruler to reset). Click the top ruler to seek (drag it
         to move the grid).
       </p>
     </header>
@@ -265,6 +266,9 @@
       <label class="field">
         <span>Flag threshold <output id="flag-val">0.50</output></span>
         <input id="flag" type="range" min="0" max="1" step="0.01" value="0.5" />
+      </label>
+      <label class="toggle">
+        <input id="hide-outliers" type="checkbox" checked /> hide outliers
       </label>
       <span class="sep" aria-hidden="true"></span>
       <button id="export" disabled>⤓ Export MIDI</button>
