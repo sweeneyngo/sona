@@ -125,16 +125,24 @@ pub struct Segmenter {
 
 impl Default for Segmenter {
     fn default() -> Self {
+        // Defaults retuned for general (expressive) vocals rather than staccato
+        // Vocaloid. The big one is `rest_floor_frac`: at the old 0.15 a note
+        // closed as soon as its energy dipped to 15% of the peak, so sustained /
+        // legato singing got chopped and the tail of each phrase (until the next
+        // detected onset) produced no notes. Only near-silence should close a
+        // note now, so plateau splitting can cover the whole phrase.
         Self {
-            // ~an eighth note at a brisk tempo: closer than this reads as
-            // connected (next-onset offset); farther implies a rest, so the
-            // staccato decay fallback takes over.
             max_offset_gap_s: 0.18,
-            rest_floor_frac: 0.15,
+            // Only a genuine rest closes a note now — a moderate mid-phrase dip
+            // no longer ends it (was 0.15). Not lower than this, or low-level
+            // tonal bleed starts leaking in as spurious notes.
+            rest_floor_frac: 0.08,
             min_note_s: 0.05,
             min_plateau_s: 0.08,
             drop_window_s: 0.04,
-            voiced_threshold: 0.5,
+            // Count slightly weaker-voiced frames toward a pitch, since real vocal
+            // voicing confidence runs lower than a clean synth's (was 0.5).
+            voiced_threshold: 0.4,
         }
     }
 }

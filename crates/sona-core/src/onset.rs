@@ -77,17 +77,25 @@ pub struct OnsetDetector {
 
 impl Default for OnsetDetector {
     fn default() -> Self {
+        // Defaults retuned for general (expressive) vocals, not just staccato
+        // Vocaloid: real attacks are softer and quieter passages must survive, so
+        // the novelty threshold and the bleed floor are both lower than the
+        // original staccato tuning (threshold_delta 0.6, bleed_floor_frac 0.1).
         Self {
-            // ~23 ms at 44.1 kHz: short enough to localize a staccato attack,
-            // long enough for a stable RMS.
+            // ~23 ms at 44.1 kHz: short enough to localize an attack, long enough
+            // for a stable RMS.
             frame_length: 1024,
             // ~5.8 ms hop — the same hop as the pYIN default, so the envelope and
             // f0 contour share a time base.
             hop_length: 256,
             min_gap_s: 0.05, // 50 ms: below a 16th at any sane tempo, above jitter
-            threshold_delta: 0.6,
+            // Lower so soft (non-percussive) vocal attacks still clear the local
+            // mean; stationary bleed stays rejected because its novelty is ~0.
+            threshold_delta: 0.3,
             threshold_window_s: 0.1,
-            bleed_floor_frac: 0.1,
+            // Lower so quiet notes (a soft verse under a loud chorus) aren't culled
+            // as bleed; true separation bleed still sits below this.
+            bleed_floor_frac: 0.05,
         }
     }
 }
