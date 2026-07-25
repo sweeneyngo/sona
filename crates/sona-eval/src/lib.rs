@@ -19,6 +19,7 @@
 //! note-F1 COnP/COnPOff, confidence calibration) — reimplemented in pure Rust
 //! and cross-checked against `mir_eval` (ticket 02).
 
+pub mod align;
 pub mod error;
 pub mod estimate;
 pub mod fixtures;
@@ -28,6 +29,7 @@ pub mod synth;
 pub mod vocadito;
 pub mod wav;
 
+pub use align::resample_f0_onto;
 pub use error::EvalError;
 pub use estimate::{EstNote, Estimate};
 pub use fixtures::Fixture;

@@ -1,25 +1,30 @@
-//! The evaluation report harness.
+//! The evaluation report harness — the **baseline** for the note-HMM work.
 //!
 //!     cargo run -p sona-eval --bin sona-eval-report            # fixtures only
 //!     cargo run -p sona-eval --bin sona-eval-report -- --corpus # + Vocadito
 //!
-//! It prints a **full per-stage report** — RPA/RCA, onset-F1, note-F1
-//! (COnP/COnPOff), and a confidence-calibration table — for each golden fixture
-//! (ticket 02). With `--corpus` it also loads the Vocadito corpus from
-//! `SONA_VOCADITO_DIR` (or the crate-local `data/vocadito`) and **fails loudly**
-//! if it isn't there.
+//! It runs the **current ADR-0007 pipeline** (pYIN → energy onsets → heuristic
+//! segmentation → confidence) over each stem and scores its output with the
+//! ticket-02 metrics, printing a full per-stage table — RPA/RCA, onset-F1,
+//! note-F1 (COnP/COnPOff), confidence calibration — plus an onset-vs-segmentation
+//! attribution summary. These numbers are the baseline every Phase-B change must
+//! beat (ticket 03).
 //!
-//! Until a real producer is wired in (ticket 03), each fixture is scored against
-//! the **identity estimate** (the reference echoed back), so every stage reads a
-//! perfect 1.0 — the report proves the metric plumbing renders end to end, not
-//! that anything transcribes yet.
+//! With `--corpus` it also scores the Vocadito corpus from `SONA_VOCADITO_DIR`
+//! (or the crate-local `data/vocadito`) and **fails loudly** if it isn't there;
+//! the corpus is git-ignored, so a fresh checkout runs fixtures only.
 
 use std::process::ExitCode;
 
-use sona_eval::fixtures;
-use sona_eval::metrics;
-use sona_eval::vocadito;
-use sona_eval::Estimate;
+use sona_core::{Producer, PYin, Transcriber};
+use sona_eval::metrics::{self, MetricParams, StageReport};
+use sona_eval::reference::Reference;
+use sona_eval::{fixtures, resample_f0_onto, vocadito, wav, Estimate};
+
+/// BPM handed to the pipeline. The core does no beat tracking and the metrics
+/// ignore it (they work in seconds), so any value does — it only seeds the UI
+/// grid in a real annotation.
+const BPM: f64 = 120.0;
 
 fn main() -> ExitCode {
     let with_corpus = std::env::args().any(|a| a == "--corpus");
@@ -34,50 +39,102 @@ fn main() -> ExitCode {
 }
 
 fn run(with_corpus: bool) -> Result<(), sona_eval::EvalError> {
-    println!("== Golden fixtures ==");
-    let loaded = fixtures::load_all()?;
-    println!("{:<10}  {:>8}  {:>7}  {:>9}", "fixture", "dur (s)", "notes", "f0 frames");
-    for f in &loaded {
-        println!(
-            "{:<10}  {:>8.2}  {:>7}  {:>9}",
-            f.name,
-            f.duration_s(),
-            f.reference.notes.len(),
-            f.reference.f0.len()
-        );
-    }
-    println!("{} fixtures loaded.\n", loaded.len());
+    let transcriber = Transcriber::default();
+    let tracker = PYin::default();
+    let params = MetricParams::default();
 
-    println!("== Per-stage metrics (estimate = identity; real producer in ticket 03) ==");
-    let params = metrics::MetricParams::default();
-    for f in &loaded {
-        let estimate = Estimate::from_reference(&f.reference);
-        let report = metrics::evaluate(&f.reference, &estimate, &params);
+    println!("== Baseline: ADR-0007 pipeline (pYIN, default Transcriber) ==\n");
+
+    println!("-- Golden fixtures --\n");
+    let mut fixture_reports = Vec::new();
+    for f in fixtures::load_all()? {
+        let report = score_stem(&transcriber, &tracker, &f.samples, f.sample_rate, &f.reference, &params);
         print!("{}", report.format(&f.name));
+        fixture_reports.push((f.name.clone(), report));
     }
-    println!();
+    print_attribution("fixtures", &fixture_reports);
 
     if with_corpus {
         let root = vocadito::corpus_dir();
-        println!("== Vocadito corpus ({}) ==", root.display());
+        println!("\n-- Vocadito corpus ({}) --\n", root.display());
         let corpus = vocadito::discover(&root)?; // fails loudly if absent
-        let mut with_notes = 0;
-        let mut with_f0 = 0;
+        let mut corpus_reports = Vec::new();
         for track in &corpus.tracks {
-            if track.notes_a1.is_some() || track.notes_a2.is_some() {
-                with_notes += 1;
-            }
-            if track.f0.is_some() {
-                with_f0 += 1;
-            }
+            let reference = vocadito::load_reference(track)?;
+            let (samples, sample_rate) = wav::read_mono(&track.audio)?;
+            let report = score_stem(&transcriber, &tracker, &samples, sample_rate, &reference, &params);
+            print!("{}", report.format(&format!("vocadito_{}", track.id)));
+            corpus_reports.push((track.id.clone(), report));
         }
-        println!(
-            "{} tracks discovered ({with_notes} with notes, {with_f0} with f0).",
-            corpus.tracks.len()
-        );
+        print_attribution("vocadito", &corpus_reports);
     } else {
-        println!("(run with --corpus to also load Vocadito from SONA_VOCADITO_DIR)");
+        println!("\n(run with --corpus to also score Vocadito from SONA_VOCADITO_DIR)");
     }
 
     Ok(())
+}
+
+/// Transcribe one mono stem with the real pipeline and score it against its
+/// reference.
+///
+/// Two things are stitched into the estimate that `Estimate::from_annotation`
+/// can't supply on its own:
+/// - the **stage-2 onset times**, read straight from the onset detector, so the
+///   onset metric scores stage 2 — not the post-segmentation notes (the
+///   annotation contract doesn't carry raw onsets). The detector is
+///   deterministic, so calling it here reproduces what `transcribe` used.
+/// - the **f0 resampled onto the reference frame grid**, since the pitch metric
+///   compares frame for frame.
+fn score_stem(
+    transcriber: &Transcriber,
+    tracker: &PYin,
+    samples: &[f32],
+    sample_rate: u32,
+    reference: &Reference,
+    params: &MetricParams,
+) -> StageReport {
+    let annotation = transcriber.transcribe(tracker, samples, sample_rate, BPM, Producer::Pyin);
+    let mut estimate = Estimate::from_annotation(&annotation);
+
+    estimate.onsets = transcriber
+        .onset
+        .detect(samples, sample_rate)
+        .onsets
+        .iter()
+        .map(|o| o.time_s)
+        .collect();
+
+    let ref_times: Vec<f64> = reference.f0.iter().map(|f| f.time_s).collect();
+    estimate.f0 = resample_f0_onto(&ref_times, &estimate.f0);
+    metrics::evaluate(reference, &estimate, params)
+}
+
+/// Print the onset-vs-segmentation attribution: onset recall (stage 2) beside
+/// note COnP recall (stage 3). A high onset recall with a much lower note recall
+/// points at segmentation (over-merging), not onset detection — the standing
+/// question ticket 03 must answer.
+fn print_attribution(label: &str, reports: &[(String, StageReport)]) {
+    if reports.is_empty() {
+        return;
+    }
+    println!("\n  attribution ({label}) — onset recall (stage 2) vs note recall (stage 3):");
+    println!("  {:<16}  {:>10}  {:>10}  {:>9}", "stem", "onset-R", "COnP-R", "note-drop");
+    let (mut sum_onset_r, mut sum_note_r) = (0.0, 0.0);
+    for (name, r) in reports {
+        let drop = r.onset.recall - r.note_conp.recall;
+        println!(
+            "  {:<16}  {:>10.3}  {:>10.3}  {:>9.3}",
+            name, r.onset.recall, r.note_conp.recall, drop
+        );
+        sum_onset_r += r.onset.recall;
+        sum_note_r += r.note_conp.recall;
+    }
+    let n = reports.len() as f64;
+    println!(
+        "  {:<16}  {:>10.3}  {:>10.3}  {:>9.3}",
+        "MEAN",
+        sum_onset_r / n,
+        sum_note_r / n,
+        (sum_onset_r - sum_note_r) / n
+    );
 }

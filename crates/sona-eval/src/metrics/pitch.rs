@@ -34,10 +34,27 @@ pub struct PitchMetrics {
     pub voicing_false_alarm: f64,
 }
 
-/// `mir_eval`'s base frequency for the Hz→cent map (`melody.hz2cents`).
-const CENT_BASE_HZ: f64 = 10.0;
+/// `mir_eval`'s base frequency for the Hz↔cent map (`melody.hz2cents`). The
+/// single home for the convention, shared with the f0 resampler
+/// ([`crate::align`]) so the alignment and the metric can't drift apart.
+pub const CENT_BASE_HZ: f64 = 10.0;
 /// Default pitch tolerance, in cents (a quarter tone).
 pub const CENT_TOLERANCE: f64 = 50.0;
+
+/// Frequency in cents relative to [`CENT_BASE_HZ`]; `0` for an absent (0 Hz)
+/// pitch, matching `mir_eval.hz2cents` (which leaves zeros in place).
+pub fn hz_to_cents(freq_hz: f32) -> f64 {
+    if freq_hz == 0.0 {
+        0.0
+    } else {
+        1200.0 * ((freq_hz as f64).abs() / CENT_BASE_HZ).log2()
+    }
+}
+
+/// Inverse of [`hz_to_cents`] for a nonzero pitch — reconstruct Hz from cents.
+pub fn cents_to_hz(cents: f64) -> f32 {
+    (CENT_BASE_HZ * 2f64.powf(cents / 1200.0)) as f32
+}
 
 /// Score an estimated f0 contour against a reference one, both on the same time
 /// grid (see the module's alignment contract). Panics if the lengths differ.
@@ -61,16 +78,6 @@ pub fn pitch_metrics(reference: &[RefF0], estimate: &[RefF0]) -> PitchMetrics {
 /// frequency — `mir_eval.freq_to_voicing` forces voicing to 0 where freq is 0.
 fn is_voiced(frame: &RefF0) -> bool {
     frame.voiced && frame.frequency_hz != 0.0
-}
-
-/// Frequency in cents relative to [`CENT_BASE_HZ`]; 0 for an absent (0 Hz) pitch,
-/// matching `mir_eval.hz2cents` (which leaves zeros in place).
-fn to_cents(freq_hz: f32) -> f64 {
-    if freq_hz == 0.0 {
-        0.0
-    } else {
-        1200.0 * ((freq_hz as f64).abs() / CENT_BASE_HZ).log2()
-    }
 }
 
 /// `sum(est_voiced over ref-voiced frames) / sum(ref-voiced)`. `mir_eval` returns
@@ -127,8 +134,8 @@ fn raw_pitch_accuracy(
         .zip(estimate)
         .filter(|(r, _)| is_voiced(r))
         .filter(|(r, e)| {
-            let ref_cent = to_cents(r.frequency_hz);
-            let est_cent = to_cents(e.frequency_hz);
+            let ref_cent = hz_to_cents(r.frequency_hz);
+            let est_cent = hz_to_cents(e.frequency_hz);
             // Both must carry a pitch, else the frame is skipped (mir_eval's
             // `nonzero_freqs` mask).
             if ref_cent == 0.0 || est_cent == 0.0 {

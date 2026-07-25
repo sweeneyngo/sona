@@ -98,17 +98,17 @@ pub struct StageReport {
 
 /// Score an [`Estimate`] against a [`Reference`], every stage at once.
 ///
-/// Onset times are taken from the two note lists' onsets — the onset stage feeds
-/// segmentation, so a note's onset *is* the onset estimate for this purpose. The
-/// f0 contours must already share a time grid (see [`pitch`]'s alignment
-/// contract); [`pitch::pitch_metrics`] panics otherwise.
+/// The onset stage scores the estimate's **detected onsets** (stage 2) against
+/// the reference note onsets — deliberately *not* the estimate note onsets, so
+/// the onset-F1 vs note-F1 split attributes a missing note to the stage that owns
+/// it (see [`Estimate::onsets`]). The f0 contours must already share a time grid
+/// (see [`pitch`]'s alignment contract); [`pitch::pitch_metrics`] panics otherwise.
 pub fn evaluate(reference: &Reference, estimate: &Estimate, params: &MetricParams) -> StageReport {
     let ref_onsets: Vec<f64> = reference.notes.iter().map(|n| n.onset_s).collect();
-    let est_onsets: Vec<f64> = estimate.notes.iter().map(|n| n.onset_s).collect();
 
     StageReport {
         pitch: pitch::pitch_metrics(&reference.f0, &estimate.f0),
-        onset: onset::onset_metrics(&ref_onsets, &est_onsets, params.onset_window_s),
+        onset: onset::onset_metrics(&ref_onsets, &estimate.onsets, params.onset_window_s),
         note_conp: note::con_p(&reference.notes, &estimate.notes, &params.note),
         note_conpoff: note::con_p_off(&reference.notes, &estimate.notes, &params.note),
         confidence: confidence::confidence_calibration(
@@ -167,6 +167,33 @@ impl StageReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::estimate::EstNote;
+    use crate::reference::{RefF0, RefNote};
+
+    #[test]
+    fn onset_stage_scores_detected_onsets_not_note_onsets() {
+        // Regression guard: the onset metric must read `estimate.onsets` (stage 2),
+        // not the note onsets. Here the estimate has a perfectly-matching note but
+        // its detected-onset list is empty -> onset F1 must be 0 while COnP is 1,
+        // proving the two stages are scored from different signals.
+        let reference = Reference {
+            notes: vec![RefNote { onset_s: 0.0, offset_s: 0.5, midi_pitch: 60 }],
+            f0: vec![RefF0 { time_s: 0.0, frequency_hz: 261.63, voiced: true }],
+        };
+        let estimate = Estimate {
+            onsets: vec![], // detector reported nothing...
+            notes: vec![EstNote { onset_s: 0.0, offset_s: 0.5, midi_pitch: 60, confidence: 0.9 }],
+            f0: vec![RefF0 { time_s: 0.0, frequency_hz: 261.63, voiced: true }],
+        };
+        let r = evaluate(&reference, &estimate, &MetricParams::default());
+        assert_eq!(r.onset.f1, 0.0, "onset stage must reflect the empty detector output");
+        assert_eq!(r.note_conp.f1, 1.0, "note stage still matches on the note list");
+
+        // With the detected onset supplied, the onset stage now scores it.
+        let with_onset = Estimate { onsets: vec![0.0], ..estimate };
+        let r2 = evaluate(&reference, &with_onset, &MetricParams::default());
+        assert_eq!(r2.onset.f1, 1.0);
+    }
 
     #[test]
     fn prf1_from_counts_matches_mir_eval_semantics() {
