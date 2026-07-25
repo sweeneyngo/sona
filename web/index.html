@@ -305,6 +305,9 @@
       .legend .swatch.escaped {
         border: 2px dashed #5cd0ff;
       }
+      .legend .swatch.out-of-key {
+        border: 2px dashed #c8a2ff;
+      }
 
       /* --- Help modal ------------------------------------------------------ */
       .overlay {
@@ -442,6 +445,10 @@
               <option value="32">1/32</option>
             </select>
           </span>
+          <span class="field">
+            <label>Key</label>
+            <output id="key-readout" title="Auto-detected key (Krumhansl–Schmuckler). Toggle snapping in ⚙.">—</output>
+          </span>
         </div>
 
         <div class="divider" aria-hidden="true"></div>
@@ -466,6 +473,7 @@
         <span class="grp">low <span class="bar" aria-hidden="true"></span> high confidence</span>
         <span class="grp"><span class="swatch flagged"></span> flagged</span>
         <span class="grp"><span class="swatch escaped"></span> off-grid (escaped)</span>
+        <span class="grp"><span class="swatch out-of-key"></span> out of key</span>
       </div>
     </main>
 
@@ -547,6 +555,11 @@
             <h3>Flag threshold <output id="flag-val">0.50</output></h3>
             <input id="flag" type="range" min="0" max="1" step="0.01" value="0.5" />
             <p>Notes below this confidence are outlined red for review. Calibrate by ear per song.</p>
+          </div>
+          <div class="setting">
+            <h3>Musical key <output id="key-detail">—</output></h3>
+            <label class="toggle"><input id="snap-key" type="checkbox" /> snap notes to key</label>
+            <p>The key is auto-detected from the notes. Off: out-of-key notes are outlined for review. On: every note is snapped to the nearest scale tone (display + export). Purely interpretation — it never changes what was detected.</p>
           </div>
         </div>
       </div>

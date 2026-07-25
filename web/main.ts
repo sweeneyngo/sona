@@ -23,6 +23,8 @@ import {
   pitchTopRange,
 } from "./lib/view";
 import type { Scale } from "./lib/view";
+import { detectKey, keyName, isInKey, snapToKey } from "./lib/key";
+import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
 import { clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, quantizeNote, noteFlags } from "./lib/grid";
@@ -36,6 +38,7 @@ const NOTE_FILL_ALPHA = 0.62; // translucent fill so the f0 contour shows throug
 const RESIZE_GRAB_PX = 7; // right-edge zone that starts a resize instead of a move.
 const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
+const OUT_OF_KEY_COLOR = "#c8a2ff";
 const MIN_ZOOM_X = 1; // 1 = fit-to-width; can't zoom out past the whole song.
 const MAX_ZOOM_X = 60;
 const VISIBLE_SEMITONES = 24; // the roll shows ~2 octaves at a time; scroll for more.
@@ -52,6 +55,9 @@ const el = {
   division: document.getElementById("division") as HTMLSelectElement,
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
+  keyReadout: document.getElementById("key-readout") as HTMLOutputElement,
+  keyDetail: document.getElementById("key-detail") as HTMLOutputElement,
+  snapKey: document.getElementById("snap-key") as HTMLInputElement,
   save: document.getElementById("save") as HTMLButtonElement,
   export: document.getElementById("export") as HTMLButtonElement,
   status: document.getElementById("status") as HTMLElement,
@@ -76,6 +82,8 @@ interface EffectiveNote {
   flagged: boolean;
   lowConfidence: boolean;
   escaped: boolean;
+  /** The note's pitch is outside the detected key (only when snap-to-key is off). */
+  outOfKey: boolean;
 }
 
 interface Hitbox {
@@ -138,6 +146,13 @@ let bpm = 120;
 let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 let flagThreshold = 0.5;
+// Snap each note's pitch to the detected key's scale (display + export). Off by
+// default: out-of-key notes are flagged for review rather than auto-corrected.
+let snapKey = false;
+// Cached key estimate over the working notes; rebuilt lazily with the effective
+// notes (invalidated on any edit).
+let keyCache: KeyEstimate | null = null;
+let keyComputed = false;
 
 // View transform. Horizontal: zoom (⌘/Ctrl-scroll) + scrollX pan (shift-scroll).
 // Vertical: a fixed 2-octave window whose top MIDI pitch is `pitchTop` (scroll).
@@ -265,6 +280,27 @@ function spacing(): number {
 /** Drop the cached interpretation; next `effectiveNotes()` recomputes it. */
 function invalidateEffective(): void {
   effectiveCache = null;
+  keyComputed = false;
+}
+
+/**
+ * The key detected from the working notes' raw pitches (interpretation, ADR-0004
+ * — never fed back into perception). Cached alongside the effective notes and
+ * recomputed after edits; `null` when there are no notes.
+ */
+function currentKey(): KeyEstimate | null {
+  if (!keyComputed) {
+    keyCache = detectKey(workingNotes);
+    keyComputed = true;
+  }
+  return keyCache;
+}
+
+/** Refresh the toolbar + settings key readouts from the current detection. */
+function updateKeyReadout(): void {
+  const key = currentKey();
+  el.keyReadout.textContent = key ? keyName(key) : "—";
+  el.keyDetail.textContent = key ? keyName(key) : "—";
 }
 
 /**
@@ -276,6 +312,7 @@ function invalidateEffective(): void {
 function effectiveNotes(): EffectiveNote[] {
   if (effectiveCache) return effectiveCache;
   const s = spacing();
+  const key = currentKey();
   effectiveCache = workingNotes.map((n) => {
     // Manual notes never escape; everything else uses grid.ts's documented
     // escape-hatch defaults (ADR-0003).
@@ -284,7 +321,11 @@ function effectiveNotes(): EffectiveNote[] {
       n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
     );
     const flags = noteFlags(n, q, flagThreshold);
-    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags };
+    // Pitch interpretation: snap to the detected key's scale when enabled, else
+    // keep the raw pitch and flag it if it falls outside the key.
+    const pitch = key && snapKey ? snapToKey(n.midi_pitch, key) : n.midi_pitch;
+    const outOfKey = key ? !isInKey(pitch, key) : false;
+    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch, ...flags, outOfKey };
   });
   return effectiveCache;
 }
@@ -342,6 +383,12 @@ el.flag.addEventListener("input", () => {
   flagThreshold = Number(el.flag.value);
   el.flagVal.textContent = flagThreshold.toFixed(2);
   invalidateEffective();
+  markDirty();
+  redraw();
+});
+el.snapKey.addEventListener("change", () => {
+  snapKey = el.snapKey.checked;
+  invalidateEffective(); // snapping changes note pitches
   markDirty();
   redraw();
 });
@@ -428,6 +475,7 @@ function syncScale(): void {
 function rebuild(): void {
   resizeCanvas();
   syncScale();
+  updateKeyReadout();
   draw();
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
   el.stop.disabled = !playback;
@@ -664,6 +712,14 @@ function drawEnergyEnvelope(_w: number, h: number): void {
 // Bridge unvoiced dropouts shorter than this (seconds); longer gaps — real rests
 // between notes — still break the line so we never draw pitch that isn't there.
 const CONTOUR_BRIDGE_S = 0.18;
+// A contour segment steeper than this (semitones/sec) is not drawn as a connector
+// — no voice slides an octave in ~10ms (~1200 st/s), so such a segment is a
+// tracking spike or a jump between two notes, and a vertical streak across it just
+// clutters the line. This is a *rendering* break (we don't connect the points),
+// NOT a perception filter: the frame still exists and the notes are untouched
+// (ADR-0004). It replaces the display role of the ticket-08 slope filter, which
+// also (wrongly, for the contour) got removed with the note-level MAD trim.
+const MAX_CONTOUR_SLOPE_ST_PER_S = 150;
 
 function drawF0Contour(): void {
   if (!annotation || !scale) return;
@@ -682,6 +738,7 @@ function strokeContour(
   ctx2d.beginPath();
   let pen = false;
   let lastT = 0;
+  let lastHz = 0;
   for (const f of contour) {
     // Skip frames that don't qualify — but *don't* force the pen up here. Whether
     // to break is decided by the time gap to the last drawn point, so brief
@@ -692,12 +749,16 @@ function strokeContour(
       continue;
     }
     const dt = f.time_s - lastT;
+    // Break (don't connect) across an implausibly steep pitch slope — a spike or a
+    // note-to-note jump — so it doesn't render as a vertical streak.
+    const steep = pen && dt > 0 && Math.abs(12 * Math.log2(f.frequency_hz / lastHz)) / dt > MAX_CONTOUR_SLOPE_ST_PER_S;
     const x = scale!.timeToX(f.time_s);
     const y = freqToY(f.frequency_hz);
-    if (!pen || dt > CONTOUR_BRIDGE_S) ctx2d.moveTo(x, y);
+    if (!pen || dt > CONTOUR_BRIDGE_S || steep) ctx2d.moveTo(x, y);
     else ctx2d.lineTo(x, y);
     pen = true;
     lastT = f.time_s;
+    lastHz = f.frequency_hz;
   }
   ctx2d.stroke();
   ctx2d.lineWidth = 1;
@@ -730,7 +791,8 @@ function drawNotes(): void {
     ctx2d.fill();
     ctx2d.globalAlpha = 1; // outlines and everything after stay fully opaque
 
-    // Outline: escaped (dashed cyan) and flagged (red) are the review cues.
+    // Outline review cues: escaped (dashed cyan), flagged (red), out-of-key
+    // (dashed violet) — the confidence flag takes visual priority over the key hint.
     ctx2d.save();
     if (eff.escaped) {
       ctx2d.setLineDash([4, 3]);
@@ -738,6 +800,10 @@ function drawNotes(): void {
       ctx2d.lineWidth = 2;
     } else if (eff.flagged) {
       ctx2d.strokeStyle = FLAG_COLOR;
+      ctx2d.lineWidth = 2;
+    } else if (eff.outOfKey) {
+      ctx2d.setLineDash([2, 3]);
+      ctx2d.strokeStyle = OUT_OF_KEY_COLOR;
       ctx2d.lineWidth = 2;
     } else {
       ctx2d.strokeStyle = "rgba(0,0,0,0.4)";
@@ -1084,10 +1150,17 @@ function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px
         weakest && weakest.value < 1
         ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
         : "";
+  const key = currentKey();
+  const keyCue = effective?.outOfKey
+    ? `<div class="reason" style="color:${OUT_OF_KEY_COLOR}">◇ out of key${key ? ` (${keyName(key)})` : ""}</div>`
+    : effective && effective.pitch !== note.midi_pitch
+      ? `<div class="reason" style="color:${OUT_OF_KEY_COLOR}">↳ snapped to ${midiToNoteName(effective.pitch)}</div>`
+      : "";
   el.tooltip.innerHTML = `
     <div class="pitch">${midiToNoteName(note.midi_pitch)} · conf ${fmt(note.confidence)}${note.manual ? " · manual" : ""}</div>
     <div>${fmt3(effective?.onset_s ?? note.onset_s)}s – ${fmt3(effective?.offset_s ?? note.offset_s)}s</div>
     ${cue}
+    ${keyCue}
     <dl>${rows}</dl>`;
   el.tooltip.style.display = "block";
   const wrapW = el.canvas.getBoundingClientRect().width;
@@ -1122,6 +1195,7 @@ interface SessionState {
   division: number;
   gridAnchor: number;
   flagThreshold: number;
+  snapKey: boolean;
 }
 
 /**
@@ -1130,7 +1204,7 @@ interface SessionState {
  * (raw seconds + `manual` flags) and the review settings appended.
  */
 function buildSessionFile(): object {
-  const session: SessionState = { bpm, division, gridAnchor, flagThreshold };
+  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, snapKey };
   return { ...annotation, notes: workingNotes, session };
 }
 
@@ -1226,6 +1300,8 @@ function restoreSession(s: any): void {
     el.flag.value = String(flagThreshold);
     el.flagVal.textContent = flagThreshold.toFixed(2);
   }
+  snapKey = s.snapKey === true;
+  el.snapKey.checked = snapKey;
 }
 
 el.save.addEventListener("click", saveSession);
