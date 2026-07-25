@@ -14,10 +14,10 @@
 //! compete and the **earlier** one wins:
 //!
 //! - **Next-onset** — when the next onset arrives within a musical threshold
-//!   ([`Segmenter::max_offset_gap_s`]), it is the primary offset: back-to-back
+//!   ([`HeuristicSegmenter::max_offset_gap_s`]), it is the primary offset: back-to-back
 //!   notes end where the next one attacks.
 //! - **Energy-decay fallback** — when the energy has already decayed to a rest
-//!   before then, the note closes there instead ([`Segmenter::rest_floor_frac`]),
+//!   before then, the note closes there instead ([`HeuristicSegmenter::rest_floor_frac`]),
 //!   leaving a rest until the next onset. This is the staccato-Vocaloid common
 //!   case: short note, clean gap, sharp drop.
 //!
@@ -26,7 +26,7 @@
 //! Onsets are energy transients, so a *legato* pitch change at steady energy —
 //! a slide, or two slurred notes — carries no onset (ADR-0006 left it here on
 //! purpose). Within each onset's span the f0 contour is cut into runs of one
-//! MIDI pitch; a run sustained past [`Segmenter::min_plateau_s`] becomes its own
+//! MIDI pitch; a run sustained past [`HeuristicSegmenter::min_plateau_s`] becomes its own
 //! note, while shorter excursions (vibrato swings, slide transients) are absorbed
 //! so they don't over-split.
 //!
@@ -46,10 +46,10 @@ use crate::onset::Onset;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetKind {
     /// Closed by the next onset arriving within the musical threshold
-    /// ([`Segmenter::max_offset_gap_s`]): back-to-back notes.
+    /// ([`HeuristicSegmenter::max_offset_gap_s`]): back-to-back notes.
     NextOnset,
     /// Closed by the energy decaying to a rest before the next onset — the
-    /// staccato fallback ([`Segmenter::rest_floor_frac`]).
+    /// staccato fallback ([`HeuristicSegmenter::rest_floor_frac`]).
     EnergyDecay,
     /// Closed by a sustained pitch change with no new onset (legato / slide):
     /// a pitch-plateau split. Energy is steady across it, so its steepness is low.
@@ -95,11 +95,53 @@ pub struct NoteSegment {
     pub offset: OffsetInfo,
 }
 
-/// Note segmenter (ADR-0007). Construct with [`Segmenter::default`] for
-/// staccato-vocal defaults, or set fields to tune. All thresholds are empirical
-/// — the spec expects them tuned against real Vocaloid stems.
+/// The note segmentation seam (ADR-0004): raw perception tracks → note events.
+/// Two interchangeable strategies live behind it — the Phase-B **note-HMM**
+/// ([ADR-0010], the default) and the legacy ADR-0007 **heuristic** kept reachable
+/// for comparison until the note-HMM signs off (ticket 08). Everything downstream
+/// (confidence, CLI, annotation JSON) sees only this type and its [`NoteSegment`]
+/// output, so the strategy swap is invisible to them.
+///
+/// [ADR-0010]: ../../docs/adr/0010-note-hmm-segmentation.md
 #[derive(Debug, Clone)]
-pub struct Segmenter {
+pub enum Segmenter {
+    /// Tony-style note-HMM over the pitch contour (ADR-0010) — the default.
+    NoteHmm(crate::hmm::NoteHmm),
+    /// The ADR-0007 heuristic: hybrid offsets + pitch-plateau splitting.
+    Heuristic(HeuristicSegmenter),
+}
+
+impl Default for Segmenter {
+    fn default() -> Self {
+        Segmenter::NoteHmm(crate::hmm::NoteHmm::default())
+    }
+}
+
+impl Segmenter {
+    /// Segment a stem's `onsets`, f0 `contour`, and energy `envelope` into note
+    /// events, dispatching to whichever strategy this `Segmenter` holds. Notes
+    /// come out in onset order.
+    pub fn segment(
+        &self,
+        onsets: &[Onset],
+        contour: &[F0Frame],
+        envelope: &[EnergyFrame],
+    ) -> Vec<NoteSegment> {
+        match self {
+            Segmenter::NoteHmm(h) => h.segment(onsets, contour, envelope),
+            Segmenter::Heuristic(h) => h.segment(onsets, contour, envelope),
+        }
+    }
+}
+
+/// Heuristic note segmenter (ADR-0007). Construct with
+/// [`HeuristicSegmenter::default`] for staccato-vocal defaults, or set fields to
+/// tune. All thresholds are empirical — tuned against real Vocaloid stems.
+///
+/// Superseded as the default by the note-HMM (ADR-0010); retained behind
+/// [`Segmenter`] for the ticket-08 comparison.
+#[derive(Debug, Clone)]
+pub struct HeuristicSegmenter {
     /// A next onset this many seconds or less after the current onset is the
     /// primary (next-onset) offset; a larger gap means a rest, so the
     /// energy-decay fallback closes the note earlier instead.
@@ -123,7 +165,7 @@ pub struct Segmenter {
     pub voiced_threshold: f32,
 }
 
-impl Default for Segmenter {
+impl Default for HeuristicSegmenter {
     fn default() -> Self {
         // Defaults retuned for general (expressive) vocals rather than staccato
         // Vocaloid. The big one is `rest_floor_frac`: at the old 0.15 a note
@@ -153,6 +195,43 @@ pub fn hz_to_midi(hz: f32) -> f32 {
     69.0 + 12.0 * (hz / 440.0).log2()
 }
 
+/// Round a continuous MIDI pitch to the nearest integer note, clamped to `0..=127`.
+pub fn midi_round_f32(midi: f32) -> u8 {
+    midi.round().clamp(0.0, 127.0) as u8
+}
+
+/// Fractional fall in RMS across `offset_s`, using a half-window of `window_s`:
+/// the mean RMS in the window just after minus that just before, over the
+/// before-level, clamped to `0.0..=1.0`. A short window makes this a *rate* — a
+/// staccato drop to the floor scores near 1, a slow tail near 0. Returns 0 when
+/// there is no energy before the offset to fall from.
+///
+/// This is ADR-0007's one surviving output: both the heuristic segmenter and the
+/// note-HMM (ADR-0010) measure it purely as raw material for offset-clarity
+/// confidence (ticket 06) — not to *decide* the offset.
+pub(crate) fn drop_steepness(envelope: &[EnergyFrame], offset_s: f64, window_s: f64) -> f32 {
+    let mean_rms = |lo: f64, hi: f64| -> Option<f32> {
+        let vals: Vec<f32> = envelope
+            .iter()
+            .filter(|f| f.time_s >= lo && f.time_s < hi)
+            .map(|f| f.rms)
+            .collect();
+        if vals.is_empty() {
+            None
+        } else {
+            Some(vals.iter().sum::<f32>() / vals.len() as f32)
+        }
+    };
+    let before = mean_rms(offset_s - window_s, offset_s);
+    let after = mean_rms(offset_s, offset_s + window_s);
+    match (before, after) {
+        (Some(b), Some(a)) if b > f32::EPSILON => (1.0 - a / b).clamp(0.0, 1.0),
+        // No "before" energy (offset at/near the stem start) — nothing to fall
+        // from; treat as no measurable drop.
+        _ => 0.0,
+    }
+}
+
 /// A run of contour frames the plateau step has grouped under one MIDI pitch.
 #[derive(Debug, Clone, Copy)]
 struct Plateau {
@@ -167,7 +246,7 @@ impl Plateau {
     }
 }
 
-impl Segmenter {
+impl HeuristicSegmenter {
     /// Segment a stem's `onsets`, f0 `contour`, and energy `envelope` into note
     /// events. Returns an empty vec if there are no onsets or no envelope to
     /// close notes against. Notes come out in onset order.
@@ -298,33 +377,9 @@ impl Segmenter {
             .map(|f| f.time_s)
     }
 
-    /// Fractional fall in RMS across `offset_s`: the mean RMS in the window just
-    /// after minus that just before, over the before-level, clamped to
-    /// `0.0..=1.0`. A short window makes this a *rate* — a staccato drop to the
-    /// floor scores near 1, a slow tail near 0. Returns 0 when there is no energy
-    /// before the offset to fall from.
+    /// Energy-drop steepness at this offset (see the free [`drop_steepness`]).
     fn drop_steepness(&self, envelope: &[EnergyFrame], offset_s: f64) -> f32 {
-        let w = self.drop_window_s;
-        let mean_rms = |lo: f64, hi: f64| -> Option<f32> {
-            let vals: Vec<f32> = envelope
-                .iter()
-                .filter(|f| f.time_s >= lo && f.time_s < hi)
-                .map(|f| f.rms)
-                .collect();
-            if vals.is_empty() {
-                None
-            } else {
-                Some(vals.iter().sum::<f32>() / vals.len() as f32)
-            }
-        };
-        let before = mean_rms(offset_s - w, offset_s);
-        let after = mean_rms(offset_s, offset_s + w);
-        match (before, after) {
-            (Some(b), Some(a)) if b > f32::EPSILON => (1.0 - a / b).clamp(0.0, 1.0),
-            // No "before" energy (offset at/near the stem start) — nothing to
-            // fall from; treat as no measurable drop.
-            _ => 0.0,
-        }
+        drop_steepness(envelope, offset_s, self.drop_window_s)
     }
 
     /// Cut the contour between `t_start` and `t_end` into pitch plateaus. Voiced
@@ -519,7 +574,7 @@ mod tests {
 
     #[test]
     fn no_onsets_yields_no_notes() {
-        let seg = Segmenter::default();
+        let seg = HeuristicSegmenter::default();
         assert!(seg.segment(&[], &[], &envelope(&[(1.0, 0.5)])).is_empty());
     }
 
@@ -532,7 +587,7 @@ mod tests {
         let f0 = contour(&[(0.1, 0.0), (0.4, 440.0), (0.8, 0.0), (1.1, 523.25), (1.2, 0.0)]);
         let onsets = [onset(0.1), onset(0.8)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         assert_eq!(notes.len(), 2, "two notes: {notes:?}");
         assert!(
             (notes[0].offset_s - 0.4).abs() < 0.03,
@@ -558,7 +613,7 @@ mod tests {
         let f0 = contour(&[(0.05, 0.0), (0.2, 440.0), (0.6, 440.0), (0.65, 0.0)]);
         let onsets = [onset(0.05), onset(0.2)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         assert_eq!(notes.len(), 2, "two notes: {notes:?}");
         assert!(
             (notes[0].offset_s - 0.2).abs() < 1e-9,
@@ -577,7 +632,7 @@ mod tests {
         let f0 = contour(&[(0.05, 0.0), (0.4, 440.0), (0.85, 493.88), (0.9, 0.0)]);
         let onsets = [onset(0.05)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         assert_eq!(notes.len(), 2, "legato split into two notes: {notes:?}");
         assert_eq!(notes[0].midi_pitch, 69); // A4
         assert_eq!(notes[1].midi_pitch, 71); // B4
@@ -611,7 +666,7 @@ mod tests {
         let env = envelope(&[(0.05, 0.01), (0.6, 0.5), (0.65, 0.01)]);
         let onsets = [onset(0.05)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         assert_eq!(
             notes.len(),
             1,
@@ -636,7 +691,7 @@ mod tests {
         let f0 = contour(&[(0.05, 0.0), (0.9, 440.0)]);
         let onsets = [onset(0.05)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         let last = notes.last().unwrap();
         assert!(
             last.offset.drop_steepness < 0.3,
@@ -653,7 +708,7 @@ mod tests {
         let f0 = contour(&[(0.05, 0.0), (0.9, 440.0)]);
         let onsets = [onset(0.05)];
 
-        let notes = Segmenter::default().segment(&onsets, &f0, &env);
+        let notes = HeuristicSegmenter::default().segment(&onsets, &f0, &env);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].offset.kind, OffsetKind::StemEnd);
         assert!(notes[0].offset_s > 0.8, "runs to the stem end");
