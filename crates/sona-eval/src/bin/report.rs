@@ -3,16 +3,23 @@
 //!     cargo run -p sona-eval --bin sona-eval-report            # fixtures only
 //!     cargo run -p sona-eval --bin sona-eval-report -- --corpus # + Vocadito
 //!
-//! **This scaffold verifies that data loads** (ticket 01). The metrics — RPA/RCA,
-//! onset-F1, note-F1 (COnP/COnPOff), confidence calibration — arrive in ticket
-//! 02, at which point this grows a per-stage score table. With `--corpus` it
-//! loads the Vocadito corpus from `SONA_VOCADITO_DIR` (or the crate-local
-//! `data/vocadito`) and **fails loudly** if it isn't there.
+//! It prints a **full per-stage report** — RPA/RCA, onset-F1, note-F1
+//! (COnP/COnPOff), and a confidence-calibration table — for each golden fixture
+//! (ticket 02). With `--corpus` it also loads the Vocadito corpus from
+//! `SONA_VOCADITO_DIR` (or the crate-local `data/vocadito`) and **fails loudly**
+//! if it isn't there.
+//!
+//! Until a real producer is wired in (ticket 03), each fixture is scored against
+//! the **identity estimate** (the reference echoed back), so every stage reads a
+//! perfect 1.0 — the report proves the metric plumbing renders end to end, not
+//! that anything transcribes yet.
 
 use std::process::ExitCode;
 
 use sona_eval::fixtures;
+use sona_eval::metrics;
 use sona_eval::vocadito;
+use sona_eval::Estimate;
 
 fn main() -> ExitCode {
     let with_corpus = std::env::args().any(|a| a == "--corpus");
@@ -41,6 +48,15 @@ fn run(with_corpus: bool) -> Result<(), sona_eval::EvalError> {
     }
     println!("{} fixtures loaded.\n", loaded.len());
 
+    println!("== Per-stage metrics (estimate = identity; real producer in ticket 03) ==");
+    let params = metrics::MetricParams::default();
+    for f in &loaded {
+        let estimate = Estimate::from_reference(&f.reference);
+        let report = metrics::evaluate(&f.reference, &estimate, &params);
+        print!("{}", report.format(&f.name));
+    }
+    println!();
+
     if with_corpus {
         let root = vocadito::corpus_dir();
         println!("== Vocadito corpus ({}) ==", root.display());
@@ -63,6 +79,5 @@ fn run(with_corpus: bool) -> Result<(), sona_eval::EvalError> {
         println!("(run with --corpus to also load Vocadito from SONA_VOCADITO_DIR)");
     }
 
-    println!("\nMetrics land in ticket 02; this scaffold only verifies loading.");
     Ok(())
 }

@@ -14,18 +14,23 @@
 //! [`synth`] is the shared source of truth from which the golden fixtures'
 //! audio *and* ground truth are generated, and [`wav`] is the fixture WAV I/O.
 //!
-//! **Scope of this scaffold (ticket 01):** load data and fail loudly when the
-//! corpus is absent. The metrics (RPA/RCA, onset-F1, note-F1, confidence
-//! calibration) land in ticket 02.
+//! An [`Estimate`] (a producer's transcription) is scored against a
+//! [`reference::Reference`] by the per-stage [`metrics`] (RPA/RCA, onset-F1,
+//! note-F1 COnP/COnPOff, confidence calibration) — reimplemented in pure Rust
+//! and cross-checked against `mir_eval` (ticket 02).
 
 pub mod error;
+pub mod estimate;
 pub mod fixtures;
+pub mod metrics;
 pub mod reference;
 pub mod synth;
 pub mod vocadito;
 pub mod wav;
 
 pub use error::EvalError;
+pub use estimate::{EstNote, Estimate};
 pub use fixtures::Fixture;
+pub use metrics::{evaluate, MetricParams, StageReport};
 pub use reference::{RefF0, RefNote, Reference};
 pub use vocadito::Corpus;
