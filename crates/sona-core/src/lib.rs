@@ -23,6 +23,7 @@ pub mod midi;
 pub mod onset;
 pub mod pipeline;
 pub mod pitch;
+pub mod prefilter;
 pub mod segment;
 
 pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
@@ -31,6 +32,7 @@ pub use midi::{to_smf, write_midi};
 pub use onset::{Onset, OnsetDetector, OnsetResult};
 pub use pipeline::Transcriber;
 pub use pitch::{PYin, PitchTracker};
+pub use prefilter::{PitchFrame, PitchPreFilter};
 pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 
 /// The crate version, surfaced by the CLI.
