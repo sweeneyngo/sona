@@ -104,6 +104,37 @@ fn segments_a_staccato_phrase_into_plausible_notes() {
 }
 
 #[test]
+fn splits_repeated_same_pitch_notes() {
+    // Two A4 notes with a clean gap between them. Pure pitch tracking sees one
+    // sustained pitch; the re-attack is an energy onset the note-HMM's energy
+    // same-pitch splitter (ticket 06) must turn into a second note at the *same*
+    // pitch — the case pitch-only methods over-merge.
+    let mut audio = silence(0.1);
+    audio.extend(tone(440.0, 0.25, 0.6));
+    audio.extend(silence(0.15));
+    audio.extend(tone(440.0, 0.25, 0.6));
+    audio.extend(silence(0.15));
+
+    let notes = transcribe(&audio);
+    assert_eq!(
+        notes.len(),
+        2,
+        "two same-pitch attacks split into two notes: {:?}",
+        notes.iter().map(|n| n.midi_pitch).collect::<Vec<_>>()
+    );
+    assert_eq!(notes[0].midi_pitch, midi(440.0));
+    assert_eq!(notes[1].midi_pitch, midi(440.0));
+    // Both are born of a real attack (not a pitch-born split), with a rest between.
+    assert!(!notes[0].split_from_plateau && !notes[1].split_from_plateau);
+    assert!(
+        notes[1].onset_s > notes[0].offset_s,
+        "a rest separates the two notes, got {} then {}",
+        notes[0].offset_s,
+        notes[1].onset_s
+    );
+}
+
+#[test]
 fn splits_a_legato_slur_with_no_re_attack() {
     // Two slurred pitches under one breath: 440 Hz then 523.25 Hz, no silence
     // between them, so there is no energy transient at the change — onset

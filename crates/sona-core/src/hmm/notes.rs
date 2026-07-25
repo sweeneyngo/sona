@@ -166,20 +166,19 @@ impl NoteHmm {
             let end = t; // first frame past this note (rest / pitch change / onset / EOF)
 
             // Born of a detected onset near its start, or a pitch-born split?
-            let strength = onset_strength[start.min(onset_strength.len() - 1)];
-            let (onset_strength, split_from_plateau) = match strength {
+            let near_onset = onset_strength[start.min(onset_strength.len() - 1)];
+            let (strength, split_from_plateau) = match near_onset {
                 Some(s) => (s, false),
                 None => (0.0, true),
             };
 
             notes.push(RawNote {
-                end_frame: end,
                 onset_s: frames[start].time_s,
                 offset_s: frames[end.min(n - 1)].time_s,
                 ends_in_rest: end < n && voiced_midi[end].is_none(),
                 at_stem_end: end >= n,
                 midi_pitch: self.final_pitch(frames, start, end, model, path),
-                onset_strength,
+                onset_strength: strength,
                 split_from_plateau,
             });
         }
@@ -280,7 +279,6 @@ impl NoteHmm {
                 if seamless && n.midi_pitch == prev.midi_pitch && n.split_from_plateau {
                     // Absorb: extend the previous note over this fragment.
                     prev.offset_s = n.offset_s;
-                    prev.end_frame = n.end_frame;
                     prev.ends_in_rest = n.ends_in_rest;
                     prev.at_stem_end = n.at_stem_end;
                     continue;
@@ -296,7 +294,6 @@ impl NoteHmm {
 /// material for its onset/offset classification.
 #[derive(Debug, Clone)]
 struct RawNote {
-    end_frame: usize,
     onset_s: f64,
     offset_s: f64,
     /// The frame past the note is a rest (`Silent`).
@@ -369,8 +366,8 @@ fn note_peak_rms(envelope: &[EnergyFrame], n: &RawNote) -> f32 {
 
 /// Classify how a note's offset was decided, from the path context and its
 /// successor. The confidence stage reads only the drop-steepness, not this kind
-/// (ADR-0007), so it is for the UI/debug — but it mirrors the heuristic's
-/// vocabulary so the two segmenters are legible side by side.
+/// (ADR-0007), so it is for the UI/debug; the vocabulary is inherited from the
+/// retired heuristic so saved annotations stay legible.
 fn offset_kind(n: &RawNote, next: Option<&RawNote>) -> OffsetKind {
     if n.at_stem_end {
         OffsetKind::StemEnd

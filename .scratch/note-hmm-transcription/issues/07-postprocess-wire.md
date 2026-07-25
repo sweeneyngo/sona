@@ -1,6 +1,6 @@
 # 07 — Post-processing + wire behind the Segmenter seam
 
-Status: ready
+Status: done
 Blocked by: 06
 Phase: B (note-HMM)
 

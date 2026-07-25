@@ -25,3 +25,9 @@ path = "src/bin/report.rs"
 [[bin]]
 name = "sona-eval-gen-fixtures"
 path = "src/bin/gen_fixtures.rs"
+
+# Ticket 08: sweeps the note-HMM's Stable self-transition + interval λ against the
+# ADR-0007 baseline on Vocadito + fixtures — the Phase-B payoff gate.
+[[bin]]
+name = "sona-eval-sweep"
+path = "src/bin/sweep.rs"

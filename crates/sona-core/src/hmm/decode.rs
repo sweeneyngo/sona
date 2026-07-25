@@ -67,6 +67,10 @@ pub fn viterbi_path(model: &HmmModel, input: &DecodeInput) -> Vec<usize> {
         let bt = &mut back[t];
 
         // --- Note-change contribution into every Attack(q) --------------------
+        // NOTE: this inline transition structure must stay in lock-step with
+        // `HmmModel::transition` (the readable, unit-tested reference in model.rs);
+        // both encode the same edges. This form trades that duplication for the
+        // O(frames · bins²) decode.
         // src(p): the better of leaving Stable(p) or Silent(p) for a new note,
         // net of the per-source normaliser. note_change(q) = maxₚ src(p) − |p−q|·decay.
         let mut src_val = vec![f32::NEG_INFINITY; n_bins];

@@ -21,8 +21,6 @@ import {
   zoomToShowSeconds,
   defaultPitchTop,
   pitchTopRange,
-  pitchOutlierFlags,
-  pitchSlopeStPerSec,
 } from "./lib/view";
 import type { Scale } from "./lib/view";
 import { buildSchedule } from "./lib/synth";
@@ -38,7 +36,6 @@ const NOTE_FILL_ALPHA = 0.62; // translucent fill so the f0 contour shows throug
 const RESIZE_GRAB_PX = 7; // right-edge zone that starts a resize instead of a move.
 const FLAG_COLOR = "#ff5c5c";
 const ESCAPE_COLOR = "#5cd0ff";
-const OUTLIER_COLOR = "#d98cff";
 const MIN_ZOOM_X = 1; // 1 = fit-to-width; can't zoom out past the whole song.
 const MAX_ZOOM_X = 60;
 const VISIBLE_SEMITONES = 24; // the roll shows ~2 octaves at a time; scroll for more.
@@ -55,7 +52,6 @@ const el = {
   division: document.getElementById("division") as HTMLSelectElement,
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
-  outliers: document.getElementById("hide-outliers") as HTMLInputElement,
   save: document.getElementById("save") as HTMLButtonElement,
   export: document.getElementById("export") as HTMLButtonElement,
   status: document.getElementById("status") as HTMLElement,
@@ -80,7 +76,6 @@ interface EffectiveNote {
   flagged: boolean;
   lowConfidence: boolean;
   escaped: boolean;
-  outlier: boolean;
 }
 
 interface Hitbox {
@@ -151,8 +146,6 @@ let scrollX = 0;
 let pitchTop = 79; // top visible MIDI pitch; window = [pitchTop-23, pitchTop].
 // Playback start position in seconds; set by clicking the ruler (seek).
 let seekOffset = 0;
-// Hide wrong-octave pitch outliers (e.g. a bleed C1) from render/play/export.
-let hideOutliers = true;
 // Cache of the interpreted notes; rebuilt lazily, invalidated on any edit/setting.
 let effectiveCache: EffectiveNote[] | null = null;
 // Visible time window (seconds), recomputed each draw() and used to cull grid
@@ -176,11 +169,7 @@ el.json.addEventListener("change", async () => {
     const parsed = JSON.parse(await file.text());
     const session = applyLoadedJson(parsed);
     const what = session ? "session" : "annotation";
-    const hidden = effectiveNotes().filter((e) => e.outlier).length;
-    setStatus(
-      `Loaded ${what}: ${workingNotes.length} notes from “${file.name}”.` +
-        (hideOutliers && hidden ? ` Hiding ${hidden} outlier${hidden > 1 ? "s" : ""}.` : ""),
-    );
+    setStatus(`Loaded ${what}: ${workingNotes.length} notes from “${file.name}”.`);
     dirty = false; // a freshly loaded file is not unsaved work
   } catch (err) {
     annotation = null;
@@ -280,16 +269,14 @@ function invalidateEffective(): void {
 
 /**
  * The notes as interpreted for display, playback, and export: each working note
- * hard-snapped to the grid (or escaped), its flag state, and whether it's a
- * pitch outlier. Manual notes never escape — the user placed them deliberately,
- * so they always snap. Cached: recomputing this per frame was a big part of the
- * playback jank on long stems.
+ * hard-snapped to the grid (or escaped) with its flag state. Manual notes never
+ * escape — the user placed them deliberately, so they always snap. Cached:
+ * recomputing this per frame was a big part of the playback jank on long stems.
  */
 function effectiveNotes(): EffectiveNote[] {
   if (effectiveCache) return effectiveCache;
   const s = spacing();
-  const outliers = pitchOutlierFlags(workingNotes.map((n) => n.midi_pitch));
-  effectiveCache = workingNotes.map((n, i) => {
+  effectiveCache = workingNotes.map((n) => {
     // Manual notes never escape; everything else uses grid.ts's documented
     // escape-hatch defaults (ADR-0003).
     const q = quantizeNote(
@@ -297,20 +284,14 @@ function effectiveNotes(): EffectiveNote[] {
       n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
     );
     const flags = noteFlags(n, q, flagThreshold);
-    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags, outlier: outliers[i] };
+    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch: n.midi_pitch, ...flags };
   });
   return effectiveCache;
 }
 
-/** Effective notes actually shown/played/exported: outliers dropped when hidden. */
-function visibleNotes(): EffectiveNote[] {
-  const all = effectiveNotes();
-  return hideOutliers ? all.filter((e) => !e.outlier) : all;
-}
-
-/** The visible notes reshaped for the MIDI encoder / synth (seconds + pitch). */
+/** The effective notes reshaped for the MIDI encoder / synth (seconds + pitch). */
 function midiNotes() {
-  return visibleNotes().map((e) => ({
+  return effectiveNotes().map((e) => ({
     onset_s: e.onset_s,
     offset_s: e.offset_s,
     midi_pitch: e.pitch,
@@ -318,16 +299,14 @@ function midiNotes() {
   }));
 }
 
-/** MIDI pitch extent of the non-outlier notes, for centring the default window. */
+/** MIDI pitch extent of the notes, for centring the default window. */
 function noteMidiExtent(): { min: number; max: number } {
-  const pitches = effectiveNotes()
-    .filter((e) => !e.outlier)
-    .map((e) => e.pitch);
+  const pitches = effectiveNotes().map((e) => e.pitch);
   if (pitches.length === 0) return { min: 60, max: 72 };
   return { min: Math.min(...pitches), max: Math.max(...pitches) };
 }
 
-/** Clamp `pitchTop` so the 2-octave window stays over the (non-outlier) notes. */
+/** Clamp `pitchTop` so the 2-octave window stays over the notes. */
 function clampPitchTop(top: number): number {
   const { min, max } = noteMidiExtent();
   const r = pitchTopRange(min, max, VISIBLE_SEMITONES);
@@ -365,11 +344,6 @@ el.flag.addEventListener("input", () => {
   invalidateEffective();
   markDirty();
   redraw();
-});
-el.outliers.addEventListener("change", () => {
-  hideOutliers = el.outliers.checked;
-  markDirty();
-  redraw(); // no invalidate: the outlier flag is cached, only the filter changes.
 });
 el.export.addEventListener("click", exportMidi);
 
@@ -580,7 +554,7 @@ function isBlackKey(midi: number): boolean {
 function drawPitchHighlights(w: number): void {
   if (!scale) return;
   const seen = new Set<number>();
-  for (const e of visibleNotes()) {
+  for (const e of effectiveNotes()) {
     if (e.offset_s < viewT0 || e.onset_s > viewT1) continue;
     if (e.pitch < scale.minPitch || e.pitch > scale.maxPitch || seen.has(e.pitch)) continue;
     seen.add(e.pitch);
@@ -690,11 +664,6 @@ function drawEnergyEnvelope(_w: number, h: number): void {
 // Bridge unvoiced dropouts shorter than this (seconds); longer gaps — real rests
 // between notes — still break the line so we never draw pitch that isn't there.
 const CONTOUR_BRIDGE_S = 0.18;
-// A frame reached by a steeper pitch slope than this (semitones/sec) is an
-// octave/tracking artifact — no voice slides that fast — so it's dropped and the
-// line bridges across it. An octave in one ~10ms frame is ~1200; real slides are
-// tens of semitones/sec, so 150 cleanly separates them.
-const MAX_CONTOUR_SLOPE_ST_PER_S = 150;
 
 function drawF0Contour(): void {
   if (!annotation || !scale) return;
@@ -713,7 +682,6 @@ function strokeContour(
   ctx2d.beginPath();
   let pen = false;
   let lastT = 0;
-  let lastHz = 0;
   for (const f of contour) {
     // Skip frames that don't qualify — but *don't* force the pen up here. Whether
     // to break is decided by the time gap to the last drawn point, so brief
@@ -724,19 +692,12 @@ function strokeContour(
       continue;
     }
     const dt = f.time_s - lastT;
-    // Octave/tracking artifact: reached by an impossibly steep slope while the
-    // line is live. Drop it and keep `last` put so we bridge to the next sane
-    // sample instead of drawing the spike.
-    if (pen && dt <= CONTOUR_BRIDGE_S && pitchSlopeStPerSec(lastHz, f.frequency_hz, dt) > MAX_CONTOUR_SLOPE_ST_PER_S) {
-      continue;
-    }
     const x = scale!.timeToX(f.time_s);
     const y = freqToY(f.frequency_hz);
     if (!pen || dt > CONTOUR_BRIDGE_S) ctx2d.moveTo(x, y);
     else ctx2d.lineTo(x, y);
     pen = true;
     lastT = f.time_s;
-    lastHz = f.frequency_hz;
   }
   ctx2d.stroke();
   ctx2d.lineWidth = 1;
@@ -757,7 +718,7 @@ function drawNotes(): void {
   if (!scale) return;
   noteHitboxes = [];
   const barH = Math.max(3, scale.rowHeight - 2);
-  for (const eff of visibleNotes()) {
+  for (const eff of effectiveNotes()) {
     if (eff.offset_s < viewT0 || eff.onset_s > viewT1) continue; // cull off-screen
     const x = scale.timeToX(eff.onset_s);
     const y = scale.pitchToY(eff.pitch) + (scale.rowHeight - barH) / 2;
@@ -769,14 +730,9 @@ function drawNotes(): void {
     ctx2d.fill();
     ctx2d.globalAlpha = 1; // outlines and everything after stay fully opaque
 
-    // Outline: outlier (dashed magenta), escaped (dashed cyan), flagged (red)
-    // are the review cues. Outliers only reach here when "hide outliers" is off.
+    // Outline: escaped (dashed cyan) and flagged (red) are the review cues.
     ctx2d.save();
-    if (eff.outlier) {
-      ctx2d.setLineDash([3, 3]);
-      ctx2d.strokeStyle = OUTLIER_COLOR;
-      ctx2d.lineWidth = 2;
-    } else if (eff.escaped) {
+    if (eff.escaped) {
       ctx2d.setLineDash([4, 3]);
       ctx2d.strokeStyle = ESCAPE_COLOR;
       ctx2d.lineWidth = 2;
@@ -1121,11 +1077,9 @@ function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px
   const rows = Object.entries(note.sub_scores)
     .map(([k, v]) => `<dt>${k.replace(/_/g, " ")}</dt><dd>${fmt(v)}</dd>`)
     .join("");
-  const cue = effective?.outlier
-    ? `<div class="reason" style="color:${OUTLIER_COLOR}">◇ pitch outlier (wrong octave?)</div>`
-    : effective?.escaped
-      ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
-      : // Only warn if the weakest dimension is actually shaky — a perfect note
+  const cue = effective?.escaped
+    ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
+    : // Only warn if the weakest dimension is actually shaky — a perfect note
         // (all sub-scores 1.00, e.g. a manual one) needs no ⚠ reason.
         weakest && weakest.value < 1
         ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
@@ -1168,7 +1122,6 @@ interface SessionState {
   division: number;
   gridAnchor: number;
   flagThreshold: number;
-  hideOutliers: boolean;
 }
 
 /**
@@ -1177,7 +1130,7 @@ interface SessionState {
  * (raw seconds + `manual` flags) and the review settings appended.
  */
 function buildSessionFile(): object {
-  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, hideOutliers };
+  const session: SessionState = { bpm, division, gridAnchor, flagThreshold };
   return { ...annotation, notes: workingNotes, session };
 }
 
@@ -1273,8 +1226,6 @@ function restoreSession(s: any): void {
     el.flag.value = String(flagThreshold);
     el.flagVal.textContent = flagThreshold.toFixed(2);
   }
-  hideOutliers = s.hideOutliers !== false;
-  el.outliers.checked = hideOutliers;
 }
 
 el.save.addEventListener("click", saveSession);

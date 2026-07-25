@@ -1,6 +1,6 @@
 # 06 — Viterbi decode + energy same-pitch split
 
-Status: ready
+Status: done
 Blocked by: 05
 Phase: B (note-HMM)
 

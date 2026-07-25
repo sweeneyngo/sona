@@ -10,8 +10,6 @@ import {
   zoomToShowSeconds,
   defaultPitchTop,
   pitchTopRange,
-  pitchOutlierFlags,
-  pitchSlopeStPerSec,
 } from "./view";
 
 test("midiToNoteName names the anchor and octave boundaries", () => {
@@ -161,39 +159,6 @@ test("pitchTopRange pins a window when the span already fits", () => {
   const r = pitchTopRange(60, 64, 24); // 5-semitone span < 24 → fixed
   assert.equal(r.min, r.max);
   assert.equal(r.min, defaultPitchTop(60, 64, 24));
-});
-
-test("pitchOutlierFlags marks a wrong-octave note (C1 under a C4 vocal)", () => {
-  const flags = pitchOutlierFlags([60, 62, 64, 63, 61, 24]);
-  assert.deepEqual(flags, [false, false, false, false, false, true]);
-});
-
-test("pitchOutlierFlags keeps a normal ~2-octave vocal span intact", () => {
-  const pitches = [55, 57, 60, 62, 64, 67, 69, 72];
-  assert.deepEqual(
-    pitchOutlierFlags(pitches),
-    pitches.map(() => false),
-  );
-});
-
-test("pitchOutlierFlags is empty for no notes", () => {
-  assert.deepEqual(pitchOutlierFlags([]), []);
-});
-
-test("pitchSlopeStPerSec: an octave jump in 10ms is a huge (artifact) slope", () => {
-  // 440→880 Hz is +12 semitones; over 0.01s that's 1200 semitones/sec.
-  assert.ok(Math.abs(pitchSlopeStPerSec(440, 880, 0.01) - 1200) < 1e-6);
-});
-
-test("pitchSlopeStPerSec: a gentle real slide stays small", () => {
-  // ~2 semitones over 100ms = 20 semitones/sec — well under any artifact cutoff.
-  const hzB = 440 * Math.pow(2, 2 / 12);
-  assert.ok(Math.abs(pitchSlopeStPerSec(440, hzB, 0.1) - 20) < 1e-6);
-});
-
-test("pitchSlopeStPerSec: zero/negative dt is treated as infinitely steep", () => {
-  assert.equal(pitchSlopeStPerSec(440, 460, 0), Infinity);
-  assert.equal(pitchSlopeStPerSec(440, 440, 0.02), 0);
 });
 
 test("zoomX defaults to 1 / scrollX to 0 (fit-to-width, unchanged)", () => {

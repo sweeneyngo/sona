@@ -1,6 +1,6 @@
 # 05 — Note-HMM state, emission, and transition model
 
-Status: ready
+Status: done
 Blocked by: 04
 Phase: B (note-HMM)
 

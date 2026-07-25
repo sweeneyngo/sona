@@ -78,20 +78,21 @@ pub struct HmmParams {
     pub sigma_stable: f32,
     /// Trust exponent `τ` scaling the pitch Gaussian's log-likelihood. Lower
     /// trusts the contour less (flatter emission), letting the transition prior
-    /// dominate boundary placement. ADR-0010's nominal `τ≈0.1` is a *floor* — at
-    /// that value the decode won't even follow a clean legato pitch change, so the
-    /// default trusts the (already median-smoothed) contour more; the sweep can
-    /// lower it if real stems over-segment.
+    /// dominate boundary placement. ADR-0010's nominal `τ≈0.1` was measured to be
+    /// *worse than the heuristic baseline* on Vocadito (corpus COnP-F1 ≈ 0.37–0.48
+    /// vs the 0.515 baseline — the emission is too flat to place boundaries); the
+    /// default is set from that sweep. See reports/note-hmm-sweep.md.
     pub pitch_trust: f32,
     /// Voicing prior `v`: the base share of emission mass given to voiced
     /// sub-states vs. Silent, before the frame's own pYIN voicing tilts it.
     pub voicing_prior: f32,
-    /// Attack self-transition probability. ADR-0010's nominal is `0.9`, but on a
-    /// clean, on-pitch contour the Attack and Stable emissions coincide, so a high
-    /// value leaves the decode stuck in Attack for tens of frames and blurs the
-    /// Attack→Stable boundary the segmenter and energy splitter read. The default
-    /// keeps Attack short (a few frames of onset-variance tolerance), which is its
-    /// actual job.
+    /// Attack self-transition probability. ADR-0010's nominal is `0.9`, but that
+    /// was measured to *fail the gate* on Vocadito (corpus COnP-F1 ≈ 0.37–0.44 <
+    /// the 0.515 baseline): a high value leaves the decode stuck in Attack for
+    /// tens of frames (Attack and Stable emissions coincide on a clean on-pitch
+    /// contour), blurring the Attack→Stable boundary the segmenter and energy
+    /// splitter read. The default keeps Attack short — its actual job — and is set
+    /// from the sweep. See reports/note-hmm-sweep.md.
     pub attack_self: f32,
     /// **Stable self-transition probability — Phase B's main knob.** Higher merges
     /// (kills vibrato jitter, risks merging fast notes); lower admits more note
@@ -121,12 +122,23 @@ impl Default for HmmParams {
             bins_per_semitone: 3,
             sigma_attack: 5.0,
             sigma_stable: 0.9,
+            // Sweep-set (reports/note-hmm-sweep.md): τ=1.0 gave the best corpus
+            // note-F1; ADR-0010's nominal 0.1 lands below the baseline.
             pitch_trust: 1.0,
             voicing_prior: 0.5,
-            attack_self: 0.6,
-            stable_self: 0.99,
+            // Sweep-set: 0.5 gave the best corpus note-F1 (COnP 0.646); ADR-0010's
+            // nominal 0.9 fails the gate. Keeps Attack ~2 frames, its real job.
+            attack_self: 0.5,
+            // The one main knob (ADR-0010). Set by the ticket-08 sweep against
+            // Vocadito: 0.95 is the interior optimum (corpus COnP 0.646 at the
+            // chosen attack_self/τ, vs the 0.515 heuristic baseline); higher
+            // over-merges real notes and drops it. See reports/note-hmm-sweep.md.
+            stable_self: 0.95,
             silent_self: 0.9999,
             stable_to_silent_frac: 0.5,
+            // The sweep found note-F1 essentially flat across λ ∈ {1.5, 2.5, 4.0}
+            // at stable_self = 0.95, so this stays a middle value that keeps a
+            // meaningful octave penalty (small λ = costlier jumps).
             interval_lambda: 2.5,
             onset_attack_bonus: 12.0,
         }

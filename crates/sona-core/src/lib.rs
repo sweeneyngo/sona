@@ -35,7 +35,7 @@ pub use pipeline::Transcriber;
 pub use pitch::{PYin, PitchTracker};
 pub use prefilter::{PitchFrame, PitchPreFilter};
 pub use hmm::NoteHmm;
-pub use segment::{hz_to_midi, HeuristicSegmenter, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
+pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 
 /// The crate version, surfaced by the CLI.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

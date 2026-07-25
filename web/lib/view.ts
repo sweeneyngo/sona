@@ -85,44 +85,6 @@ export function pitchRange(
   };
 }
 
-/** Median of a numeric array (average of the middle pair for even lengths). */
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = s.length >> 1;
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
-/**
- * Flag pitch outliers — notes whose MIDI pitch sits far from the central
- * tendency, e.g. a wrong-octave C1 from separation bleed under a C4 vocal. Uses
- * a robust median ± max(`madK`×MAD, `floor`) band so a tight cluster isn't
- * over-trimmed and a normal ~2-octave span stays intact. Returns one boolean
- * per input pitch, in order.
- */
-export function pitchOutlierFlags(
-  pitches: number[],
-  { madK = 3, floor = 15 }: { madK?: number; floor?: number } = {},
-): boolean[] {
-  if (pitches.length === 0) return [];
-  const med = median(pitches);
-  const mad = median(pitches.map((p) => Math.abs(p - med)));
-  const spread = Math.max(madK * mad, floor);
-  return pitches.map((p) => Math.abs(p - med) > spread);
-}
-
-/**
- * Magnitude of the pitch slope between two f0 samples, in semitones per second.
- * A real voice can't change pitch arbitrarily fast, so an implausibly large
- * slope (e.g. an octave in one ~10ms frame) marks a tracking artifact — an
- * octave jump — rather than real singing. `dt <= 0` is treated as infinitely
- * steep so duplicate/backwards timestamps are always rejected.
- */
-export function pitchSlopeStPerSec(hzA: number, hzB: number, dtS: number): number {
-  if (dtS <= 0) return Infinity;
-  const semitones = Math.abs(12 * Math.log2(hzB / hzA));
-  return semitones / dtS;
-}
-
 /**
  * Horizontal zoom that makes roughly `targetSeconds` of the timeline fill the
  * view (a sensible zoomed-in default instead of the whole song). Clamped to
