@@ -251,7 +251,7 @@ fn prepare(
 /// Note-F1 of one segmenter on one stem.
 fn score_stem(stem: &Stem, seg: &Segmenter, scorer: &ConfidenceScorer, params: &MetricParams) -> NoteF1 {
     let segments = seg.segment(&stem.onsets, &stem.contour, &stem.envelope);
-    let notes = scorer.score_all(&segments, &stem.contour, &stem.envelope);
+    let notes = scorer.score_all(&segments, &stem.envelope);
     let estimate = Estimate {
         onsets: stem.onset_times.clone(),
         notes: notes

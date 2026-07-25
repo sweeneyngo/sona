@@ -341,10 +341,7 @@ impl HmmModel {
     /// sub-states score `ln(1−v_prior) + ln(1−voicing)`. Terms are clamped away
     /// from `0`/`-∞` by [`PROB_FLOOR`].
     pub fn emission_logs(&self, frame: ObsFrame) -> Vec<f32> {
-        let v = frame.voicing.clamp(PROB_FLOOR, 1.0 - PROB_FLOOR);
-        let ln_voiced_mix = self.params.voicing_prior.max(PROB_FLOOR).ln() + v.ln();
-        let ln_silent_mix =
-            (1.0 - self.params.voicing_prior).max(PROB_FLOOR).ln() + (1.0 - v).ln();
+        let (ln_voiced_mix, ln_silent_mix) = self.emission_mix(frame.voicing);
 
         let mut out = vec![0.0f32; self.n_states()];
         for bin in 0..self.n_bins {
@@ -356,6 +353,32 @@ impl HmmModel {
             out[self.state(bin, Sub::Silent)] = ln_silent_mix;
         }
         out
+    }
+
+    /// The voicing-prior mix terms shared by every state's emission: the voiced
+    /// sub-states get `ln v_prior + ln voicing`, the Silent sub-states get
+    /// `ln(1−v_prior) + ln(1−voicing)`. Split out so both [`emission_logs`] and
+    /// [`voiced_logodds`](Self::voiced_logodds) read the same formula.
+    fn emission_mix(&self, voicing: f32) -> (f32, f32) {
+        let v = voicing.clamp(PROB_FLOOR, 1.0 - PROB_FLOOR);
+        (
+            self.params.voicing_prior.max(PROB_FLOOR).ln() + v.ln(),
+            (1.0 - self.params.voicing_prior).max(PROB_FLOOR).ln() + (1.0 - v).ln(),
+        )
+    }
+
+    /// Log-odds that a frame is the voiced **Stable** state at `bin` rather than
+    /// **Silent** — the model's local (per-frame, transition-free) voicing
+    /// evidence. It folds in *both* the pYIN voicing and how well the frame fits
+    /// `bin`'s pitch, so a frame that is voiced but off-pitch is less "voiced"
+    /// under the model than one that sits on the note. The confidence stage
+    /// (ticket 09) turns this into an HMM-derived voicing sub-score via a sigmoid,
+    /// in place of the raw mean pYIN voicing it used before.
+    pub fn voiced_logodds(&self, frame: ObsFrame, bin: usize) -> f32 {
+        let (ln_voiced_mix, ln_silent_mix) = self.emission_mix(frame.voicing);
+        let stable =
+            ln_voiced_mix + self.pitch_log(frame.semitone, self.bin_center(bin), self.params.sigma_stable);
+        stable - ln_silent_mix
     }
 
     /// The trust-weighted Gaussian pitch log-term for a voiced frame at `semitone`
@@ -479,6 +502,23 @@ mod tests {
             unvoiced[m.state(bin, Sub::Silent)] > unvoiced[m.state(bin, Sub::Stable)],
             "an unvoiced frame prefers Silent"
         );
+    }
+
+    #[test]
+    fn voiced_logodds_high_on_pitch_voiced_low_when_unvoiced_or_off_pitch() {
+        let m = model();
+        let bin = 36;
+        let center = m.bin_center(bin);
+        // Voiced and on pitch → strongly positive log-odds (clearly voiced).
+        let on = m.voiced_logodds(ObsFrame { semitone: Some(center), voicing: 0.95 }, bin);
+        assert!(on > 2.0, "voiced on-pitch should read voiced: {on}");
+        // Unvoiced → negative (clearly silent).
+        let off = m.voiced_logodds(ObsFrame { semitone: None, voicing: 0.02 }, bin);
+        assert!(off < 0.0, "unvoiced should read silent: {off}");
+        // Voiced but a whole octave off `bin` → the pitch penalty pulls it down
+        // below the on-pitch case (folds pitch fit into voicing).
+        let off_pitch = m.voiced_logodds(ObsFrame { semitone: Some(center + 12.0), voicing: 0.95 }, bin);
+        assert!(off_pitch < on, "off-pitch is less voiced than on-pitch: {off_pitch} vs {on}");
     }
 
     #[test]

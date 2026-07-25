@@ -42,7 +42,7 @@ fn transcribe(audio: &[f32]) -> Vec<Note> {
         &contour,
         &onset_result.energy_envelope,
     );
-    ConfidenceScorer::default().score_all(&segments, &contour, &onset_result.energy_envelope)
+    ConfidenceScorer::default().score_all(&segments, &onset_result.energy_envelope)
 }
 
 #[test]

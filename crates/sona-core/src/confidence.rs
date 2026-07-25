@@ -12,14 +12,20 @@
 //!
 //! ## Four sub-scores, each in `0.0..=1.0` (spec stage 4)
 //!
-//! - **pitch_stability** — from the f0 *spread* across the note. A steady pitch
-//!   scores high; a note whose contour wanders scores low. Vibrato-tolerant: a
-//!   bounded ripple has bounded spread, so it is not punished as instability.
-//! - **voicing** — pYIN voicing **and** a bleed guard. The mean per-frame voicing
-//!   confidence is multiplied by a note-level factor that falls to zero as the
-//!   note's energy approaches the stem's noise floor. This is the spec's primary
-//!   defence against spurious notes from UVR separation bleed: a note hovering
-//!   near the floor scores near zero here however voiced it looks.
+//! - **pitch_stability** — from the note's **HMM pitch dispersion** (ticket 09):
+//!   the RMS deviation of its voiced frames from the pitch the HMM *decoded*. A
+//!   steady note scores high; one whose contour wandered relative to its decoded
+//!   pitch scores low. Vibrato-tolerant: a bounded ripple has bounded dispersion,
+//!   so it is not punished as instability.
+//! - **voicing** — the note's **HMM voicing confidence** (ticket 09) — the model's
+//!   own voiced-vs-silent **emission evidence** (a local log-odds, not a
+//!   forward-backward posterior), which folds pYIN voicing together with pitch
+//!   fit — multiplied by a bleed guard. Because it folds in pitch fit this
+//!   dimension is not strictly independent of pitch-stability; it is kept because
+//!   it measurably sharpens the confidence flag (ticket 09). The bleed factor
+//!   falls to zero as the note's energy approaches the stem's noise floor: the
+//!   spec's primary defence against spurious notes from UVR separation bleed, so a
+//!   note hovering near the floor scores near zero here however voiced it looks.
 //! - **onset_clarity** — the onset transient's sharpness, saturated from the
 //!   segment's [`onset_strength`](NoteSegment::onset_strength). A plateau-split
 //!   note has no transient of its own, so its onset — inferred from a pitch change
@@ -40,8 +46,8 @@
 //! forces the scalar to zero. Both the scalar and the sub-scores are emitted — the
 //! sub-scores are what let the UI say *why* a note is flagged.
 
-use crate::annotation::{EnergyFrame, F0Frame, Note, SubScores};
-use crate::segment::{hz_to_midi, NoteSegment};
+use crate::annotation::{EnergyFrame, Note, SubScores};
+use crate::segment::NoteSegment;
 
 /// Per-note confidence scorer (ADR-0008). Construct with
 /// [`ConfidenceScorer::default`] for staccato-vocal defaults, or set fields to
@@ -50,10 +56,10 @@ use crate::segment::{hz_to_midi, NoteSegment};
 /// sweep without a code change.
 #[derive(Debug, Clone)]
 pub struct ConfidenceScorer {
-    /// Pitch-spread tolerance in semitones for `pitch_stability`. The note's f0
-    /// standard deviation (in semitones) is scored against this: at one tolerance
-    /// of spread the score is `0.5`. Sized to tolerate vibrato without rewarding a
-    /// note that wanders across a semitone.
+    /// Pitch-dispersion tolerance in semitones for `pitch_stability`. The note's
+    /// HMM pitch dispersion ([`NoteSegment::pitch_dispersion_semitones`]) is scored
+    /// against this: at one tolerance of dispersion the score is `0.5`. Sized to
+    /// tolerate vibrato without rewarding a note that wanders across a semitone.
     pub pitch_std_tol_semitones: f32,
     /// Voicing bleed guard, low edge: a note whose peak RMS is at or below this
     /// fraction of the stem's peak RMS is treated as pure bleed — its note-level
@@ -81,10 +87,6 @@ pub struct ConfidenceScorer {
     /// hard minimum of the sub-scores; toward `0` softens it toward their mean.
     /// See [`soft_min`].
     pub softmin_p: f32,
-    /// A contour frame counts as voiced (for pitch spread and the voicing mean)
-    /// when its voicing reaches this and its frequency is positive. Matches the
-    /// segmenter's `voiced_threshold` so both stages agree on what "voiced" means.
-    pub voiced_threshold: f32,
 }
 
 impl Default for ConfidenceScorer {
@@ -96,42 +98,32 @@ impl Default for ConfidenceScorer {
             onset_strength_half: 0.5,
             split_onset_clarity: 0.5,
             softmin_p: -4.0,
-            voiced_threshold: 0.5,
         }
     }
 }
 
 impl ConfidenceScorer {
-    /// Score every `segment` against the f0 `contour` and energy `envelope`,
-    /// returning annotation [`Note`]s in the same order. The stem's peak RMS (for
-    /// the bleed guard) is computed once from the envelope and shared across notes,
-    /// so the guard is relative to the whole stem's level, not each note's.
-    pub fn score_all(
-        &self,
-        segments: &[NoteSegment],
-        contour: &[F0Frame],
-        envelope: &[EnergyFrame],
-    ) -> Vec<Note> {
+    /// Score every `segment` against the energy `envelope`, returning annotation
+    /// [`Note`]s in the same order. Pitch-stability and voicing come from the
+    /// HMM-derived raw material each segment carries (ticket 09), so no f0 contour
+    /// is needed here. The stem's peak RMS (for the bleed guard) is computed once
+    /// from the envelope and shared across notes, so the guard is relative to the
+    /// whole stem's level, not each note's.
+    pub fn score_all(&self, segments: &[NoteSegment], envelope: &[EnergyFrame]) -> Vec<Note> {
         let stem_peak_rms = envelope.iter().map(|f| f.rms).fold(0.0f32, f32::max);
         segments
             .iter()
-            .map(|s| self.score(s, contour, envelope, stem_peak_rms))
+            .map(|s| self.score(s, envelope, stem_peak_rms))
             .collect()
     }
 
     /// Score a single `segment` into a [`Note`], given the `stem_peak_rms` the
     /// bleed guard is relative to. Exposed for callers that already have the peak;
     /// most callers want [`score_all`](Self::score_all).
-    pub fn score(
-        &self,
-        segment: &NoteSegment,
-        contour: &[F0Frame],
-        envelope: &[EnergyFrame],
-        stem_peak_rms: f32,
-    ) -> Note {
+    pub fn score(&self, segment: &NoteSegment, envelope: &[EnergyFrame], stem_peak_rms: f32) -> Note {
         let sub_scores = SubScores {
-            pitch_stability: self.pitch_stability(segment, contour),
-            voicing: self.voicing(segment, contour, envelope, stem_peak_rms),
+            pitch_stability: self.pitch_stability(segment),
+            voicing: self.voicing(segment, envelope, stem_peak_rms),
             onset_clarity: self.onset_clarity(segment),
             offset_clarity: self.offset_clarity(segment),
         };
@@ -153,54 +145,30 @@ impl ConfidenceScorer {
         }
     }
 
-    /// `pitch_stability` from the spread of the note's voiced f0. The frequencies
-    /// are taken in semitones (so the spread is musical, not Hz-biased toward high
-    /// notes) and their standard deviation scored against
-    /// [`pitch_std_tol_semitones`](Self::pitch_std_tol_semitones): `0` spread → 1,
-    /// one tolerance of spread → `0.5`, wide wander → toward `0`. A note with no
-    /// voiced frames scores `0` — an unpitched note is untrustworthy, and letting
-    /// the bleed guard and this dimension both bottom out reinforces the flag.
-    fn pitch_stability(&self, segment: &NoteSegment, contour: &[F0Frame]) -> f32 {
-        let semitones: Vec<f32> = self
-            .voiced_frames(segment, contour)
-            .map(|f| hz_to_midi(f.frequency_hz))
-            .collect();
-        if semitones.is_empty() {
-            return 0.0;
-        }
-        let n = semitones.len() as f32;
-        let mean = semitones.iter().sum::<f32>() / n;
-        let variance = semitones.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / n;
-        let std = variance.sqrt();
-        // A rational falloff: 1 at zero spread, 0.5 at one tolerance, →0 beyond.
-        let r = std / self.pitch_std_tol_semitones.max(f32::EPSILON);
+    /// `pitch_stability` from the note's **HMM pitch dispersion** (ticket 09) —
+    /// the RMS semitone spread of its voiced frames about their mean pitch, scored
+    /// against
+    /// [`pitch_std_tol_semitones`](Self::pitch_std_tol_semitones): `0` dispersion
+    /// → 1, one tolerance → `0.5`, wide wander → toward `0`. A note with no pitched
+    /// frame carries a maximal dispersion (an octave, set by the segmenter), so it
+    /// bottoms out here — an unpitched note is untrustworthy, reinforcing the flag.
+    fn pitch_stability(&self, segment: &NoteSegment) -> f32 {
+        // A rational falloff: 1 at zero dispersion, 0.5 at one tolerance, →0 beyond.
+        let r = segment.pitch_dispersion_semitones / self.pitch_std_tol_semitones.max(f32::EPSILON);
         1.0 / (1.0 + r * r)
     }
 
-    /// `voicing` = mean pYIN voicing over the note's frames × a bleed-guard factor.
-    /// The mean is over *every* frame in the note's span (voiced or not) so a note
-    /// that is mostly unvoiced scores low. The bleed factor ramps from `0` at
-    /// [`bleed_floor_frac`](Self::bleed_floor_frac) to `1` at
+    /// `voicing` = the note's **HMM voicing confidence** (ticket 09) × a bleed-guard
+    /// factor. The HMM confidence is the model's per-frame voiced-vs-silent
+    /// emission evidence averaged over the note (folding pYIN voicing with pitch
+    /// fit), so a note the model was unsure was voiced scores low. The bleed factor ramps from
+    /// `0` at [`bleed_floor_frac`](Self::bleed_floor_frac) to `1` at
     /// [`note_level_frac`](Self::note_level_frac) of the stem's peak RMS, measured
     /// from the note's *peak* RMS — a real note reaches a real level, bleed never
     /// does. Multiplying (not averaging) means either a low-voiced note or a
     /// near-floor note scores low, which is the point: bleed is culled here.
-    fn voicing(
-        &self,
-        segment: &NoteSegment,
-        contour: &[F0Frame],
-        envelope: &[EnergyFrame],
-        stem_peak_rms: f32,
-    ) -> f32 {
-        let frames: Vec<&F0Frame> = contour
-            .iter()
-            .filter(|f| f.time_s >= segment.onset_s && f.time_s < segment.offset_s)
-            .collect();
-        let mean_voicing = if frames.is_empty() {
-            0.0
-        } else {
-            frames.iter().map(|f| f.voicing).sum::<f32>() / frames.len() as f32
-        };
+    fn voicing(&self, segment: &NoteSegment, envelope: &[EnergyFrame], stem_peak_rms: f32) -> f32 {
+        let hmm_voicing = segment.voiced_confidence.clamp(0.0, 1.0);
 
         let note_peak_rms = envelope
             .iter()
@@ -216,7 +184,7 @@ impl ConfidenceScorer {
             ((frac - lo) / (hi - lo)).clamp(0.0, 1.0)
         };
 
-        (mean_voicing * bleed_factor).clamp(0.0, 1.0)
+        (hmm_voicing * bleed_factor).clamp(0.0, 1.0)
     }
 
     /// `onset_clarity` for a detected onset is saturated from its strength:
@@ -241,24 +209,6 @@ impl ConfidenceScorer {
     /// [`OffsetKind`]: crate::segment::OffsetKind
     fn offset_clarity(&self, segment: &NoteSegment) -> f32 {
         segment.offset.drop_steepness.clamp(0.0, 1.0)
-    }
-
-    /// The note's voiced contour frames: within `[onset_s, offset_s)`, voicing at
-    /// or above the threshold, positive frequency.
-    fn voiced_frames<'a>(
-        &self,
-        segment: &'a NoteSegment,
-        contour: &'a [F0Frame],
-    ) -> impl Iterator<Item = &'a F0Frame> {
-        let onset_s = segment.onset_s;
-        let offset_s = segment.offset_s;
-        let voiced_threshold = self.voiced_threshold;
-        contour.iter().filter(move |f| {
-            f.time_s >= onset_s
-                && f.time_s < offset_s
-                && f.voicing >= voiced_threshold
-                && f.frequency_hz > 0.0
-        })
     }
 }
 
@@ -304,28 +254,8 @@ mod tests {
             .collect()
     }
 
-    /// A voiced f0 contour: `segments` gives (until_time_s, hz, voicing).
-    fn contour(segments: &[(f64, f32, f32)]) -> Vec<F0Frame> {
-        let end = segments.last().map(|s| s.0).unwrap_or(0.0);
-        let n = (end / HOP_S) as usize;
-        (0..n)
-            .map(|i| {
-                let t = i as f64 * HOP_S;
-                let (hz, voi) = segments
-                    .iter()
-                    .find(|(until, _, _)| t < *until)
-                    .map(|(_, h, v)| (*h, *v))
-                    .unwrap_or((0.0, 0.0));
-                F0Frame {
-                    time_s: t,
-                    frequency_hz: hz.max(0.0),
-                    voicing: voi,
-                }
-            })
-            .collect()
-    }
-
-    /// A note segment with sensible defaults; override fields per test.
+    /// A note segment with clean defaults (steady pitch, confidently voiced,
+    /// sharp attack + drop); override the HMM-derived fields per test.
     fn segment(onset_s: f64, offset_s: f64, midi_pitch: u8) -> NoteSegment {
         NoteSegment {
             onset_s,
@@ -337,6 +267,8 @@ mod tests {
                 kind: OffsetKind::EnergyDecay,
                 drop_steepness: 0.9,
             },
+            pitch_dispersion_semitones: 0.0,
+            voiced_confidence: 0.95,
         }
     }
 
@@ -373,72 +305,67 @@ mod tests {
 
     #[test]
     fn steady_pitch_scores_high_stability() {
-        let seg = segment(0.0, 0.3, 69);
-        let c = contour(&[(0.3, 440.0, 0.9)]); // rock-steady A4
-        let score = ConfidenceScorer::default().pitch_stability(&seg, &c);
+        let seg = segment(0.0, 0.3, 69); // dispersion 0.0 by default
+        let score = ConfidenceScorer::default().pitch_stability(&seg);
         assert!(score > 0.95, "steady pitch is stable, got {score}");
     }
 
     #[test]
     fn vibrato_is_tolerated_not_punished() {
-        let seg = segment(0.0, 0.4, 69);
-        // ±~0.4 semitone ripple around A4 (429..452 Hz), alternating each hop.
-        let mut segs = Vec::new();
-        let mut t = 0.0;
-        let mut up = true;
-        while t < 0.4 {
-            t += HOP_S;
-            segs.push((t, if up { 429.0 } else { 452.0 }, 0.9));
-            up = !up;
-        }
-        let c = contour(&segs);
-        let score = ConfidenceScorer::default().pitch_stability(&seg, &c);
-        assert!(
-            score > 0.6,
-            "bounded vibrato stays fairly stable, got {score}"
-        );
+        // A vibrato'd note has bounded dispersion (~0.3 st here), well within the
+        // 0.6-semitone tolerance, so it stays fairly stable.
+        let mut seg = segment(0.0, 0.4, 69);
+        seg.pitch_dispersion_semitones = 0.3;
+        let score = ConfidenceScorer::default().pitch_stability(&seg);
+        assert!(score > 0.6, "bounded vibrato stays fairly stable, got {score}");
     }
 
     #[test]
     fn wandering_pitch_scores_low_stability() {
-        let seg = segment(0.0, 0.4, 69);
-        // Contour slides across four semitones within the "note" — not a note.
-        let c = contour(&[
-            (0.1, 440.0, 0.9),
-            (0.2, 466.0, 0.9),
-            (0.3, 494.0, 0.9),
-            (0.4, 523.0, 0.9),
-        ]);
-        let score = ConfidenceScorer::default().pitch_stability(&seg, &c);
+        // A note whose contour wandered ~2 semitones from its decoded pitch.
+        let mut seg = segment(0.0, 0.4, 69);
+        seg.pitch_dispersion_semitones = 2.0;
+        let score = ConfidenceScorer::default().pitch_stability(&seg);
         assert!(score < 0.3, "a wandering contour is unstable, got {score}");
     }
 
     #[test]
-    fn unvoiced_note_scores_zero_stability() {
-        let seg = segment(0.0, 0.3, 0);
-        let c = contour(&[(0.3, 0.0, 0.0)]); // no voiced frames
-        assert_eq!(ConfidenceScorer::default().pitch_stability(&seg, &c), 0.0);
+    fn unpitched_note_scores_near_zero_stability() {
+        // The segmenter reports an octave of dispersion for a note with no pitched
+        // frame; pitch-stability bottoms out.
+        let mut seg = segment(0.0, 0.3, 0);
+        seg.pitch_dispersion_semitones = 12.0;
+        assert!(ConfidenceScorer::default().pitch_stability(&seg) < 0.01);
     }
 
     #[test]
     fn full_level_voiced_note_scores_high_voicing() {
-        let seg = segment(0.0, 0.3, 69);
-        let c = contour(&[(0.3, 440.0, 0.95)]);
+        let seg = segment(0.0, 0.3, 69); // voiced_confidence 0.95 by default
         let env = envelope(&[(0.3, 0.5)]); // note is the stem's peak level
-        let score = ConfidenceScorer::default().voicing(&seg, &c, &env, 0.5);
+        let score = ConfidenceScorer::default().voicing(&seg, &env, 0.5);
         assert!(score > 0.9, "loud, voiced note scores high, got {score}");
     }
 
     #[test]
     fn near_floor_note_is_culled_by_the_bleed_guard() {
         // A note whose energy hovers at the noise floor is bleed: however voiced
-        // its contour looks, the bleed guard drives voicing to zero.
-        let seg = segment(0.0, 0.3, 69);
-        let c = contour(&[(0.3, 440.0, 0.9)]); // looks voiced
+        // the HMM thought it, the bleed guard drives voicing to zero.
+        let seg = segment(0.0, 0.3, 69); // voiced_confidence high
         let stem_peak = 1.0f32;
         let env = envelope(&[(0.3, 0.05)]); // 5% of peak — below the 10% floor
-        let score = ConfidenceScorer::default().voicing(&seg, &c, &env, stem_peak);
+        let score = ConfidenceScorer::default().voicing(&seg, &env, stem_peak);
         assert!(score < 0.05, "near-floor note is culled, got {score}");
+    }
+
+    #[test]
+    fn low_hmm_voicing_scores_low_even_at_full_level() {
+        // A loud note the HMM was unsure was voiced (posterior 0.2) scores low even
+        // though the bleed guard passes — the model's own doubt carries through.
+        let mut seg = segment(0.0, 0.3, 69);
+        seg.voiced_confidence = 0.2;
+        let env = envelope(&[(0.3, 0.5)]);
+        let score = ConfidenceScorer::default().voicing(&seg, &env, 0.5);
+        assert!(score < 0.25, "low HMM voicing scores low, got {score}");
     }
 
     #[test]
@@ -471,9 +398,8 @@ mod tests {
         let mut seg = segment(0.1, 0.4, 69);
         seg.split_from_plateau = true;
         seg.onset_strength = 0.0;
-        let c = contour(&[(0.1, 0.0, 0.0), (0.4, 440.0, 0.95)]);
         let env = envelope(&[(0.1, 0.01), (0.4, 0.5), (0.45, 0.01)]);
-        let note = ConfidenceScorer::default().score(&seg, &c, &env, 0.5);
+        let note = ConfidenceScorer::default().score(&seg, &env, 0.5);
         assert!(
             note.confidence > 0.4 && note.confidence < 0.8,
             "flagged but not buried, got {} from {:?}",
@@ -499,9 +425,8 @@ mod tests {
     fn a_clean_staccato_note_scores_high() {
         // Loud, steady-pitched, sharp attack, sharp drop → trustworthy note.
         let seg = segment(0.1, 0.4, 69);
-        let c = contour(&[(0.1, 0.0, 0.0), (0.4, 440.0, 0.95)]);
         let env = envelope(&[(0.1, 0.01), (0.4, 0.5), (0.45, 0.01)]);
-        let note = ConfidenceScorer::default().score(&seg, &c, &env, 0.5);
+        let note = ConfidenceScorer::default().score(&seg, &env, 0.5);
         assert_eq!(note.midi_pitch, 69);
         assert!(
             note.confidence > 0.75,
@@ -517,10 +442,9 @@ mod tests {
         // Its energy is 4% of the stem peak — the bleed guard zeroes voicing, and
         // the weakest-link soft-min carries that through to the scalar.
         let seg = segment(0.1, 0.4, 69);
-        let c = contour(&[(0.1, 0.0, 0.2), (0.4, 440.0, 0.4)]); // weak voicing
         let env = envelope(&[(0.5, 0.04)]); // flat, near-floor throughout
         let stem_peak = 1.0f32;
-        let note = ConfidenceScorer::default().score(&seg, &c, &env, stem_peak);
+        let note = ConfidenceScorer::default().score(&seg, &env, stem_peak);
         assert!(
             note.confidence < 0.2,
             "a bleed note is flagged, got {} from {:?}",
@@ -536,9 +460,8 @@ mod tests {
         // masked by the three strong ones.
         let mut seg = segment(0.1, 0.4, 69);
         seg.offset.drop_steepness = 0.05; // slow tail, ambiguous end
-        let c = contour(&[(0.1, 0.0, 0.0), (0.4, 440.0, 0.95)]);
         let env = envelope(&[(0.1, 0.01), (0.4, 0.5), (0.45, 0.45)]);
-        let note = ConfidenceScorer::default().score(&seg, &c, &env, 0.5);
+        let note = ConfidenceScorer::default().score(&seg, &env, 0.5);
         assert!(
             note.sub_scores.offset_clarity < 0.15,
             "offset dimension is low, got {}",
@@ -555,9 +478,8 @@ mod tests {
     #[test]
     fn score_all_preserves_order_and_fields() {
         let segs = [segment(0.1, 0.3, 69), segment(0.4, 0.6, 72)];
-        let c = contour(&[(0.6, 440.0, 0.9)]);
         let env = envelope(&[(0.6, 0.5)]);
-        let notes = ConfidenceScorer::default().score_all(&segs, &c, &env);
+        let notes = ConfidenceScorer::default().score_all(&segs, &env);
         assert_eq!(notes.len(), 2);
         assert_eq!(notes[0].midi_pitch, 69);
         assert_eq!(notes[1].midi_pitch, 72);

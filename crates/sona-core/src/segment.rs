@@ -81,6 +81,21 @@ pub struct NoteSegment {
     pub split_from_plateau: bool,
     /// How this note's offset was decided, and its energy-drop steepness.
     pub offset: OffsetInfo,
+    /// **HMM-derived pitch dispersion** (ticket 09): the RMS spread, in semitones,
+    /// of the note's voiced frames about their mean pitch (rounding-free, so an
+    /// off-tune note isn't penalised for sitting between semitones). Low = the
+    /// contour sat tightly on one pitch; high = it wandered. Confidence's
+    /// pitch-stability sub-score reads this instead of recomputing a spread from
+    /// the raw contour — it is measured over the frames the HMM *voiced*.
+    pub pitch_dispersion_semitones: f32,
+    /// **HMM-derived voicing confidence** (ticket 09) in `0.0..=1.0`: the mean,
+    /// over the note's frames, of the model's local (per-frame, transition-free)
+    /// voiced-vs-silent **emission evidence** — a sigmoid of
+    /// [`HmmModel::voiced_logodds`](crate::hmm::HmmModel::voiced_logodds), *not* a
+    /// forward-backward posterior. It folds pYIN voicing together with pitch fit
+    /// (so it is not strictly pitch-independent), giving confidence's voicing
+    /// sub-score what the HMM concluded rather than the raw mean voicing.
+    pub voiced_confidence: f32,
 }
 
 /// Continuous MIDI pitch of a frequency in Hz (69 = A4 = 440 Hz). Fractional —

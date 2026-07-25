@@ -61,7 +61,7 @@ impl Transcriber {
         );
         let notes = self
             .scorer
-            .score_all(&segments, &f0_contour, &onset_result.energy_envelope);
+            .score_all(&segments, &onset_result.energy_envelope);
 
         Annotation {
             version: SCHEMA_VERSION,

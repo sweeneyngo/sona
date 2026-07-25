@@ -172,14 +172,18 @@ impl NoteHmm {
                 None => (0.0, true),
             };
 
+            let midi_pitch = self.final_pitch(frames, start, end, model, path);
+            let stats = hmm_stats(frames, start, end, model, path);
+
             notes.push(RawNote {
                 onset_s: frames[start].time_s,
                 offset_s: frames[end.min(n - 1)].time_s,
                 ends_in_rest: end < n && voiced_midi[end].is_none(),
                 at_stem_end: end >= n,
-                midi_pitch: self.final_pitch(frames, start, end, model, path),
+                midi_pitch,
                 onset_strength: strength,
                 split_from_plateau,
+                stats,
             });
         }
         notes
@@ -244,6 +248,8 @@ impl NoteHmm {
                         kind,
                         drop_steepness: self.offset_drop_steepness(envelope, n.offset_s),
                     },
+                    pitch_dispersion_semitones: n.stats.pitch_dispersion(),
+                    voiced_confidence: n.stats.voiced_confidence(),
                 }
             })
             .collect()
@@ -277,10 +283,12 @@ impl NoteHmm {
             if let Some(prev) = out.last_mut() {
                 let seamless = (n.onset_s - prev.offset_s).abs() < 1e-6;
                 if seamless && n.midi_pitch == prev.midi_pitch && n.split_from_plateau {
-                    // Absorb: extend the previous note over this fragment.
+                    // Absorb: extend the previous note over this fragment and fold
+                    // in its HMM confidence accumulators.
                     prev.offset_s = n.offset_s;
                     prev.ends_in_rest = n.ends_in_rest;
                     prev.at_stem_end = n.at_stem_end;
+                    prev.stats.absorb(&n.stats);
                     continue;
                 }
             }
@@ -303,6 +311,93 @@ struct RawNote {
     midi_pitch: u8,
     onset_strength: f32,
     split_from_plateau: bool,
+    /// HMM-derived confidence accumulators (ticket 09), kept additive so a merge
+    /// can combine two fragments' stats exactly.
+    stats: HmmStats,
+}
+
+/// Pitch dispersion reported for a note with no pitched frame at all: an octave,
+/// large enough that confidence's pitch-stability falloff bottoms out. A sentinel
+/// on the real measurement channel, kept far outside any plausible real spread.
+const NO_PITCH_DISPERSION_SEMITONES: f32 = 12.0;
+
+/// Additive accumulators for a note's HMM-derived confidence raw material, so
+/// merged fragments combine exactly (sum the parts, finalise once). Pitch
+/// dispersion is accumulated as sum/sum-of-squares so it can be finalised as the
+/// spread *about the note's own mean* — free of any semitone-rounding bias.
+#[derive(Debug, Clone, Copy, Default)]
+struct HmmStats {
+    /// Σ and Σ² of the note's voiced-frame semitones, and their count → RMS
+    /// dispersion about the mean.
+    semi_sum: f32,
+    semi_sumsq: f32,
+    semi_n: usize,
+    /// Σ of the per-frame voiced-vs-silent emission evidence over the note's
+    /// frames, and their count → mean voiced confidence.
+    voiced_sum: f32,
+    voiced_n: usize,
+}
+
+impl HmmStats {
+    /// Fold another fragment's accumulators in (used when merging same-pitch runs).
+    fn absorb(&mut self, other: &HmmStats) {
+        self.semi_sum += other.semi_sum;
+        self.semi_sumsq += other.semi_sumsq;
+        self.semi_n += other.semi_n;
+        self.voiced_sum += other.voiced_sum;
+        self.voiced_n += other.voiced_n;
+    }
+
+    /// RMS semitone dispersion about the note's mean pitch (how much its contour
+    /// wandered). A note with no pitched frame is maximally uncertain
+    /// ([`NO_PITCH_DISPERSION_SEMITONES`]).
+    fn pitch_dispersion(&self) -> f32 {
+        if self.semi_n == 0 {
+            return NO_PITCH_DISPERSION_SEMITONES;
+        }
+        let n = self.semi_n as f32;
+        let mean = self.semi_sum / n;
+        (self.semi_sumsq / n - mean * mean).max(0.0).sqrt()
+    }
+
+    /// Mean voiced-vs-silent emission evidence over the note's frames (`0` if
+    /// empty).
+    fn voiced_confidence(&self) -> f32 {
+        if self.voiced_n == 0 {
+            0.0
+        } else {
+            (self.voiced_sum / self.voiced_n as f32).clamp(0.0, 1.0)
+        }
+    }
+}
+
+/// The HMM-derived confidence accumulators for one note's frame span `[start,
+/// end)`: the voiced-frame semitones (→ pitch dispersion about the mean) and the
+/// model's per-frame voiced-vs-silent emission evidence (→ voicing confidence).
+fn hmm_stats(
+    frames: &[PitchFrame],
+    start: usize,
+    end: usize,
+    model: &HmmModel,
+    path: &[usize],
+) -> HmmStats {
+    let mut s = HmmStats::default();
+    for t in start..end {
+        let (bin, _) = model.split(path[t]);
+        s.voiced_sum += sigmoid(model.voiced_logodds(observe(&frames[t]), bin));
+        s.voiced_n += 1;
+        if let Some(semitone) = frames[t].semitone {
+            s.semi_sum += semitone;
+            s.semi_sumsq += semitone * semitone;
+            s.semi_n += 1;
+        }
+    }
+    s
+}
+
+/// Logistic squashing of a log-odds into a `0.0..=1.0` probability.
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
 }
 
 /// One pre-filtered frame as the emission model reads it.
@@ -477,6 +572,26 @@ mod tests {
         let e = envelope(&[(0.2, 0.01), (0.24, 0.5), (0.5, 0.01)]);
         let notes = NoteHmm::default().segment(&[onset(0.2)], &c, &e);
         assert!(notes.is_empty(), "sub-100ms note pruned: {notes:?}");
+    }
+
+    #[test]
+    fn hmm_confidence_fields_reflect_pitch_and_voicing() {
+        // A clean held A4 should report low pitch dispersion (it sat on pitch) and
+        // high voiced confidence (the model was sure it was voiced).
+        let c = contour(&[(0.1, 0.0, 0.0), (0.6, 440.0, 0.95), (0.75, 0.0, 0.0)]);
+        let e = envelope(&[(0.1, 0.01), (0.6, 0.5), (0.75, 0.01)]);
+        let notes = NoteHmm::default().segment(&[onset(0.1)], &c, &e);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].pitch_dispersion_semitones < 0.3,
+            "steady note has low dispersion, got {}",
+            notes[0].pitch_dispersion_semitones
+        );
+        assert!(
+            notes[0].voiced_confidence > 0.8,
+            "confidently voiced, got {}",
+            notes[0].voiced_confidence
+        );
     }
 
     #[test]
