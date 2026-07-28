@@ -16,5 +16,6 @@ crates/sona-eval/data/
 .DS_Store
 *.swp
 
-# Machine-local Claude Code settings
-.claude/settings.local.json
+# Claude Code files (kept local, not tracked)
+.claude/
+CLAUDE.md
