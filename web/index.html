@@ -98,6 +98,14 @@
       .spacer {
         flex: 1 1 auto;
       }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
 
       /* --- Controls -------------------------------------------------------- */
       button {
@@ -192,6 +200,24 @@
       }
       output#flag-val {
         font-family: var(--mono);
+        color: var(--ink);
+      }
+      /* Top-bar controls sit beside 10px uppercase labels, so keep their text
+         compact and their readouts monospace to match. Modal controls and the
+         icon/round buttons keep their own sizing. */
+      header input[type="number"],
+      header select,
+      header button,
+      header .toggle {
+        font-size: 12px;
+      }
+      header input[type="number"],
+      header select {
+        padding: 4px 7px;
+      }
+      #key-readout {
+        font-family: var(--mono);
+        font-size: 12px;
         color: var(--ink);
       }
       #status {
@@ -308,6 +334,68 @@
       .legend .swatch.out-of-key {
         border: 2px dashed #c8a2ff;
       }
+      /* Push the derived readouts (key + fixes) to the right end of the bar. */
+      .legend-spacer {
+        flex: 1 1 auto;
+      }
+      .legend .readout {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend .rlabel {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      /* Fixes: an icon button carrying a notification badge with the count. */
+      .fixes-btn {
+        position: relative;
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        color: var(--muted);
+        cursor: pointer;
+        transition: border-color 0.12s, color 0.12s;
+      }
+      .fixes-btn:hover:not(:disabled) {
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .fixes-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .fixes-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #161616;
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 16px;
+        text-align: center;
+      }
+      .badge[hidden] {
+        display: none;
+      }
 
       /* --- Help modal ------------------------------------------------------ */
       .overlay {
@@ -397,6 +485,61 @@
         min-width: 1.4em;
         text-align: center;
       }
+      /* --- Changes modal --------------------------------------------------- */
+      .changes-summary {
+        margin: 0 0 4px;
+      }
+      .changes-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 52vh;
+        overflow-y: auto;
+      }
+      .changes-list li {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel-2);
+        font-size: 13px;
+      }
+      .changes-list .tag {
+        flex: none;
+        min-width: 66px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 3px 0;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+      }
+      .changes-list .desc {
+        font-family: var(--mono);
+        color: var(--ink);
+      }
+      .tag.added {
+        color: #7fce97;
+      }
+      .tag.deleted {
+        color: var(--danger);
+      }
+      .tag.pitch {
+        color: #c8a2ff;
+      }
+      .tag.onset {
+        color: #5cd0ff;
+      }
+      .tag.offset {
+        color: #e0b877;
+      }
       @media (max-width: 520px) {
         .shortcuts {
           grid-template-columns: 1fr;
@@ -445,10 +588,6 @@
               <option value="32">1/32</option>
             </select>
           </span>
-          <span class="field">
-            <label>Key</label>
-            <output id="key-readout" title="Auto-detected key (Krumhansl–Schmuckler). Toggle snapping in ⚙.">—</output>
-          </span>
         </div>
 
         <div class="divider" aria-hidden="true"></div>
@@ -474,6 +613,22 @@
         <span class="grp"><span class="swatch flagged"></span> flagged</span>
         <span class="grp"><span class="swatch escaped"></span> off-grid (escaped)</span>
         <span class="grp"><span class="swatch out-of-key"></span> out of key</span>
+
+        <span class="legend-spacer"></span>
+
+        <!-- Derived readouts: the detected key and the correction count. -->
+        <span class="readout">
+          <span class="rlabel">Key</span>
+          <output id="key-readout" title="Auto-detected key (Krumhansl–Schmuckler). Toggle snapping in ⚙.">—</output>
+        </span>
+        <button id="correction-open" class="fixes-btn" title="Manual corrections vs. the producer's original notes — click to list them." disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25z" fill="currentColor" />
+            <path d="M20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor" />
+          </svg>
+          <span id="correction-badge" class="badge" hidden>0</span>
+          <span class="visually-hidden">corrections</span>
+        </button>
       </div>
     </main>
 
@@ -561,6 +716,19 @@
             <label class="toggle"><input id="snap-key" type="checkbox" /> snap notes to key</label>
             <p>The key is auto-detected from the notes. Off: out-of-key notes are outlined for review. On: every note is snapped to the nearest scale tone (display + export). Purely interpretation — it never changes what was detected.</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="changes-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="changes-title">
+        <div class="modal-head">
+          <h2 id="changes-title">Changes</h2>
+          <button id="changes-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p id="changes-summary" class="changes-summary"></p>
+          <ul id="changes-list" class="changes-list"></ul>
         </div>
       </div>
     </div>

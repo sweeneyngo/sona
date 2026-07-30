@@ -17,14 +17,16 @@
 //! An [`Estimate`] (a producer's transcription) is scored against a
 //! [`reference::Reference`] by the per-stage [`metrics`] (RPA/RCA, onset-F1,
 //! note-F1 COnP/COnPOff, confidence calibration) — reimplemented in pure Rust
-//! and cross-checked against `mir_eval` (ticket 02).
+//! and cross-checked against `mir_eval`.
 
 pub mod align;
+pub mod correction;
 pub mod error;
 pub mod estimate;
 pub mod fixtures;
 pub mod metrics;
 pub mod reference;
+pub mod session;
 pub mod synth;
 pub mod vocadito;
 pub mod wav;
@@ -35,4 +37,5 @@ pub use estimate::{EstNote, Estimate};
 pub use fixtures::Fixture;
 pub use metrics::{evaluate, MetricParams, StageReport};
 pub use reference::{RefF0, RefNote, Reference};
+pub use session::Session;
 pub use vocadito::Corpus;

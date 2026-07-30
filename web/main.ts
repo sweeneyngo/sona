@@ -1,4 +1,4 @@
-// sona review surface — browser layer (tickets 08–10).
+// sona review surface — browser layer.
 //
 // Loads an annotation JSON + the vocal stem and renders the piano-roll on a
 // <canvas>: notes coloured by confidence, over the f0 contour and energy
@@ -29,7 +29,9 @@ import { buildSchedule } from "./lib/synth";
 import { clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, quantizeNote, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
-import type { Annotation, WorkingNote } from "./lib/annotation";
+import { correctionCost, correctionChanges } from "./lib/correction";
+import type { NoteLike, Change, ChangeKind } from "./lib/correction";
+import type { Annotation, Note, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
@@ -57,6 +59,12 @@ const el = {
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
   keyReadout: document.getElementById("key-readout") as HTMLOutputElement,
   keyDetail: document.getElementById("key-detail") as HTMLOutputElement,
+  correctionOpen: document.getElementById("correction-open") as HTMLButtonElement,
+  correctionBadge: document.getElementById("correction-badge") as HTMLSpanElement,
+  changesOverlay: document.getElementById("changes-overlay") as HTMLDivElement,
+  changesClose: document.getElementById("changes-close") as HTMLButtonElement,
+  changesList: document.getElementById("changes-list") as HTMLUListElement,
+  changesSummary: document.getElementById("changes-summary") as HTMLParagraphElement,
   snapKey: document.getElementById("snap-key") as HTMLInputElement,
   save: document.getElementById("save") as HTMLButtonElement,
   export: document.getElementById("export") as HTMLButtonElement,
@@ -126,6 +134,17 @@ interface Playback {
 let annotation: Annotation | null = null;
 /** Editable working copy of the notes (raw seconds); the source of truth for edits. */
 let workingNotes: WorkingNote[] = [];
+/**
+ * The producer's original notes, before any correction — the baseline the
+ * correction cost is measured against. Cloned from the notes on first load (so
+ * editing `workingNotes` never mutates it) and round-tripped through the
+ * session's `baseline` field so a reopened session still knows where it started.
+ *
+ * Kept as full [`Note`]s (confidence + sub-scores, not just timing/pitch): a
+ * saved session then pairs every producer note's scores with whether the user
+ * corrected it, which is exactly the labelled data confidence calibration needs.
+ */
+let baselineNotes: Note[] = [];
 /** Decoded stem, for playback and for the total roll duration. */
 let audioBuffer: AudioBuffer | null = null;
 /** Rendering geometry, rebuilt on load and resize. Null until data arrives. */
@@ -141,7 +160,7 @@ let overRoll = false;
 /** Unsaved edits since the last autosave (drives the 20s autosave tick). */
 let dirty = false;
 
-// Musical interpretation (ticket 09). Seeded on load; edited via the toolbar.
+// Musical interpretation. Seeded on load; edited via the toolbar.
 let bpm = 120;
 let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
@@ -211,6 +230,19 @@ function applyLoadedJson(parsed: any): boolean {
     sub_scores: n.sub_scores ?? {},
     ...(n.manual ? { manual: true as const } : {}),
   }));
+  // The producer's original notes: a saved session carries its own `baseline`;
+  // a fresh annotation is its own baseline. Clone into fresh objects so later
+  // edits to `workingNotes` don't leak in. Keep confidence + sub-scores so the
+  // saved session stays calibration-ready (older sessions may lack them).
+  const baselineSource: any[] = Array.isArray(parsed.baseline) ? parsed.baseline : parsed.notes;
+  baselineNotes = baselineSource.map((n) => ({
+    onset_s: Number(n.onset_s),
+    offset_s: Number(n.offset_s),
+    midi_pitch: Number(n.midi_pitch),
+    confidence: n.confidence !== undefined ? Number(n.confidence) : 1,
+    sub_scores: n.sub_scores ?? {},
+  }));
+
   selectedNote = null;
   seekOffset = 0;
   invalidateEffective();
@@ -301,6 +333,93 @@ function updateKeyReadout(): void {
   const key = currentKey();
   el.keyReadout.textContent = key ? keyName(key) : "—";
   el.keyDetail.textContent = key ? keyName(key) : "—";
+}
+
+/**
+ * Refresh the correction-cost readout: how far the working notes have drifted
+ * from the producer's baseline. The total shows in the toolbar; the full
+ * breakdown (added / deleted / re-pitched / re-timed) is the tooltip.
+ */
+function updateCorrectionReadout(): void {
+  if (!annotation) {
+    el.correctionOpen.disabled = true;
+    el.correctionBadge.hidden = true;
+    el.correctionOpen.title = "Manual corrections vs. the producer's original notes.";
+    return;
+  }
+  const c = correctionCost(baselineNotes, workingNotes);
+  el.correctionOpen.disabled = false;
+  // The badge shows the count only when there is something to show.
+  el.correctionBadge.textContent = String(c.total);
+  el.correctionBadge.hidden = c.total === 0;
+  el.correctionOpen.title =
+    `${c.total} corrections vs. ${annotation.producer} — click to list them: ` +
+    `${c.added} added, ${c.deleted} deleted, ${c.pitchFixed} re-pitched, ` +
+    `${c.onsetMoved} onset + ${c.offsetMoved} offset moved.`;
+}
+
+/** Uppercase tag label + colour class for each kind of change, for the modal. */
+const CHANGE_TAG: Record<ChangeKind, string> = {
+  added: "Added",
+  deleted: "Deleted",
+  pitch: "Pitch",
+  onset: "Onset",
+  offset: "Offset",
+};
+
+/** The onset time a change is filed under, for sorting the list chronologically. */
+function changeTime(c: Change): number {
+  return (c.to ?? c.from)!.onset_s;
+}
+
+/** A one-line human description of a single correction. */
+function describeChange(c: Change): string {
+  const t = (s: number) => `${s.toFixed(2)}s`;
+  const name = (nn: NoteLike) => midiToNoteName(nn.midi_pitch);
+  switch (c.kind) {
+    case "added":
+      return `${name(c.to!)} · ${t(c.to!.onset_s)}`;
+    case "deleted":
+      return `${name(c.from!)} · ${t(c.from!.onset_s)}`;
+    case "pitch":
+      return `${name(c.from!)} → ${name(c.to!)} · ${t(c.to!.onset_s)}`;
+    case "onset":
+      return `${t(c.from!.onset_s)} → ${t(c.to!.onset_s)} · ${name(c.to!)}`;
+    case "offset":
+      return `end ${t(c.from!.offset_s)} → ${t(c.to!.offset_s)} · ${name(c.to!)}`;
+  }
+}
+
+/** Populate and open the modal listing every change behind the Fixes count. */
+function openChangesModal(): void {
+  if (!annotation) return;
+  const changes = correctionChanges(baselineNotes, workingNotes);
+  const c = correctionCost(baselineNotes, workingNotes);
+
+  el.changesSummary.textContent =
+    changes.length === 0
+      ? "No changes yet — the working notes match the producer's output."
+      : `${c.total} change${c.total === 1 ? "" : "s"} vs. ${annotation.producer}: ` +
+        `${c.added} added, ${c.deleted} deleted, ${c.pitchFixed} re-pitched, ` +
+        `${c.onsetMoved} onset + ${c.offsetMoved} offset moved.`;
+
+  const rows = changes
+    .slice()
+    .sort((a, b) => changeTime(a) - changeTime(b))
+    .map((change) => {
+      const li = document.createElement("li");
+      const tag = document.createElement("span");
+      tag.className = `tag ${change.kind}`;
+      tag.textContent = CHANGE_TAG[change.kind];
+      const desc = document.createElement("span");
+      desc.className = "desc";
+      desc.textContent = describeChange(change);
+      li.append(tag, desc);
+      return li;
+    });
+  el.changesList.replaceChildren(...rows);
+
+  setModal(el.changesOverlay, true);
 }
 
 /**
@@ -397,21 +516,28 @@ el.export.addEventListener("click", exportMidi);
 // --- Modals (help + settings) -----------------------------------------------
 
 function setModal(overlay: HTMLElement, open: boolean): void {
-  // Only one modal at a time; opening one closes the other.
+  // Only one modal at a time; opening one closes the others.
   if (open) {
     el.helpOverlay.hidden = true;
     el.settingsOverlay.hidden = true;
+    el.changesOverlay.hidden = true;
   }
   overlay.hidden = !open;
 }
 function anyModalOpen(): boolean {
-  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden;
+  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden || !el.changesOverlay.hidden;
 }
 
 el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
 el.helpClose.addEventListener("click", () => setModal(el.helpOverlay, false));
 el.helpOverlay.addEventListener("click", (e) => {
   if (e.target === el.helpOverlay) setModal(el.helpOverlay, false);
+});
+
+el.correctionOpen.addEventListener("click", openChangesModal);
+el.changesClose.addEventListener("click", () => setModal(el.changesOverlay, false));
+el.changesOverlay.addEventListener("click", (e) => {
+  if (e.target === el.changesOverlay) setModal(el.changesOverlay, false);
 });
 el.settings.addEventListener("click", () => setModal(el.settingsOverlay, el.settingsOverlay.hidden));
 el.settingsClose.addEventListener("click", () => setModal(el.settingsOverlay, false));
@@ -476,6 +602,7 @@ function rebuild(): void {
   resizeCanvas();
   syncScale();
   updateKeyReadout();
+  updateCorrectionReadout();
   draw();
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
   el.stop.disabled = !playback;
@@ -486,6 +613,7 @@ function rebuild(): void {
 /** Redraw after a view/grid/edit change: rebuild the scale (not the canvas). */
 function redraw(): void {
   syncScale();
+  updateCorrectionReadout();
   draw();
 }
 
@@ -717,8 +845,7 @@ const CONTOUR_BRIDGE_S = 0.18;
 // tracking spike or a jump between two notes, and a vertical streak across it just
 // clutters the line. This is a *rendering* break (we don't connect the points),
 // NOT a perception filter: the frame still exists and the notes are untouched
-// (ADR-0004). It replaces the display role of the ticket-08 slope filter, which
-// also (wrongly, for the contour) got removed with the note-level MAD trim.
+// (ADR-0004). It replaces the display role of the earlier slope filter.
 const MAX_CONTOUR_SLOPE_ST_PER_S = 150;
 
 function drawF0Contour(): void {
@@ -1018,6 +1145,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Escape" && anyModalOpen()) {
     setModal(el.helpOverlay, false);
     setModal(el.settingsOverlay, false);
+    setModal(el.changesOverlay, false);
     e.preventDefault();
     return;
   }
@@ -1201,11 +1329,13 @@ interface SessionState {
 /**
  * The full editing session: the annotation (f0 contour, energy, per-note
  * confidence — all preserved) with `notes` replaced by the current working set
- * (raw seconds + `manual` flags) and the review settings appended.
+ * (raw seconds + `manual` flags), the producer's original notes kept as
+ * `baseline` (so correction cost survives a reload), and the review settings
+ * appended.
  */
 function buildSessionFile(): object {
   const session: SessionState = { bpm, division, gridAnchor, flagThreshold, snapKey };
-  return { ...annotation, notes: workingNotes, session };
+  return { ...annotation, notes: workingNotes, baseline: baselineNotes, session };
 }
 
 /**
