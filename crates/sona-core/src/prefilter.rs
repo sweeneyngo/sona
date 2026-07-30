@@ -1,6 +1,6 @@
 //! **Pitch pre-filter** — prepares the contour the note-HMM decodes over
-//! (Phase B, ticket 04; [ADR-0010]). It sits between the [`PitchTracker`] and the
-//! forthcoming note-HMM: `f0 contour → (time, semitone, voicing) frames`.
+//! (Phase B; [ADR-0010]). It sits between the [`PitchTracker`] and the note-HMM:
+//! `f0 contour → (time, semitone, voicing) frames`.
 //!
 //! [`PitchTracker`]: crate::pitch::PitchTracker
 //! [ADR-0010]: ../../docs/adr/0010-note-hmm-segmentation.md
@@ -18,7 +18,7 @@
 //! ## Why a dedicated 3-tap, not pYIN's `median_window: 5`
 //!
 //! pYIN already median-filters its contour at width **5** ([ADR-0005]), so why
-//! re-filter here? Two reasons, and the ticket asked this be recorded:
+//! re-filter here? Two reasons:
 //!
 //! - **SiPTH's caution (§5.3): wide medians eat short notes.** A width-5 window
 //!   spans ~29 ms at the shared 256-sample hop; a width-3 spans ~17 ms. pYIN's
@@ -26,8 +26,8 @@
 //!   note-HMM wants the *narrowest* smoothing that still kills octave spikes, so
 //!   a genuine short note survives to reach a state. 3 is that width.
 //! - **Backend-independence.** This stage is defined over the [`F0Frame`]
-//!   contract, not over pYIN. CREPE (ticket 11) emits the same contour but does
-//!   **no** median filtering of its own; a basic-pitch adapter emits notes, not a
+//!   contract, not over pYIN. CREPE emits the same contour but does **no** median
+//!   filtering of its own; a basic-pitch adapter emits notes, not a
 //!   raw contour. Owning the 3-tap median here means the HMM sees a
 //!   bounded-jitter contour from *any* producer, instead of depending on a
 //!   smoothing choice that only pYIN happens to make. For pYIN specifically the
@@ -41,16 +41,9 @@
 //!
 //! ADR-0010 rejects a bilateral pitch pre-filter for now — unproven in this
 //! domain, and its range kernel can freeze real fast transitions. It is **not
-//! built here**; if 08's sweep asks for it, it slots in as an extra step between
-//! the median and the semitone conversion (see [`PitchPreFilter::run`]). The
-//! median is the only smoothing this stage performs.
-//!
-//! ## No behaviour change yet
-//!
-//! Ticket 04 stops at *making the pre-filtered contour available*. The
-//! [`Segmenter`](crate::segment::Segmenter) still runs on the raw pYIN contour
-//! ([`pipeline`](crate::pipeline) is untouched); the note-HMM that consumes these
-//! [`PitchFrame`]s lands in tickets 05–07.
+//! built here**; if it is ever wanted, it slots in as an extra step between the
+//! median and the semitone conversion (see [`PitchPreFilter::run`]). The median
+//! is the only smoothing this stage performs.
 
 use crate::annotation::F0Frame;
 use crate::pitch::median_filter_positive;
@@ -75,7 +68,7 @@ pub struct PitchFrame {
     pub voicing: f32,
 }
 
-/// The pitch pre-filter (ticket 04, ADR-0010). Construct with
+/// The pitch pre-filter (ADR-0010). Construct with
 /// [`PitchPreFilter::default`] for the literature 3-tap width, or set
 /// [`median_window`](PitchPreFilter::median_window) to tune.
 #[derive(Debug, Clone)]

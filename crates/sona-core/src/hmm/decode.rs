@@ -1,4 +1,4 @@
-//! **Viterbi decode + energy same-pitch split** (ticket 06, [ADR-0010]).
+//! **Viterbi decode + energy same-pitch split** ([ADR-0010]).
 //!
 //! [ADR-0010]: ../../../docs/adr/0010-note-hmm-segmentation.md
 //!

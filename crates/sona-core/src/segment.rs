@@ -6,12 +6,11 @@
 //!
 //! [`Segmenter`] is a type alias for [`NoteHmm`](crate::hmm::NoteHmm): the
 //! note-HMM *is* the segmenter now. The earlier ADR-0007 heuristic (hybrid
-//! offsets + pitch-plateau splitting) was retired once the note-HMM beat its
-//! baseline on Vocadito without regressing the staccato fixture (ticket 08; see
-//! `crates/sona-eval/reports/note-hmm-sweep.md`). Its one surviving output, the
-//! offset energy-drop steepness, lives on here as [`drop_steepness`].
+//! offsets + pitch-plateau splitting) was retired in favour of the note-HMM. Its
+//! one surviving output, the offset energy-drop steepness, lives on here as
+//! [`drop_steepness`].
 //!
-//! ## Raw material for confidence (ticket 06)
+//! ## Raw material for confidence
 //!
 //! Every [`NoteSegment`] carries what the confidence stage can't recover later:
 //! the onset [`strength`](NoteSegment::onset_strength) (onset clarity), and per
@@ -28,9 +27,9 @@ use crate::annotation::EnergyFrame;
 pub type Segmenter = crate::hmm::NoteHmm;
 
 /// How a note's offset was decided. Recorded per offset so the confidence stage
-/// (ticket 06) and the UI can tell *why* a note ends where it does. The
-/// confidence stage reads only the [`drop_steepness`](OffsetInfo::drop_steepness),
-/// not this kind — it is for the UI / debugging.
+/// and the UI can tell *why* a note ends where it does. The confidence stage
+/// reads only the [`drop_steepness`](OffsetInfo::drop_steepness), not this kind —
+/// it is for the UI / debugging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetKind {
     /// The note is seamlessly followed by another note that carries its own
@@ -46,7 +45,7 @@ pub enum OffsetKind {
     StemEnd,
 }
 
-/// The raw material an offset hands to the confidence stage (ticket 06).
+/// The raw material an offset hands to the confidence stage.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OffsetInfo {
     /// How this offset was decided.
@@ -59,8 +58,8 @@ pub struct OffsetInfo {
 }
 
 /// A segmented note event: raw seconds, a MIDI pitch, and the raw material the
-/// confidence stage (ticket 06) needs. This is *not* an annotation [`Note`] yet
-/// — confidence composes the scalar + sub-scores from these fields downstream.
+/// confidence stage needs. This is *not* an annotation [`Note`] yet — confidence
+/// composes the scalar + sub-scores from these fields downstream.
 ///
 /// [`Note`]: crate::annotation::Note
 #[derive(Debug, Clone, PartialEq)]
@@ -81,14 +80,14 @@ pub struct NoteSegment {
     pub split_from_plateau: bool,
     /// How this note's offset was decided, and its energy-drop steepness.
     pub offset: OffsetInfo,
-    /// **HMM-derived pitch dispersion** (ticket 09): the RMS spread, in semitones,
+    /// **HMM-derived pitch dispersion**: the RMS spread, in semitones,
     /// of the note's voiced frames about their mean pitch (rounding-free, so an
     /// off-tune note isn't penalised for sitting between semitones). Low = the
     /// contour sat tightly on one pitch; high = it wandered. Confidence's
     /// pitch-stability sub-score reads this instead of recomputing a spread from
     /// the raw contour — it is measured over the frames the HMM *voiced*.
     pub pitch_dispersion_semitones: f32,
-    /// **HMM-derived voicing confidence** (ticket 09) in `0.0..=1.0`: the mean,
+    /// **HMM-derived voicing confidence** in `0.0..=1.0`: the mean,
     /// over the note's frames, of the model's local (per-frame, transition-free)
     /// voiced-vs-silent **emission evidence** — a sigmoid of
     /// [`HmmModel::voiced_logodds`](crate::hmm::HmmModel::voiced_logodds), *not* a
@@ -116,8 +115,8 @@ pub fn midi_round_f32(midi: f32) -> u8 {
 /// there is no energy before the offset to fall from.
 ///
 /// This is ADR-0007's one surviving output: the note-HMM (ADR-0010) measures it
-/// purely as raw material for offset-clarity confidence (ticket 06) — not to
-/// *decide* the offset.
+/// purely as raw material for offset-clarity confidence — not to *decide* the
+/// offset.
 pub(crate) fn drop_steepness(envelope: &[EnergyFrame], offset_s: f64, window_s: f64) -> f32 {
     let mean_rms = |lo: f64, hi: f64| -> Option<f32> {
         let vals: Vec<f32> = envelope

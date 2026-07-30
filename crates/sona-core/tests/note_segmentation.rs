@@ -1,8 +1,7 @@
-//! Ticket 05 done-criterion: segmentation yields musically plausible notes on a
-//! test stem, driven by the *real* upstream stages — pYIN (ticket 03) and the
-//! energy-onset detector (ticket 04) — not hand-fed tracks. Each note carries the
-//! raw material the confidence stage (ticket 06) needs: onset strength, and per
-//! offset a drop steepness and how the offset was decided.
+//! Segmentation yields musically plausible notes on a test stem, driven by the
+//! *real* upstream stages — pYIN and the energy-onset detector — not hand-fed
+//! tracks. Each note carries the raw material the confidence stage needs: onset
+//! strength, and per offset a drop steepness and how the offset was decided.
 
 use sona_core::onset::OnsetDetector;
 use sona_core::pitch::{PYin, PitchTracker};
@@ -32,7 +31,7 @@ fn midi(hz: f32) -> u8 {
     hz_to_midi(hz).round() as u8
 }
 
-/// Run the full core pipeline the way ticket 07 will: pYIN → onsets → segment.
+/// Run the full core pipeline: pYIN → onsets → segment.
 fn transcribe(audio: &[f32]) -> Vec<sona_core::segment::NoteSegment> {
     let contour = PYin::default().track(audio, SR);
     let onset_result = OnsetDetector::default().detect(audio, SR);
@@ -89,7 +88,7 @@ fn segments_a_staccato_phrase_into_plausible_notes() {
             "sharp staccato drop scores high steepness, got {}",
             note.offset.drop_steepness
         );
-        // Raw material for onset-clarity confidence (ticket 06) is present.
+        // Raw material for onset-clarity confidence is present.
         assert!(note.onset_strength > 0.0, "carries onset strength");
         assert!(!note.split_from_plateau, "born of an onset, not a split");
     }
@@ -107,8 +106,8 @@ fn segments_a_staccato_phrase_into_plausible_notes() {
 fn splits_repeated_same_pitch_notes() {
     // Two A4 notes with a clean gap between them. Pure pitch tracking sees one
     // sustained pitch; the re-attack is an energy onset the note-HMM's energy
-    // same-pitch splitter (ticket 06) must turn into a second note at the *same*
-    // pitch — the case pitch-only methods over-merge.
+    // same-pitch splitter must turn into a second note at the *same* pitch — the
+    // case pitch-only methods over-merge.
     let mut audio = silence(0.1);
     audio.extend(tone(440.0, 0.25, 0.6));
     audio.extend(silence(0.15));

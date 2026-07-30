@@ -1,4 +1,4 @@
-//! **Note-HMM parameter sweep** (ticket 08) — the payoff gate for Phase B.
+//! **Note-HMM parameter sweep** — the payoff gate for Phase B.
 //!
 //!     cargo run --release -p sona-eval --bin sona-eval-sweep -- --corpus
 //!
@@ -7,8 +7,8 @@
 //! fixtures, and prints note-F1 (COnP / COnPOff) for each setting beside the
 //! **ADR-0007 heuristic baseline** computed in the same run on the same machine.
 //!
-//! The gate (ticket 08 / the spec): **beat baseline note-F1 on the expressive
-//! corpus without regressing the staccato golden fixture.** The upstream stages
+//! The gate (the spec): **beat baseline note-F1 on the expressive corpus
+//! without regressing the staccato golden fixture.** The upstream stages
 //! (pYIN, energy onsets) don't depend on the HMM parameters, so they are run once
 //! per stem and cached; only the segmenter + confidence re-run per grid point.
 
@@ -39,10 +39,9 @@ const FIXED_LAMBDA: f32 = 2.5;
 const ATTACK_SELF_GRID: &[f32] = &[0.5, 0.6, 0.75, 0.9];
 const PITCH_TRUST_GRID: &[f32] = &[0.1, 0.5, 1.0, 2.0];
 
-/// The recorded ADR-0007 heuristic baseline the note-HMM had to beat — the
-/// numbers from `reports/baseline.md` (ticket 03). The heuristic segmenter itself
-/// was retired on the ticket-08 sign-off, so the gate compares against these
-/// fixed historical numbers rather than re-running it.
+/// The recorded ADR-0007 heuristic baseline the note-HMM must beat — the numbers
+/// from `reports/baseline.md`. The gate compares against these fixed numbers
+/// rather than re-running the heuristic segmenter.
 const BASE_CORPUS_CONP_F1: f64 = 0.515;
 const BASE_CORPUS_CONPOFF_F1: f64 = 0.348;
 const BASE_STACCATO_CONP_F1: f64 = 1.000;

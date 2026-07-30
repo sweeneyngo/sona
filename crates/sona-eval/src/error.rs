@@ -1,6 +1,6 @@
 //! Harness errors. A small typed enum so the "fail loudly if the corpus is
-//! absent" requirement (ADR-0011, ticket 01) reads as a specific, actionable
-//! message rather than a bare string.
+//! absent" requirement (ADR-0011) reads as a specific, actionable message
+//! rather than a bare string.
 
 use std::fmt;
 use std::path::PathBuf;

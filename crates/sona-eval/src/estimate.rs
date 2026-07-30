@@ -1,14 +1,11 @@
 //! The **estimate** — a producer's transcription of one stem, in the shape the
-//! metrics (ticket 02) score against a [`Reference`]. It mirrors [`Reference`]
-//! but carries the two things ground truth doesn't:
+//! metrics score against a [`Reference`]. It mirrors [`Reference`] but carries
+//! the two things ground truth doesn't:
 //!
 //! - a **per-note confidence** scalar (`0.0..=1.0`), because "does the flag
 //!   predict the wrong notes?" is a first-class metric (ADR-0011); and
 //! - f0 in the same [`RefF0`] frame shape, so the pitch metrics compare like
 //!   with like.
-//!
-//! Ticket 02 defines the type and the metrics that consume it; wiring a real
-//! producer (the pipeline) into an `Estimate` is ticket 03's baseline report.
 //!
 //! [`Reference`]: crate::reference::Reference
 
@@ -40,8 +37,8 @@ impl Estimate {
     /// confidence. A perfect transcription — scoring it yields all-1.0 metrics.
     ///
     /// It exists so the report harness has *something* to score before a real
-    /// producer is wired in (ticket 03), and as an upper-bound sanity check that
-    /// the metrics reward a perfect answer. It is not a producer.
+    /// producer is wired in, and as an upper-bound sanity check that the metrics
+    /// reward a perfect answer. It is not a producer.
     pub fn from_reference(reference: &Reference) -> Self {
         Estimate {
             onsets: reference.notes.iter().map(|n| n.onset_s).collect(),

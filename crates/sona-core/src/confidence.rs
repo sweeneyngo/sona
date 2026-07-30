@@ -1,28 +1,27 @@
 //! **Confidence scoring** — the fourth stage of the perception pipeline (spec
-//! §Pipeline 4), landed by ticket 06. The spec calls this the highest-leverage
-//! stage: confidence is what turns "re-listen to the whole song" into "check
-//! these few flagged notes" (CONTEXT.md), so it is where the review surface earns
-//! its keep.
+//! §Pipeline 4). The spec calls this the highest-leverage stage: confidence is
+//! what turns "re-listen to the whole song" into "check these few flagged notes"
+//! (CONTEXT.md), so it is where the review surface earns its keep.
 //!
-//! The stage turns a [`NoteSegment`] (ticket 05) — which carries raw perception
-//! but no judgement — into an annotation [`Note`]: the same timing and pitch, now
+//! The stage turns a [`NoteSegment`] — which carries raw perception but no
+//! judgement — into an annotation [`Note`]: the same timing and pitch, now
 //! with a confidence scalar and its four [`SubScores`]. It re-reads the f0
 //! [contour](F0Frame) and energy [envelope](EnergyFrame) for the dimensions a
 //! segment can't recover on its own (pitch spread, voicing, note level).
 //!
 //! ## Four sub-scores, each in `0.0..=1.0` (spec stage 4)
 //!
-//! - **pitch_stability** — from the note's **HMM pitch dispersion** (ticket 09):
-//!   the RMS deviation of its voiced frames from the pitch the HMM *decoded*. A
+//! - **pitch_stability** — from the note's **HMM pitch dispersion**: the RMS
+//!   deviation of its voiced frames from the pitch the HMM *decoded*. A
 //!   steady note scores high; one whose contour wandered relative to its decoded
 //!   pitch scores low. Vibrato-tolerant: a bounded ripple has bounded dispersion,
 //!   so it is not punished as instability.
-//! - **voicing** — the note's **HMM voicing confidence** (ticket 09) — the model's
-//!   own voiced-vs-silent **emission evidence** (a local log-odds, not a
+//! - **voicing** — the note's **HMM voicing confidence** — the model's own
+//!   voiced-vs-silent **emission evidence** (a local log-odds, not a
 //!   forward-backward posterior), which folds pYIN voicing together with pitch
 //!   fit — multiplied by a bleed guard. Because it folds in pitch fit this
 //!   dimension is not strictly independent of pitch-stability; it is kept because
-//!   it measurably sharpens the confidence flag (ticket 09). The bleed factor
+//!   it measurably sharpens the confidence flag. The bleed factor
 //!   falls to zero as the note's energy approaches the stem's noise floor: the
 //!   spec's primary defence against spurious notes from UVR separation bleed, so a
 //!   note hovering near the floor scores near zero here however voiced it looks.
@@ -105,8 +104,8 @@ impl Default for ConfidenceScorer {
 impl ConfidenceScorer {
     /// Score every `segment` against the energy `envelope`, returning annotation
     /// [`Note`]s in the same order. Pitch-stability and voicing come from the
-    /// HMM-derived raw material each segment carries (ticket 09), so no f0 contour
-    /// is needed here. The stem's peak RMS (for the bleed guard) is computed once
+    /// HMM-derived raw material each segment carries, so no f0 contour is needed
+    /// here. The stem's peak RMS (for the bleed guard) is computed once
     /// from the envelope and shared across notes, so the guard is relative to the
     /// whole stem's level, not each note's.
     pub fn score_all(&self, segments: &[NoteSegment], envelope: &[EnergyFrame]) -> Vec<Note> {
@@ -145,8 +144,8 @@ impl ConfidenceScorer {
         }
     }
 
-    /// `pitch_stability` from the note's **HMM pitch dispersion** (ticket 09) —
-    /// the RMS semitone spread of its voiced frames about their mean pitch, scored
+    /// `pitch_stability` from the note's **HMM pitch dispersion** — the RMS
+    /// semitone spread of its voiced frames about their mean pitch, scored
     /// against
     /// [`pitch_std_tol_semitones`](Self::pitch_std_tol_semitones): `0` dispersion
     /// → 1, one tolerance → `0.5`, wide wander → toward `0`. A note with no pitched
@@ -158,8 +157,8 @@ impl ConfidenceScorer {
         1.0 / (1.0 + r * r)
     }
 
-    /// `voicing` = the note's **HMM voicing confidence** (ticket 09) × a bleed-guard
-    /// factor. The HMM confidence is the model's per-frame voiced-vs-silent
+    /// `voicing` = the note's **HMM voicing confidence** × a bleed-guard factor.
+    /// The HMM confidence is the model's per-frame voiced-vs-silent
     /// emission evidence averaged over the note (folding pYIN voicing with pitch
     /// fit), so a note the model was unsure was voiced scores low. The bleed factor ramps from
     /// `0` at [`bleed_floor_frac`](Self::bleed_floor_frac) to `1` at
@@ -419,7 +418,7 @@ mod tests {
         assert!(scorer.offset_clarity(&tail) < 0.2);
     }
 
-    // --- end-to-end scoring (ticket 06 done-criterion) --------------------
+    // --- end-to-end scoring -----------------------------------------------
 
     #[test]
     fn a_clean_staccato_note_scores_high() {
@@ -438,8 +437,8 @@ mod tests {
 
     #[test]
     fn a_spurious_bleed_note_scores_low() {
-        // Ticket 06 done-criterion: a note sitting at the noise floor scores low.
-        // Its energy is 4% of the stem peak — the bleed guard zeroes voicing, and
+        // A note sitting at the noise floor scores low. Its energy is 4% of the
+        // stem peak — the bleed guard zeroes voicing, and
         // the weakest-link soft-min carries that through to the scalar.
         let seg = segment(0.1, 0.4, 69);
         let env = envelope(&[(0.5, 0.04)]); // flat, near-floor throughout
@@ -455,8 +454,8 @@ mod tests {
 
     #[test]
     fn an_ambiguous_offset_scores_low() {
-        // Ticket 06 done-criterion: a note that is clean in every way *except* a
-        // mushy, slow-tail offset scores low — the weak offset dimension is not
+        // A note that is clean in every way *except* a mushy, slow-tail offset
+        // scores low — the weak offset dimension is not
         // masked by the three strong ones.
         let mut seg = segment(0.1, 0.4, 69);
         seg.offset.drop_steepness = 0.05; // slow tail, ambiguous end

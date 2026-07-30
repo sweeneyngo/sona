@@ -1,4 +1,4 @@
-// Pure Standard MIDI File (SMF) encoder for the review surface (ticket 10).
+// Pure Standard MIDI File (SMF) encoder for the review surface.
 // The UI exports the *authoritative* MIDI from the current snapped + corrected
 // state (ADR-0004), so this owns the seconds→ticks conversion and byte layout.
 // A format-0, single-track file is all a monophonic vocal line needs. No deps —

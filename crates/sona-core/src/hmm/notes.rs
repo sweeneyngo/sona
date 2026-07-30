@@ -1,13 +1,13 @@
-//! **Decoded path → `NoteSegment`s** (ticket 07, [ADR-0010]) and the [`NoteHmm`]
+//! **Decoded path → `NoteSegment`s** ([ADR-0010]) and the [`NoteHmm`]
 //! orchestrator that drives the whole stage.
 //!
 //! [ADR-0010]: ../../../docs/adr/0010-note-hmm-segmentation.md
 //!
 //! [`NoteHmm::segment`] is the note-HMM's implementation of the
-//! [`Segmenter`](crate::segment::Segmenter) seam: it pre-filters the contour
-//! (ticket 04), derives a compact pitch range from the stem, builds the model
-//! (ticket 05), Viterbi-decodes it with the energy onsets fed in (ticket 06), and
-//! turns the winning state path into note events — the work of *this* ticket:
+//! [`Segmenter`](crate::segment::Segmenter) seam: it pre-filters the contour,
+//! derives a compact pitch range from the stem, builds the model,
+//! Viterbi-decodes it with the energy onsets fed in, and turns the winning state
+//! path into note events:
 //!
 //! - **Boundaries from the path, not the sub-states.** A note is a maximal run of
 //!   voiced frames at one integer pitch; it ends at a rest (a `Silent` frame), a
@@ -37,12 +37,12 @@ use super::model::{HmmModel, HmmParams, ObsFrame, Sub};
 /// The note-HMM segmentation strategy (ADR-0010): the default behind
 /// [`Segmenter`](crate::segment::Segmenter). Holds the model parameters plus the
 /// post-processing thresholds; construct with [`NoteHmm::default`] or set fields
-/// to tune (ticket 08 sweeps [`params`](Self::params)).
+/// to tune [`params`](Self::params).
 #[derive(Debug, Clone)]
 pub struct NoteHmm {
     /// Model + decode parameters (states, emission, transitions, onset bonus).
     pub params: HmmParams,
-    /// Pre-filter applied to the contour before decoding (ticket 04).
+    /// Pre-filter applied to the contour before decoding.
     pub prefilter: PitchPreFilter,
     /// Alpha-trim fraction for the final per-note pitch (each tail trimmed by this
     /// fraction before averaging). Guards the mean against onset/offset glides.
@@ -311,8 +311,8 @@ struct RawNote {
     midi_pitch: u8,
     onset_strength: f32,
     split_from_plateau: bool,
-    /// HMM-derived confidence accumulators (ticket 09), kept additive so a merge
-    /// can combine two fragments' stats exactly.
+    /// HMM-derived confidence accumulators, kept additive so a merge can combine
+    /// two fragments' stats exactly.
     stats: HmmStats,
 }
 

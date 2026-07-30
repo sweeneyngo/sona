@@ -1,14 +1,14 @@
 //! **Onset detection + energy envelope** — the second stage of the perception
-//! pipeline (spec §Pipeline 2), landed by ticket 04.
+//! pipeline (spec §Pipeline 2).
 //!
 //! Two outputs, both raw perception (no grid, no BPM):
 //!
 //! - The **energy/RMS envelope** ([`EnergyFrame`]s): a per-frame loudness track.
 //!   It is a display aid in the annotation JSON (ADR-0004) *and* the raw material
-//!   segmentation reads for offset steepness (ticket 05) and the confidence stage
-//!   reads for the bleed guard (ticket 06).
+//!   segmentation reads for offset steepness and the confidence stage reads for
+//!   the bleed guard.
 //! - The **onsets** ([`Onset`]s): the times a new note attacks, each with a
-//!   `strength` that onset-clarity confidence (ticket 06) later scores.
+//!   `strength` that onset-clarity confidence later scores.
 //!
 //! ## How onsets are found
 //!
@@ -19,7 +19,7 @@
 //! prominent peaks are the onsets. Re-attacks at the *same* pitch (the case pure
 //! pitch tracking misses) are exactly energy rises, so this catches them; splits
 //! between two *legato* pitches at steady energy are deliberately left to
-//! segmentation's pitch-plateau step (ticket 05), not forced here. See ADR-0006.
+//! segmentation's pitch-plateau step, not forced here. See ADR-0006.
 //!
 //! The done-criterion is "few false positives from **bleed**": separation bleed
 //! sits near the noise floor, so a candidate whose energy never rises to a
@@ -29,8 +29,8 @@ use crate::annotation::EnergyFrame;
 
 /// A detected note attack. `time_s` is the onset in seconds from the start of
 /// the stem; `strength` is the (log-energy) novelty at the peak — a relative
-/// measure of how sharp the attack was, consumed by onset-clarity confidence
-/// (ticket 06), not a calibrated unit.
+/// measure of how sharp the attack was, consumed by onset-clarity confidence,
+/// not a calibrated unit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Onset {
     /// Onset time, in seconds from the start of the stem.

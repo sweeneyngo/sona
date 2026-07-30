@@ -1,5 +1,5 @@
-//! Ticket 07 seam: the perception stages, wired end to end by [`Transcriber`],
-//! turn raw mono audio into a complete, valid annotation. This is the core half
+//! The perception stages, wired end to end by [`Transcriber`], turn raw mono
+//! audio into a complete, valid annotation. This is the core half
 //! of the CLI's `stem + BPM -> annotation JSON` path — the CLI adds only WAV
 //! decoding and serialization on top.
 
@@ -75,7 +75,7 @@ fn transcribes_two_staccato_notes_end_to_end() {
 
 /// The emitted annotation serializes to JSON the CLI can print and a consumer
 /// can read back — the same contract the web review surface loads. (Bit-exact
-/// f64 round-trip is the ticket-02 contract test's job, with clean values; a
+/// f64 round-trip is the annotation contract test's job, with clean values; a
 /// pipeline contour of computed floats trips serde_json's ~1-ULP parse quirk, so
 /// here we assert the payload reads back intact, not bit-identical.)
 #[test]

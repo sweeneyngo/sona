@@ -2,14 +2,14 @@
 //! §Pipeline). This is the "emit" step the crate docs promised: a mono stem
 //! (+ BPM) becomes a complete annotation [`Annotation`].
 //!
-//! The four perception stages each landed in their own ticket and each own a
-//! tunable struct; [`Transcriber`] just threads their outputs together in order
-//! and packs the result into the annotation JSON contract (ADR-0004):
+//! Each of the four perception stages owns a tunable struct; [`Transcriber`]
+//! just threads their outputs together in order and packs the result into the
+//! annotation JSON contract (ADR-0004):
 //!
-//! 1. [`PitchTracker`] → the f0 contour (ticket 03).
-//! 2. [`OnsetDetector`] → onsets + the energy/RMS envelope (ticket 04).
-//! 3. [`Segmenter`] → note segments from contour + onsets + envelope (ticket 05).
-//! 4. [`ConfidenceScorer`] → annotation [`Note`]s with confidence (ticket 06).
+//! 1. [`PitchTracker`] → the f0 contour.
+//! 2. [`OnsetDetector`] → onsets + the energy/RMS envelope.
+//! 3. [`Segmenter`] → note segments from contour + onsets + envelope.
+//! 4. [`ConfidenceScorer`] → annotation [`Note`]s with confidence.
 //!
 //! The tracker is passed in rather than owned so the pluggable-backend seam
 //! (ADR-0001) reaches all the way to the top: the CLI hands in pYIN today, CREPE
@@ -29,11 +29,11 @@ use crate::segment::Segmenter;
 /// staccato-vocal defaults every stage already carries, or set fields to tune.
 #[derive(Debug, Clone, Default)]
 pub struct Transcriber {
-    /// Onset detection + energy envelope (ticket 04).
+    /// Onset detection + energy envelope.
     pub onset: OnsetDetector,
-    /// Note segmentation (ticket 05).
+    /// Note segmentation.
     pub segmenter: Segmenter,
-    /// Confidence scoring (ticket 06).
+    /// Confidence scoring.
     pub scorer: ConfidenceScorer,
 }
 

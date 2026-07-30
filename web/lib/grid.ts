@@ -1,4 +1,4 @@
-// Pure grid + hard-snap quantization maths for the review surface (ticket 09).
+// Pure grid + hard-snap quantization maths for the review surface.
 // Snapping lives UI-side (ADR-0004): the core emits raw seconds, and the UI
 // interprets them against a user-chosen BPM/grid/phase. Kept DOM-free so the
 // snapping and the confidence-aware escape hatch are unit-testable.

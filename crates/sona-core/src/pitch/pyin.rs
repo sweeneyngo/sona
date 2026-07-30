@@ -21,10 +21,9 @@
 //!
 //! The full pYIN then runs an HMM/Viterbi over candidates. We deliberately
 //! substitute the spec's median filter (ADR-0005): it removes the isolated
-//! octave errors and jitter the HMM targets, at the contour stage the ticket
-//! asks for, without the state machine. Vibrato survives it as a slow ripple —
-//! splitting a vibrato'd note is segmentation's problem (ticket 05), not the
-//! tracker's.
+//! octave errors and jitter the HMM targets, at the contour stage, without the
+//! state machine. Vibrato survives it as a slow ripple — splitting a vibrato'd
+//! note is segmentation's problem, not the tracker's.
 
 use crate::annotation::F0Frame;
 

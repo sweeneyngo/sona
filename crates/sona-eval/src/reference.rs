@@ -1,13 +1,12 @@
 //! The **common reference type** — ground truth for one stem, in the shape the
-//! metrics (ticket 02) compare a pipeline's output against. Both Vocadito
+//! metrics compare a pipeline's output against. Both Vocadito
 //! ([`crate::vocadito`]) and the golden fixtures ([`crate::fixtures`]) load into
 //! this, so the metrics never see a source-specific format.
 //!
 //! It mirrors the two annotation kinds every relevant dataset ships: **notes**
 //! (onset/offset/pitch) and a **frame-level f0** track. Pitch is stored as
 //! integer MIDI to match the annotation contract's [`Note::midi_pitch`]; f0 is
-//! kept in Hz so the pitch metrics (RPA/RCA, ticket 02) can work at cent
-//! resolution.
+//! kept in Hz so the pitch metrics (RPA/RCA) can work at cent resolution.
 //!
 //! [`Note::midi_pitch`]: sona_core::Note
 

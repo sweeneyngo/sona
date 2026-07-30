@@ -5,10 +5,10 @@
 //!
 //! It runs the **current ADR-0007 pipeline** (pYIN → energy onsets → heuristic
 //! segmentation → confidence) over each stem and scores its output with the
-//! ticket-02 metrics, printing a full per-stage table — RPA/RCA, onset-F1,
-//! note-F1 (COnP/COnPOff), confidence calibration — plus an onset-vs-segmentation
+//! metrics, printing a full per-stage table — RPA/RCA, onset-F1, note-F1
+//! (COnP/COnPOff), confidence calibration — plus an onset-vs-segmentation
 //! attribution summary. These numbers are the baseline every Phase-B change must
-//! beat (ticket 03).
+//! beat.
 //!
 //! With `--corpus` it also scores the Vocadito corpus from `SONA_VOCADITO_DIR`
 //! (or the crate-local `data/vocadito`) and **fails loudly** if it isn't there;
@@ -111,8 +111,7 @@ fn score_stem(
 
 /// Print the onset-vs-segmentation attribution: onset recall (stage 2) beside
 /// note COnP recall (stage 3). A high onset recall with a much lower note recall
-/// points at segmentation (over-merging), not onset detection — the standing
-/// question ticket 03 must answer.
+/// points at segmentation (over-merging), not onset detection.
 fn print_attribution(label: &str, reports: &[(String, StageReport)]) {
     if reports.is_empty() {
         return;

@@ -6,16 +6,14 @@
 //! The core is invariant to musical settings; *interpretation* (grid anchoring,
 //! quantization, correction, MIDI export) is the web review surface's job.
 //!
-//! The stages, in pipeline order: the [`annotation`] contract (ticket 02) that
-//! every stage feeds into, the [`pitch`] stage (ticket 03): the [`PitchTracker`]
-//! seam (ADR-0001) and its pYIN default, the [`onset`] stage (ticket 04):
-//! energy-novelty onset detection + the RMS envelope, the [`segment`] stage
-//! (ticket 05): hybrid offsets + pitch-plateau splitting into note events, and
-//! the [`confidence`] stage (ticket 06): the four sub-scores + weakest-link
-//! soft-min that turn a segment into an annotation [`Note`]. The [`pipeline`]
-//! stage (ticket 07) wires them end to end — a stem (+ BPM) becomes an
-//! [`Annotation`] — and [`midi`] (ticket 07) is the optional raw, unquantized
-//! `.mid` convenience export derived from it.
+//! The stages, in pipeline order: the [`annotation`] contract that every stage
+//! feeds into, the [`pitch`] stage: the [`PitchTracker`] seam (ADR-0001) and its
+//! pYIN default, the [`onset`] stage: energy-novelty onset detection + the RMS
+//! envelope, the [`segment`] stage: note segmentation into note events, and the
+//! [`confidence`] stage: the four sub-scores + weakest-link soft-min that turn a
+//! segment into an annotation [`Note`]. The [`pipeline`] stage wires them end to
+//! end — a stem (+ BPM) becomes an [`Annotation`] — and [`midi`] is the optional
+//! raw, unquantized `.mid` convenience export derived from it.
 
 pub mod annotation;
 pub mod confidence;
@@ -44,7 +42,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// `crepe` feature; the default pYIN backend needs no ONNX runtime (ADR-0001).
 ///
 /// Empty placeholder — the `crepe` feature already pulls `ort` into the build.
-/// The real ONNX-backed `PitchTracker` implementation lands in ticket 11.
 #[cfg(feature = "crepe")]
 pub mod crepe {}
 

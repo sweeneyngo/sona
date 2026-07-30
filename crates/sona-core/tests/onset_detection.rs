@@ -1,6 +1,6 @@
-//! Ticket 04 done-criterion: onsets detected on a test vocal stem with few false
-//! positives from bleed, and the energy envelope drops straight into the
-//! annotation JSON's `energy_envelope` field (ADR-0004).
+//! Onsets detected on a test vocal stem with few false positives from bleed,
+//! and the energy envelope drops straight into the annotation JSON's
+//! `energy_envelope` field (ADR-0004).
 
 use sona_core::annotation::{Annotation, Producer, SCHEMA_VERSION};
 use sona_core::onset::OnsetDetector;
@@ -11,8 +11,8 @@ const SR: u32 = 44_100;
 /// A short staccato "vocal stem": four notes at Vocaloid-ish spacing, each a
 /// fundamental plus harmonics, separated by clean gaps — and, crucially, a bed
 /// of low-level broadband **bleed** running underneath the whole thing (the UVR
-/// separation artefacts the done-criterion is about). Deterministic, so the
-/// test is stable.
+/// separation artefacts this test is about). Deterministic, so the test is
+/// stable.
 fn vocal_stem_with_bleed() -> (Vec<f32>, Vec<f64>) {
     let note = |freq: f32, dur_s: f32| -> Vec<f32> {
         let n = (dur_s * SR as f32) as usize;

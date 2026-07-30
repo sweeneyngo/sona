@@ -1,8 +1,8 @@
-//! Ticket 06 done-criterion, driven by the *real* upstream stages: pYIN
-//! (ticket 03) → energy onsets (ticket 04) → segmentation (ticket 05) →
-//! confidence (ticket 06). Every note comes out carrying a scalar plus the four
-//! sub-scores, and a clean staccato phrase scores high. Separation bleed is culled
-//! upstream by the onset stage's bleed floor (ADR-0006), so the pipeline never
+//! Confidence scoring, driven by the *real* upstream stages: pYIN → energy
+//! onsets → segmentation → confidence. Every note comes out carrying a scalar
+//! plus the four sub-scores, and a clean staccato phrase scores high. Separation
+//! bleed is culled upstream by the onset stage's bleed floor (ADR-0006), so the
+//! pipeline never
 //! even emits a note for it — confidence's own bleed guard is a second line of
 //! defence for a marginal note that slips through, and the spurious-bleed and
 //! ambiguous-offset done-criteria are pinned as unit tests in the `confidence`
@@ -32,8 +32,7 @@ fn silence(dur_s: f32) -> Vec<f32> {
     vec![0.0f32; (dur_s * SR as f32) as usize]
 }
 
-/// Run the full core pipeline the way ticket 07 will: pYIN → onsets → segment →
-/// confidence.
+/// Run the full core pipeline: pYIN → onsets → segment → confidence.
 fn transcribe(audio: &[f32]) -> Vec<Note> {
     let contour = PYin::default().track(audio, SR);
     let onset_result = OnsetDetector::default().detect(audio, SR);

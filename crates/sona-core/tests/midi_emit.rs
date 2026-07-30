@@ -1,5 +1,5 @@
-//! Ticket 07 seam: the optional raw, unquantized MIDI the CLI can emit as a
-//! convenience (spec: *not* the authoritative export — that's the UI's job). The
+//! The optional raw, unquantized MIDI the CLI can emit as a convenience
+//! (spec: *not* the authoritative export — that's the UI's job). The
 //! annotation's note times in seconds are placed on a timed MIDI track through
 //! the carried BPM, so the MIDI is raw (unquantized) but audible.
 

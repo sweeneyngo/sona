@@ -1,9 +1,9 @@
-//! **Note-HMM model** — states, emission, and transitions (ticket 05, [ADR-0010]).
+//! **Note-HMM model** — states, emission, and transitions ([ADR-0010]).
 //!
 //! [ADR-0010]: ../../../docs/adr/0010-note-hmm-segmentation.md
 //!
 //! This is pure, side-effect-free *construction*: it builds the lattice the
-//! Viterbi decoder (ticket 06) runs over. Nothing here decodes — the model only
+//! Viterbi decoder runs over. Nothing here decodes — the model only
 //! knows how to score one frame against a state ([`HmmModel::emission_logs`]) and
 //! how likely one state is to follow another ([`HmmModel::transition`]).
 //!
@@ -41,7 +41,7 @@
 //!
 //! Left-to-right within a note with the literature self-probabilities
 //! (`Attack 0.9 / Stable 0.99 / Silent 0.9999`, ADR-0010); the Stable self-prob
-//! is Phase B's one main knob (ticket 08). A note changes pitch through an
+//! is Phase B's one main knob. A note changes pitch through an
 //! **interval prior** — `Stable(p)`/`Silent(p) → Attack(q)` weighted by
 //! `exp(-|p−q|/λ)`, so small steps are cheap and octave jumps expensive. That
 //! penalty is what rejects octave artefacts at the source (replacing the UI-side
@@ -64,9 +64,10 @@ pub enum Sub {
 /// Number of sub-states per pitch bin.
 pub const SUBS: usize = 3;
 
-/// Tunable parameters of the note-HMM. [`Default`] is the ADR-0010 literature
-/// starting point; ticket 08's sweep sets the shipped values (chiefly
-/// [`stable_self`](HmmParams::stable_self) and [`interval_lambda`](HmmParams::interval_lambda)).
+/// Tunable parameters of the note-HMM. [`Default`] carries the shipped values,
+/// which start from the ADR-0010 literature and are tuned against the corpus
+/// (chiefly [`stable_self`](HmmParams::stable_self) and
+/// [`interval_lambda`](HmmParams::interval_lambda)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HmmParams {
     /// Pitch bins per semitone (ADR-0010: 3). The decode grid resolution.
@@ -78,21 +79,17 @@ pub struct HmmParams {
     pub sigma_stable: f32,
     /// Trust exponent `τ` scaling the pitch Gaussian's log-likelihood. Lower
     /// trusts the contour less (flatter emission), letting the transition prior
-    /// dominate boundary placement. ADR-0010's nominal `τ≈0.1` was measured to be
-    /// *worse than the heuristic baseline* on Vocadito (corpus COnP-F1 ≈ 0.37–0.48
-    /// vs the 0.515 baseline — the emission is too flat to place boundaries); the
-    /// default is set from that sweep. See reports/note-hmm-sweep.md.
+    /// dominate boundary placement. ADR-0010's nominal `τ≈0.1` is too flat to
+    /// place boundaries, so the shipped value trusts the contour more.
     pub pitch_trust: f32,
     /// Voicing prior `v`: the base share of emission mass given to voiced
     /// sub-states vs. Silent, before the frame's own pYIN voicing tilts it.
     pub voicing_prior: f32,
-    /// Attack self-transition probability. ADR-0010's nominal is `0.9`, but that
-    /// was measured to *fail the gate* on Vocadito (corpus COnP-F1 ≈ 0.37–0.44 <
-    /// the 0.515 baseline): a high value leaves the decode stuck in Attack for
-    /// tens of frames (Attack and Stable emissions coincide on a clean on-pitch
-    /// contour), blurring the Attack→Stable boundary the segmenter and energy
-    /// splitter read. The default keeps Attack short — its actual job — and is set
-    /// from the sweep. See reports/note-hmm-sweep.md.
+    /// Attack self-transition probability. ADR-0010's nominal is `0.9`, but a
+    /// high value leaves the decode stuck in Attack for tens of frames (Attack
+    /// and Stable emissions coincide on a clean on-pitch contour), blurring the
+    /// Attack→Stable boundary the segmenter and energy splitter read. The shipped
+    /// value keeps Attack short — its actual job.
     pub attack_self: f32,
     /// **Stable self-transition probability — Phase B's main knob.** Higher merges
     /// (kills vibrato jitter, risks merging fast notes); lower admits more note
@@ -122,23 +119,19 @@ impl Default for HmmParams {
             bins_per_semitone: 3,
             sigma_attack: 5.0,
             sigma_stable: 0.9,
-            // Sweep-set (reports/note-hmm-sweep.md): τ=1.0 gave the best corpus
-            // note-F1; ADR-0010's nominal 0.1 lands below the baseline.
+            // Trusts the contour more than ADR-0010's nominal 0.1, which is too
+            // flat to place boundaries.
             pitch_trust: 1.0,
             voicing_prior: 0.5,
-            // Sweep-set: 0.5 gave the best corpus note-F1 (COnP 0.646); ADR-0010's
-            // nominal 0.9 fails the gate. Keeps Attack ~2 frames, its real job.
+            // Below ADR-0010's nominal 0.9 so Attack stays ~2 frames, its real job.
             attack_self: 0.5,
-            // The one main knob (ADR-0010). Set by the ticket-08 sweep against
-            // Vocadito: 0.95 is the interior optimum (corpus COnP 0.646 at the
-            // chosen attack_self/τ, vs the 0.515 heuristic baseline); higher
-            // over-merges real notes and drops it. See reports/note-hmm-sweep.md.
+            // The one main knob (ADR-0010). Higher over-merges real notes; this is
+            // the interior optimum.
             stable_self: 0.95,
             silent_self: 0.9999,
             stable_to_silent_frac: 0.5,
-            // The sweep found note-F1 essentially flat across λ ∈ {1.5, 2.5, 4.0}
-            // at stable_self = 0.95, so this stays a middle value that keeps a
-            // meaningful octave penalty (small λ = costlier jumps).
+            // A middle value that keeps a meaningful octave penalty (small λ =
+            // costlier jumps); note-F1 is essentially flat across nearby λ.
             interval_lambda: 2.5,
             onset_attack_bonus: 12.0,
         }
@@ -147,7 +140,7 @@ impl Default for HmmParams {
 
 /// One analysis frame as the emission model reads it: a semitone (voiced) or
 /// `None` (no pitch), plus the pYIN voicing probability. This mirrors the
-/// pre-filter's `PitchFrame` (ticket 04) without coupling the model to it.
+/// pre-filter's `PitchFrame` without coupling the model to it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ObsFrame {
     /// Continuous MIDI semitone, or `None` when the frame has no pitch.
@@ -177,8 +170,8 @@ pub(crate) struct TransConsts {
 }
 
 /// A constructed note-HMM over a fixed integer-MIDI pitch range. Built once per
-/// decode (the range is taken from the stem's observed pitch span, ticket 06);
-/// holds only immutable structure, so it is cheap to query per frame.
+/// decode (the range is taken from the stem's observed pitch span); holds only
+/// immutable structure, so it is cheap to query per frame.
 #[derive(Debug, Clone)]
 pub struct HmmModel {
     params: HmmParams,
@@ -290,7 +283,7 @@ impl HmmModel {
     }
 
     /// The precomputed log-transition constants and per-bin note-change
-    /// normalisers the Viterbi decoder (ticket 06) reads. Bundled so the decoder
+    /// normalisers the Viterbi decoder reads. Bundled so the decoder
     /// can exploit the transition structure directly instead of calling
     /// [`transition`](Self::transition) `states²` times.
     pub(crate) fn trans_consts(&self) -> TransConsts {
@@ -310,7 +303,7 @@ impl HmmModel {
     /// Log-probability of transitioning from state `i` to state `j`. Returns
     /// [`f32::NEG_INFINITY`] for a transition the left-to-right structure forbids.
     /// This is the readable reference used by the unit tests; the Viterbi decoder
-    /// (ticket 06) exploits the same structure directly for speed.
+    /// exploits the same structure directly for speed.
     pub fn transition(&self, i: usize, j: usize) -> f32 {
         let (bi, si) = self.split(i);
         let (bj, sj) = self.split(j);
@@ -372,8 +365,8 @@ impl HmmModel {
     /// evidence. It folds in *both* the pYIN voicing and how well the frame fits
     /// `bin`'s pitch, so a frame that is voiced but off-pitch is less "voiced"
     /// under the model than one that sits on the note. The confidence stage
-    /// (ticket 09) turns this into an HMM-derived voicing sub-score via a sigmoid,
-    /// in place of the raw mean pYIN voicing it used before.
+    /// turns this into an HMM-derived voicing sub-score via a sigmoid, in place of
+    /// the raw mean pYIN voicing it used before.
     pub fn voiced_logodds(&self, frame: ObsFrame, bin: usize) -> f32 {
         let (ln_voiced_mix, ln_silent_mix) = self.emission_mix(frame.voicing);
         let stable =

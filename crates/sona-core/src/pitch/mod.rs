@@ -4,8 +4,8 @@
 //! confidence — `audio → (f0 contour, voicing)` and *nothing musical baked in*.
 //! Notes, onsets, grid, and BPM are later stages' and the UI's concern; a
 //! tracker only perceives pitch. That narrow seam is what lets pYIN (the DSP
-//! default, [`pyin::PYin`]) and CREPE (neural, ticket 11) be swapped and
-//! compared behind one interface.
+//! default, [`pyin::PYin`]) and CREPE (neural) be swapped and compared behind one
+//! interface.
 //!
 //! The output is a [`Vec<F0Frame>`] — exactly the annotation JSON's
 //! `f0_contour` field (ADR-0004), so a tracker's result drops straight into an

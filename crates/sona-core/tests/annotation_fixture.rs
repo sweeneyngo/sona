@@ -1,5 +1,5 @@
-//! Ticket 02 acceptance: a hand-written example annotation JSON must validate
-//! against the Serde types, and re-serialize to an equal `Annotation` value.
+//! A hand-written example annotation JSON must validate against the Serde
+//! types, and re-serialize to an equal `Annotation` value.
 
 use sona_core::{Annotation, Producer, SCHEMA_VERSION};
 

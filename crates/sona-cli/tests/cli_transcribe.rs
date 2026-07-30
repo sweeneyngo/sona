@@ -1,4 +1,4 @@
-//! Ticket 07 done-criterion, end to end through the real binary: a WAV stem
+//! End to end through the real binary: a WAV stem
 //! (+ BPM) produces a complete, valid annotation JSON on stdout, and `--midi`
 //! writes a standard MIDI file. A synthesized two-note stem stands in for a real
 //! Vocaloid stem (no fixture audio is checked in).

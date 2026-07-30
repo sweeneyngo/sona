@@ -6,15 +6,15 @@
 //! [`Segmenter`](crate::segment::Segmenter) seam, so everything downstream
 //! (confidence, CLI, annotation JSON) is untouched.
 //!
-//! The stage is three pieces, one per ticket:
+//! The stage is three pieces:
 //!
-//! 1. [`model`] (ticket 05) — the lattice: pitch states × Attack/Stable/Silent
+//! 1. [`model`] — the lattice: pitch states × Attack/Stable/Silent
 //!    sub-states, a Gaussian emission, and left-to-right transitions with an
 //!    interval prior.
-//! 2. [`decode`] (ticket 06) — Viterbi over the lattice, with detected energy
+//! 2. [`decode`] — Viterbi over the lattice, with detected energy
 //!    onsets fed in as a per-frame Attack prior so re-articulated same-pitch
 //!    notes split.
-//! 3. [`notes`] (ticket 07) — the decoded state path becomes `NoteSegment`s:
+//! 3. [`notes`] — the decoded state path becomes `NoteSegment`s:
 //!    alpha-trimmed final pitch, short-note pruning, same-pitch merging, and the
 //!    offset drop-steepness the confidence stage still reads.
 

@@ -1,4 +1,4 @@
-//! `sona` — command-line front-end to the perception core (ticket 07).
+//! `sona` — command-line front-end to the perception core.
 //!
 //! `sona transcribe <STEM> --bpm <BPM> [--midi <PATH>]` decodes a WAV vocal stem,
 //! runs the perception pipeline ([`sona_core::Transcriber`], pYIN backend), and

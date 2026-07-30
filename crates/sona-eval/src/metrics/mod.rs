@@ -1,6 +1,6 @@
-//! **Per-stage metrics** (ADR-0011, ticket 02) — the numbers that say *which
-//! stage* owns an error, reimplemented in pure Rust so results compare to the
-//! `mir_eval` literature.
+//! **Per-stage metrics** (ADR-0011) — the numbers that say *which stage* owns an
+//! error, reimplemented in pure Rust so results compare to the `mir_eval`
+//! literature.
 //!
 //! One submodule per metric family:
 //! - [`pitch`] — frame-level RPA / RCA / voicing (`mir_eval.melody`).
@@ -15,10 +15,8 @@
 //!
 //! ### Validated against `mir_eval`
 //!
-//! The formulas were cross-checked once, offline, against `mir_eval` 0.8.2 — see
-//! ticket 02's comments in `.scratch/note-hmm-transcription/issues/02-metrics.md`
-//! for the agreement. The committed unit tests are hand-worked small cases; they
-//! don't require Python.
+//! The formulas were cross-checked once, offline, against `mir_eval` 0.8.2. The
+//! committed unit tests are hand-worked small cases; they don't require Python.
 
 pub mod confidence;
 pub mod matching;

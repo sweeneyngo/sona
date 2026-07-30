@@ -1,6 +1,6 @@
-//! Ticket 03 done-criterion: pYIN produces a clean f0 contour + voicing on a
-//! test vocal stem, and that contour drops straight into the annotation JSON's
-//! `f0_contour` field (ADR-0004).
+//! pYIN produces a clean f0 contour + voicing on a test vocal stem, and that
+//! contour drops straight into the annotation JSON's `f0_contour` field
+//! (ADR-0004).
 
 use sona_core::annotation::{Annotation, Producer, SCHEMA_VERSION};
 use sona_core::pitch::{PYin, PitchTracker};
@@ -72,7 +72,7 @@ fn pyin_contour_feeds_the_annotation() {
     };
     // The vibrato'd A4 must read as *one* note: across its sustained region the
     // contour stays coherent — no median-surviving octave error or spurious
-    // jump that segmentation (ticket 05) would split on. It is not *flattened*,
+    // jump that segmentation would split on. It is not *flattened*,
     // though (ADR-0005): the vibrato ripple is preserved as a display aid, so
     // some frame still deviates from the center.
     // Stop short of 0.4 s: frames whose ~46 ms analysis window straddles the
@@ -121,7 +121,7 @@ fn pyin_contour_feeds_the_annotation() {
     let json = serde_json::to_string(&annotation).expect("serialize");
     let round_tripped: Annotation = serde_json::from_str(&json).expect("deserialize");
     // The contour survives the wire. (Bit-exact f64 round-trip is a serde_json
-    // parser-config detail of the ticket-02 contract, not asserted here — the
+    // parser-config detail of the annotation contract, not asserted here — the
     // UI consumes the JSON in JS, which parses f64 natively.)
     assert_eq!(round_tripped.f0_contour.len(), expected_len);
     for (a, b) in annotation.f0_contour.iter().zip(&round_tripped.f0_contour) {

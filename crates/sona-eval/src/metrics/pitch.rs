@@ -17,7 +17,7 @@
 //! share a time grid** (equal length, frame `i` of each is the same instant) and
 //! scores frame-by-frame. That is exactly `mir_eval`'s identity path (equal time
 //! bases skip interpolation), so the numbers match; resampling a producer's hop
-//! onto the reference hop is the caller's job (ticket 03).
+//! onto the reference hop is the caller's job.
 
 use crate::reference::RefF0;
 
