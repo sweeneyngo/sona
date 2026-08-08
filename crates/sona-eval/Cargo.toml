@@ -6,6 +6,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# Forwards to sona-core's spectral-flux onsets (ADR-0013) so the onset-compare
+# gate can build the spectral detector. Off by default.
+spectral = ["sona-core/spectral"]
+
 [dependencies]
 # Reuse the core's Hz->MIDI conversion and (later tickets) run the pipeline.
 sona-core.workspace = true
@@ -32,6 +37,31 @@ path = "src/bin/gen_fixtures.rs"
 [[bin]]
 name = "sona-eval-sweep"
 path = "src/bin/sweep.rs"
+
+# A/B's the note-offset Release path (ADR-0012) vs. Release-off on the same
+# corpus, sweeping the fall bonus × threshold — the offset-precision payoff gate.
+[[bin]]
+name = "sona-eval-release-sweep"
+path = "src/bin/release_sweep.rs"
+
+# Signed onset-deviation histogram: is the onset-F1 dip a systematic timing bias
+# (free constant-correction fix) or genuinely hard attacks (spectral flux)?
+[[bin]]
+name = "sona-eval-onset-deviation"
+path = "src/bin/onset_deviation.rs"
+
+# Energy-rise vs spectral-flux onsets (ADR-0013 gate): onset P/R/F1 side by side
+# on the same corpus. Build with `--features spectral` for the spectral arm.
+[[bin]]
+name = "sona-eval-onset-compare"
+path = "src/bin/onset_compare.rs"
+
+# Note-level onset gate (ADR-0013 / ticket 04): full-pipeline note COnP/COnPOff by
+# onset source (energy / SuperFlux / ensemble). Requires spectral (builds SuperFlux).
+[[bin]]
+name = "sona-eval-note-onset-gate"
+path = "src/bin/note_onset_gate.rs"
+required-features = ["spectral"]
 
 # Aggregates correction cost across saved review sessions, per producer — the
 # by-ear scoreboard ("how much manual correction did the output need").

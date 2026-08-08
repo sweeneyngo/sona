@@ -11,20 +11,26 @@
 //!
 //! A vocal-range pitch grid at **3 bins per semitone** — sub-semitone bins keep
 //! off-tune / non-A440 / expressive intonation from mis-snapping (ADR-0010). Each
-//! pitch bin carries three left-to-right **sub-states**:
+//! pitch bin carries four left-to-right **sub-states**:
 //!
 //! - **Attack** — the note's onset; high pitch variance tolerated (σ≈5 st).
 //! - **Stable** — the steady middle; tight variance (σ≈0.9 st).
-//! - **Silent** — the note's tail / the rest that follows it, *remembering* the
-//!   bin's pitch so the next note's interval is well-defined (see transitions).
+//! - **Release** — the note's *decay tail* ([ADR-0012]): still on pitch (tight σ),
+//!   entered when the energy envelope falls steeply. Modeling it explicitly means
+//!   a note's offset is the `Stable → Release` boundary (the musical note end),
+//!   not where voicing smears out a frame or two later.
+//! - **Silent** — the rest that follows a note, *remembering* the bin's pitch so
+//!   the next note's interval is well-defined (see transitions).
+//!
+//! [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
 //!
 //! There is no separate global silence state: a `Silent(p)` sub-state is silence
 //! "having last sung pitch `p`", which is what lets the interval prior on the
 //! *next* attack know where it is jumping from. During a long rest the decode
 //! self-loops in one `Silent(p)`.
 //!
-//! State index layout is dense and contiguous: `bin * 3 + sub`, so a pitch range
-//! of `P` bins is `3P` states.
+//! State index layout is dense and contiguous: `bin * SUBS + sub`, so a pitch
+//! range of `P` bins is `SUBS·P` states.
 //!
 //! ## Emission
 //!
@@ -45,9 +51,16 @@
 //! **interval prior** — `Stable(p)`/`Silent(p) → Attack(q)` weighted by
 //! `exp(-|p−q|/λ)`, so small steps are cheap and octave jumps expensive. That
 //! penalty is what rejects octave artefacts at the source (replacing the UI-side
-//! slope filter + MAD trim, ADR-0010). A `Stable(p)` reaches its own `Silent(p)`
-//! for a rest; a legato pitch change skips silence and goes straight
-//! `Stable(p) → Attack(q)`.
+//! slope filter + MAD trim, ADR-0010). A legato pitch change skips silence and
+//! goes straight `Stable(p) → Attack(q)`.
+//!
+//! A note ends one of two ways ([ADR-0012]): a **sharp cutoff** `Stable(p) →
+//! Silent(p)` (kept from ADR-0010, so staccato is unchanged), or a **decay**
+//! `Stable(p) → Release(p) → Silent(p)`. `Release` is not a note-change source —
+//! only `Stable` and `Silent` fan out to another pitch — so the dense decode is
+//! untouched. Entry into `Release` is priced by the energy-fall bonus in the
+//! decoder, not the transition prior, mirroring how the onset bonus prices entry
+//! into `Attack`.
 
 /// Sub-states of a pitch bin, in left-to-right order. Discriminants are the
 /// in-bin offset used by [`HmmModel::state`].
@@ -57,12 +70,17 @@ pub enum Sub {
     Attack = 0,
     /// Steady middle — tight pitch variance.
     Stable = 1,
-    /// The note's tail / the following rest, remembering the bin's pitch.
-    Silent = 2,
+    /// Decay tail — on pitch (tight variance), entered on a steep energy fall
+    /// ([ADR-0012]). The `Stable → Release` boundary is the note's offset.
+    ///
+    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+    Release = 2,
+    /// The following rest, remembering the bin's pitch.
+    Silent = 3,
 }
 
 /// Number of sub-states per pitch bin.
-pub const SUBS: usize = 3;
+pub const SUBS: usize = 4;
 
 /// Tunable parameters of the note-HMM. [`Default`] carries the shipped values,
 /// which start from the ADR-0010 literature and are tuned against the corpus
@@ -77,6 +95,12 @@ pub struct HmmParams {
     pub sigma_attack: f32,
     /// Emission Gaussian std-dev (semitones) in the **Stable** sub-state — tight.
     pub sigma_stable: f32,
+    /// Emission Gaussian std-dev (semitones) in the **Release** sub-state
+    /// ([ADR-0012]) — a decaying note is still on pitch, so this defaults to
+    /// [`sigma_stable`](Self::sigma_stable)'s tight value.
+    ///
+    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+    pub sigma_release: f32,
     /// Trust exponent `τ` scaling the pitch Gaussian's log-likelihood. Lower
     /// trusts the contour less (flatter emission), letting the transition prior
     /// dominate boundary placement. ADR-0010's nominal `τ≈0.1` is too flat to
@@ -95,12 +119,25 @@ pub struct HmmParams {
     /// (kills vibrato jitter, risks merging fast notes); lower admits more note
     /// changes. Tuned against the harness, not by eye (ADR-0010).
     pub stable_self: f32,
+    /// Release self-transition probability ([ADR-0012]) — how long a decay tail
+    /// lingers before completing to `Silent`.
+    ///
+    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+    pub release_self: f32,
     /// Silent self-transition probability (how sticky a rest is).
     pub silent_self: f32,
     /// Of the mass a `Stable` state sheds when it leaves, the fraction that goes
-    /// to its own `Silent` (a rest) rather than straight to another note's Attack
-    /// (a legato change).
+    /// straight to its own `Silent` — a **sharp cutoff** (staccato). The rest is
+    /// split between `stable_to_release_frac` (a decay) and note-change.
     pub stable_to_silent_frac: f32,
+    /// Of the mass a `Stable` state sheds when it leaves, the fraction that enters
+    /// its own `Release` — a **decay** offset ([ADR-0012]). The two offset
+    /// fractions (`stable_to_silent_frac` and this one) must sum to `≤ 1`; the
+    /// remainder is the note-change mass. The choice between the sharp and decay
+    /// paths is settled by the decoder's energy-fall bonus, not by these priors.
+    ///
+    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+    pub stable_to_release_frac: f32,
     /// Interval-prior decay `λ` (semitones): note-change weight is
     /// `exp(-|Δsemitone|/λ)`. Smaller makes large jumps costlier.
     pub interval_lambda: f32,
@@ -111,6 +148,14 @@ pub struct HmmParams {
     /// Large, because a same-pitch re-attack must outweigh a cheap Stable
     /// self-loop; it only ever applies at the sparse detected-onset frames.
     pub onset_attack_bonus: f32,
+    /// Log-domain bonus added to every **Release** state's emission at a frame
+    /// where the energy envelope falls steeply ([ADR-0012]). The offset mirror of
+    /// [`onset_attack_bonus`](Self::onset_attack_bonus): a steep energy drop drives
+    /// the decode `Stable → Release`, placing the offset at the fall. It only ever
+    /// applies at the sparse energy-fall frames, so a note whose energy never drops
+    /// sharply (legato into the next note, a slow tail) never routes through
+    /// `Release` and its offset is unchanged from ADR-0010.
+    pub release_offset_bonus: f32,
 }
 
 impl Default for HmmParams {
@@ -119,6 +164,8 @@ impl Default for HmmParams {
             bins_per_semitone: 3,
             sigma_attack: 5.0,
             sigma_stable: 0.9,
+            // A decaying note is still on pitch → the tight Stable σ.
+            sigma_release: 0.9,
             // Trusts the contour more than ADR-0010's nominal 0.1, which is too
             // flat to place boundaries.
             pitch_trust: 1.0,
@@ -128,12 +175,21 @@ impl Default for HmmParams {
             // The one main knob (ADR-0010). Higher over-merges real notes; this is
             // the interior optimum.
             stable_self: 0.95,
+            // A decay tail persists a few frames before completing to Silent.
+            release_self: 0.9,
             silent_self: 0.9999,
-            stable_to_silent_frac: 0.5,
+            // The old 0.5 sharp-cutoff mass, minus a slice reassigned to the decay
+            // path; note-change mass (the remaining 0.5) is unchanged.
+            stable_to_silent_frac: 0.4,
+            stable_to_release_frac: 0.1,
             // A middle value that keeps a meaningful octave penalty (small λ =
             // costlier jumps); note-F1 is essentially flat across nearby λ.
             interval_lambda: 2.5,
             onset_attack_bonus: 12.0,
+            // Only in effect when the decay path is enabled (off by default, see
+            // NoteHmm::release_drop_threshold). The Release sweep's least-harmful
+            // setting on Vocadito was bonus 12 / threshold 0.65 (ADR-0012).
+            release_offset_bonus: 12.0,
         }
     }
 }
@@ -161,7 +217,10 @@ pub(crate) struct TransConsts {
     pub log_attack_to_stable: f32,
     pub log_stable_self: f32,
     pub log_stable_to_silent: f32,
+    pub log_stable_to_release: f32,
     pub log_stable_change_base: f32,
+    pub log_release_self: f32,
+    pub log_release_to_silent: f32,
     pub log_silent_self: f32,
     pub log_silent_change_base: f32,
     pub bin_decay: f32,
@@ -184,9 +243,16 @@ pub struct HmmModel {
     log_attack_to_stable: f32,
     log_stable_self: f32,
     log_stable_to_silent: f32,
-    /// `ln(stable_leave · (1−to_silent_frac) / Z)` — the pitch-independent part of
-    /// a `Stable(p) → Attack(q)` transition; add the interval log-weight for `q`.
+    /// `ln(stable_leave · stable_to_release_frac)` — a `Stable(p) → Release(p)`
+    /// decay transition (ADR-0012).
+    log_stable_to_release: f32,
+    /// `ln(stable_leave · change_frac / Z)` — the pitch-independent part of a
+    /// `Stable(p) → Attack(q)` transition; add the interval log-weight for `q`.
+    /// `change_frac = 1 − stable_to_silent_frac − stable_to_release_frac`.
     log_stable_change_base: f32,
+    log_release_self: f32,
+    /// `ln(1 − release_self)` — a `Release(p) → Silent(p)` decay completion.
+    log_release_to_silent: f32,
     log_silent_self: f32,
     /// `ln(silent_leave / Z)` — the pitch-independent part of `Silent(p) → Attack(q)`.
     log_silent_change_base: f32,
@@ -210,16 +276,26 @@ impl HmmModel {
         let bin_decay = 1.0 / (bps as f32 * params.interval_lambda.max(f32::EPSILON));
 
         let stable_leave = (1.0 - params.stable_self).max(0.0);
+        let release_leave = (1.0 - params.release_self).max(0.0);
         let silent_leave = (1.0 - params.silent_self).max(0.0);
+        // Stable's leave-mass splits three ways: sharp cutoff, decay, note-change.
+        // The fractions are clamped so an over-specified pair can't drive the
+        // note-change share negative (it just floors at zero).
         let to_silent = stable_leave * params.stable_to_silent_frac;
-        let stable_change = stable_leave * (1.0 - params.stable_to_silent_frac);
+        let to_release = stable_leave * params.stable_to_release_frac;
+        let change_frac =
+            (1.0 - params.stable_to_silent_frac - params.stable_to_release_frac).max(0.0);
+        let stable_change = stable_leave * change_frac;
 
         HmmModel {
             log_attack_self: params.attack_self.max(PROB_FLOOR).ln(),
             log_attack_to_stable: (1.0 - params.attack_self).max(PROB_FLOOR).ln(),
             log_stable_self: params.stable_self.max(PROB_FLOOR).ln(),
             log_stable_to_silent: to_silent.max(PROB_FLOOR).ln(),
+            log_stable_to_release: to_release.max(PROB_FLOOR).ln(),
             log_stable_change_base: stable_change.max(PROB_FLOOR).ln(),
+            log_release_self: params.release_self.max(PROB_FLOOR).ln(),
+            log_release_to_silent: release_leave.max(PROB_FLOOR).ln(),
             log_silent_self: params.silent_self.max(PROB_FLOOR).ln(),
             log_silent_change_base: silent_leave.max(PROB_FLOOR).ln(),
             bin_decay,
@@ -254,6 +330,7 @@ impl HmmModel {
         let sub = match state % SUBS {
             0 => Sub::Attack,
             1 => Sub::Stable,
+            2 => Sub::Release,
             _ => Sub::Silent,
         };
         (state / SUBS, sub)
@@ -292,7 +369,10 @@ impl HmmModel {
             log_attack_to_stable: self.log_attack_to_stable,
             log_stable_self: self.log_stable_self,
             log_stable_to_silent: self.log_stable_to_silent,
+            log_stable_to_release: self.log_stable_to_release,
             log_stable_change_base: self.log_stable_change_base,
+            log_release_self: self.log_release_self,
+            log_release_to_silent: self.log_release_to_silent,
             log_silent_self: self.log_silent_self,
             log_silent_change_base: self.log_silent_change_base,
             bin_decay: self.bin_decay,
@@ -312,10 +392,16 @@ impl HmmModel {
             (Sub::Attack, Sub::Attack) if bi == bj => self.log_attack_self,
             (Sub::Attack, Sub::Stable) if bi == bj => self.log_attack_to_stable,
             (Sub::Stable, Sub::Stable) if bi == bj => self.log_stable_self,
+            // A note ends sharp (Stable → Silent) or decays (Stable → Release →
+            // Silent), both within the bin (ADR-0012).
             (Sub::Stable, Sub::Silent) if bi == bj => self.log_stable_to_silent,
+            (Sub::Stable, Sub::Release) if bi == bj => self.log_stable_to_release,
+            (Sub::Release, Sub::Release) if bi == bj => self.log_release_self,
+            (Sub::Release, Sub::Silent) if bi == bj => self.log_release_to_silent,
             (Sub::Silent, Sub::Silent) if bi == bj => self.log_silent_self,
             // Note change: Stable/Silent of one pitch → Attack of another (or the
-            // same, a re-articulation), shaped by the interval prior.
+            // same, a re-articulation), shaped by the interval prior. Release is
+            // not a note-change source — it only completes to its own Silent.
             (Sub::Stable, Sub::Attack) => {
                 self.log_stable_change_base + self.interval_log_weight(bi, bj)
                     - self.interval_log_z(bi)
@@ -341,8 +427,14 @@ impl HmmModel {
             let center = self.bin_center(bin);
             let attack = ln_voiced_mix + self.pitch_log(frame.semitone, center, self.params.sigma_attack);
             let stable = ln_voiced_mix + self.pitch_log(frame.semitone, center, self.params.sigma_stable);
+            // Release is a voiced, on-pitch decay tail (ADR-0012): the same voiced
+            // mix as Stable, tight σ. It is distinguished from Stable not by its
+            // emission but by the decoder's energy-fall bonus, which is what draws
+            // the path into it at the offset.
+            let release = ln_voiced_mix + self.pitch_log(frame.semitone, center, self.params.sigma_release);
             out[self.state(bin, Sub::Attack)] = attack;
             out[self.state(bin, Sub::Stable)] = stable;
+            out[self.state(bin, Sub::Release)] = release;
             out[self.state(bin, Sub::Silent)] = ln_silent_mix;
         }
         out
@@ -402,11 +494,37 @@ mod tests {
     fn state_indexing_round_trips() {
         let m = model();
         for bin in 0..m.n_bins() {
-            for sub in [Sub::Attack, Sub::Stable, Sub::Silent] {
+            for sub in [Sub::Attack, Sub::Stable, Sub::Release, Sub::Silent] {
                 assert_eq!(m.split(m.state(bin, sub)), (bin, sub));
             }
         }
-        assert_eq!(m.n_states(), m.n_bins() * 3);
+        assert_eq!(m.n_states(), m.n_bins() * SUBS);
+    }
+
+    #[test]
+    fn a_note_may_end_sharp_or_decay() {
+        // ADR-0012: both the sharp cutoff (Stable → Silent) and the decay
+        // (Stable → Release → Silent) are legal within a bin; Release completes
+        // only to its own Silent and is never a note-change source.
+        let m = model();
+        let bin = 20;
+        for edge in [
+            (Sub::Stable, Sub::Silent),
+            (Sub::Stable, Sub::Release),
+            (Sub::Release, Sub::Release),
+            (Sub::Release, Sub::Silent),
+        ] {
+            assert!(
+                m.transition(m.state(bin, edge.0), m.state(bin, edge.1)).is_finite(),
+                "{edge:?} within a bin must be legal"
+            );
+        }
+        // Release does not fan out to another pitch's Attack.
+        assert_eq!(
+            m.transition(m.state(bin, Sub::Release), m.state(bin + 3, Sub::Attack)),
+            f32::NEG_INFINITY,
+            "Release is not a note-change source"
+        );
     }
 
     #[test]

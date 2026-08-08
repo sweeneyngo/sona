@@ -12,10 +12,14 @@ serde.workspace = true
 # CREPE (ONNX via ort) is behind the `crepe` feature — the pYIN default backend
 # needs no ONNX runtime. See ADR-0001 and ticket 11.
 ort = { workspace = true, optional = true }
+# Spectral-flux onsets (ADR-0013) behind the `spectral` feature; the default
+# energy-rise detector needs no FFT.
+realfft = { workspace = true, optional = true }
 
 [features]
 default = []
 crepe = ["dep:ort"]
+spectral = ["dep:realfft"]
 
 [dev-dependencies]
 serde_json.workspace = true

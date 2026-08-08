@@ -25,6 +25,10 @@ hound = "3.5"
 # network fetch + openssl toolchain; the ONNX runtime is resolved at load time
 # when the real CREPE tracker lands (ticket 11).
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic"] }
+# Spectral-flux onsets (ADR-0013) — behind the `spectral` feature. Pure-Rust real
+# FFT (no C, no ML runtime), so ADR-0005's "builds anywhere" holds; only ADR-0006's
+# "no FFT" line is retired. Opt-in until the harness earns the default swap.
+realfft = "3"
 
 # Internal
 sona-core = { path = "crates/sona-core" }
