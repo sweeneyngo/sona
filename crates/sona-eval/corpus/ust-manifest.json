@@ -1,0 +1,621 @@
+{
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s.",
+  "channel": "https://www.youtube.com/@pifuyuu",
+  "selected_on": "2026-11-20",
+  "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
+  "ust_terms": "https://pifuyuuust.blogspot.com/ — credit the original author, the MIDI author and Pifuyuu; no redistribution (converted formats included)",
+  "songs": [
+    {
+      "id": "innocent-addict",
+      "expected_title": "INNOCENT ADDICT",
+      "ust_zip": "INNOCENT ADDICT.zip",
+      "ust_zip_sha256": "fa1d2c2646f143ce0068f7df846e17fb5be3a7175dcaa5f7f1f0236cd3e2d3d2",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm15801411",
+      "original_title": "【初音ミク】 INNOCENT ADDICT 【オリジナル曲】",
+      "original_duration_s": 280.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=UbOfDxysh-Q",
+      "upload_date": "2026-11-16",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク Append (VOCALOID)",
+      "stratum_evidence": "original tagged VOCALOID; credits 'Vocal: MIKU Append'",
+      "bpm_from_ust": 198.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "kinsei",
+      "expected_title": "金星",
+      "ust_zip": "金星.zip",
+      "ust_zip_sha256": "8100f4f0b7e7e8ccd4523a26d3f7e82c787f0f92e898184701060f4ae4ef0f8c",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=9Bt6lPYFDCA",
+      "original_title": "金星/ゆきちfeat.初音ミク",
+      "original_duration_s": 187.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=lEWfRrViraE",
+      "upload_date": "2026-11-15",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "title 'feat.初音ミク'",
+      "bpm_from_ust": 138.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "kamaitachi-ni-yoru",
+      "expected_title": "かまいたちに因る",
+      "ust_zip": "かまいたちに因る.zip",
+      "ust_zip_sha256": "3083b20265d5995a7feb2c757821a1b6c3f2f8949fd873e275efd89cbf3ddc3a",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=q7v_ReFBnDg",
+      "original_title": "かまいたちに因る ／ 一二三 feat.音街ウナ",
+      "original_duration_s": 196.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=6na6-RIFkA0",
+      "upload_date": "2026-11-13",
+      "stratum": "vocaloid-original",
+      "voice": "音街ウナ (VOCALOID)",
+      "stratum_evidence": "title 'feat.音街ウナ'; tagged VOCALOID",
+      "bpm_from_ust": 144.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "noizugoto",
+      "expected_title": "ノイズゴト",
+      "ust_zip": "ノイズゴト.zip",
+      "ust_zip_sha256": "b02861f6e83222801b9b0f72ae34af3fe63140ad84fe6518491def589c5d07f7",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=sEDLbUXTPq4",
+      "original_title": "ノイズゴト - 廉 feat. 羽累",
+      "original_duration_s": 88.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=SfsceGp4JJU",
+      "upload_date": "2026-11-11",
+      "stratum": "vocaloid-original",
+      "voice": "羽累 (synthesized voice)",
+      "stratum_evidence": "title 'feat. 羽累'; credits a vocal tuner (音纏), i.e. a tuned synth voice",
+      "bpm_from_ust": 204.0,
+      "grid_division": 24,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "telescope-nevermore",
+      "expected_title": "Telescope -nevermore-",
+      "ust_zip": "Telescope -nevermore-.zip",
+      "ust_zip_sha256": "6f79c095525f66e9de0d850f3ca9f2702c1933420fd1d85007d43ba89467ee1b",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=L0YhLcTYe9k",
+      "original_title": "Telescope -nevermore- / buzzG feat.初音ミク",
+      "original_duration_s": 240.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=EPofLlT_NwI",
+      "upload_date": "2026-11-11",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "title 'feat.初音ミク'",
+      "bpm_from_ust": 123.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "bass-sousha-e-no-henjin-ronsou",
+      "expected_title": "ベース奏者への変人論争",
+      "ust_zip": "ベース奏者への変人論争.zip",
+      "ust_zip_sha256": "39d7b2485ffba2a1405501fe2c8b02ac61d2a9d9479935313e8412cd41214c57",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "talk.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=dY_nTimNJ1k",
+      "original_title": "ベース奏者への変人論争　/　 結月ゆかり　【ベースの日】",
+      "original_duration_s": 181.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=Q0xUn3VOncU",
+      "upload_date": "2026-11-11",
+      "stratum": "vocaloid-original",
+      "voice": "結月ゆかり (VOCALOID)",
+      "stratum_evidence": "title names 結月ゆかり; tagged VOCALOID",
+      "bpm_from_ust": 160.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "plus-space",
+      "expected_title": "Plus/Space",
+      "ust_zip": "Plus_Space.zip",
+      "ust_zip_sha256": "9f0d0152aed2575d15d30558e37243a07b8e54492ede2b51e6c6157ffa7e7fdf",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/nm13517807",
+      "original_title": "【鏡音リン】Plus/Space【鏡音レン】",
+      "original_duration_s": 284.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=jcRSHemWLJQ",
+      "upload_date": "2026-11-10",
+      "stratum": "vocaloid-original",
+      "voice": "鏡音リン・レン Append (VOCALOID duet)",
+      "stratum_evidence": "title 【鏡音リン】…【鏡音レン】; tagged VOCALOID. Duet: two lead voices",
+      "bpm_from_ust": 108.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "light-seeker",
+      "expected_title": "Light Seeker",
+      "ust_zip": "Light Seeker.zip",
+      "ust_zip_sha256": "28375973fcac1d33e8e14678f73a2cc9b345cc79f2639465c344411cbdf5197a",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "ahh-cho.ust",
+        "ahh.ust",
+        "cho.ust",
+        "octave.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=ra-taxqT8XY",
+      "original_title": "Powerless - Light Seeker feat. krage (Music Video)",
+      "original_duration_s": 258.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=sT5O5bUJgZE",
+      "upload_date": "2026-11-10",
+      "stratum": "human-sung",
+      "voice": "krage (human singer)",
+      "stratum_evidence": "title 'feat. krage' — krage is a human vocalist",
+      "bpm_from_ust": 150.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "atamaro-deluxe",
+      "expected_title": "アタマロ・デラックス",
+      "ust_zip": "アタマロ_デラックス.zip",
+      "ust_zip_sha256": "876a1f16b492727ea15b177c58f2df15dc1f14df5920cc04c5e548a1ff4bd363",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low1.ust",
+        "low2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=tg3BmgXzA5c",
+      "original_title": "初音ミク『アタマロ・デラックス』",
+      "original_duration_s": 200.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=b5WN9nGA6ps",
+      "upload_date": "2026-11-05",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク V6 (VOCALOID), chorus 初音ミク SP",
+      "stratum_evidence": "credits 'Singer: 初音ミクV6'",
+      "bpm_from_ust": 244.0,
+      "grid_division": 24,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "smolder",
+      "expected_title": "Smolder",
+      "ust_zip": "Smolder.zip",
+      "ust_zip_sha256": "4daf309a0d62c471534e1d3aaa5c4aa617274ce5ce810f83340aa8669028a367",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=fZg5xcoAtnA",
+      "original_title": "Smolder - regulus feat. Yuzuki Yukari",
+      "original_duration_s": 264.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=fKO10rG68Hk",
+      "upload_date": "2026-11-04",
+      "stratum": "vocaloid-original",
+      "voice": "結月ゆかり (VOCALOID)",
+      "stratum_evidence": "title 'feat. Yuzuki Yukari'; tagged VOCALOID",
+      "bpm_from_ust": 160.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "azemichi-ni-ochita-ginga",
+      "expected_title": "畦道に落ちた銀河",
+      "ust_zip": "畦道に落ちた銀河.zip",
+      "ust_zip_sha256": "41c1f7305aa6148dd330ccccd410bdcf8aeeaf94911fe2906aca7fb982bdf4a1",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "rururu-cho.ust",
+        "rururu.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=DUqvLIeD-Ug",
+      "original_title": "畦道に落ちた銀河 / めろう【dama】",
+      "original_duration_s": 230.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=N5tKg-wqoIA",
+      "upload_date": "2026-11-01",
+      "stratum": "vocaloid-original",
+      "voice": "めろう (synthesized voice; engine unverified)",
+      "stratum_evidence": "entered in ボカコレ2025冬, which requires synthesized vocals; the engine of 'めろう' is not named",
+      "bpm_from_ust": 196.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "dm",
+      "expected_title": "Dm",
+      "ust_zip": "Dm.zip",
+      "ust_zip_sha256": "0bf5456e42a2d4aff0dcd91e8b0b3925a897e2299652b12d413ef77d6f0872e8",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "delay.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=USpZ0sdwtAI",
+      "original_title": "「Dm」 baika feat.初音ミク",
+      "original_duration_s": 282.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=CeX7nxCfqWc",
+      "upload_date": "2026-10-31",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "title 'feat.初音ミク'",
+      "bpm_from_ust": 92.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "yamineko",
+      "expected_title": "ヤミネコ",
+      "ust_zip": "ヤミネコ.zip",
+      "ust_zip_sha256": "e7f602d66883fe98cb31472428b4c2fc4067962f267a81a7226c53c6f49dbe16",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=aYjA_5NKrXw",
+      "original_title": "ヤミネコ / 重音テト",
+      "original_duration_s": 175.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=1fDe74OSoNs",
+      "upload_date": "2026-10-30",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト",
+      "stratum_evidence": "title '/ 重音テト'; tagged VOCALOID",
+      "bpm_from_ust": 250.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "sandatsu",
+      "expected_title": "簒奪",
+      "ust_zip": "簒奪.zip",
+      "ust_zip_sha256": "b68bd4b66d21ed7e62a5fcf85b3a1fb1711515abebd5fc4f12b9758cd9c093ff",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=cybOVzgtL2Q",
+      "original_title": "簒奪 / 重音テトSV",
+      "original_duration_s": 192.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=q-Q0F27BcTU",
+      "upload_date": "2026-10-29",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト SV (Synthesizer V)",
+      "stratum_evidence": "title '/ 重音テトSV'. A separate human-sung version exists; the linked original is the Teto one",
+      "bpm_from_ust": 168.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "my-axiom",
+      "expected_title": "My Axiom",
+      "ust_zip": "My Axiom.zip",
+      "ust_zip_sha256": "d5dae256761b6f1faade7682d17dc9e24ccd74f9352d3ec5550ea4a045039b24",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1.ust",
+        "cho2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=Sjmzxo1dtfI",
+      "original_title": "My Axiom - がくっぽいど V4 Power",
+      "original_duration_s": 198.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=LPtPa7LX72k",
+      "upload_date": "2026-10-28",
+      "stratum": "vocaloid-original",
+      "voice": "がくっぽいど V4 Power (VOCALOID)",
+      "stratum_evidence": "title and credits name がくっぽいど V4 Power",
+      "bpm_from_ust": 195.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "emerald",
+      "expected_title": "エメラルド",
+      "ust_zip": "エメラルド.zip",
+      "ust_zip_sha256": "79605a5ce5143c2cf542e750407d6886e646895fcf2f3b34672c23b3a7b3a018",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "high.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=kM8HEzBGU-0",
+      "original_title": "エメラルド / こんにちは谷田さん feat. 初音ミク - Emerald / Hello Tanitasan feat. Hatsune Miku",
+      "original_duration_s": 238.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=0WQwTbd82YY",
+      "upload_date": "2026-10-27",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "title 'feat. 初音ミク'",
+      "bpm_from_ust": 146.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "amaten",
+      "expected_title": "甘天",
+      "ust_zip": "甘天.zip",
+      "ust_zip_sha256": "c8b2a61aaf4fac6e07610bb29f2904e0df957e07de8ce6fe0bcebb6edb6f0a1f",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=hW89wERfF5s",
+      "original_title": "「甘天」初音ミク",
+      "original_duration_s": 155.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=GSkM8s41ma4",
+      "upload_date": "2026-10-25",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "credits 'vocal: 初音ミク'; tagged VOCALOID",
+      "bpm_from_ust": 163.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "moumoku-shabon",
+      "expected_title": "盲目シャボン",
+      "ust_zip": "盲目シャボン.zip",
+      "ust_zip_sha256": "90315d216db306f8e16af61389e98abe68c68cf227cd9c5d4f5d22da1681738d",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1.ust",
+        "cho2.ust",
+        "low1.ust",
+        "low2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=BiaqbjahyKM",
+      "original_title": "盲目シャボン/ 香椎モイミ feat. 洛天依",
+      "original_duration_s": 219.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=-DWZyWizgtU",
+      "upload_date": "2026-10-24",
+      "stratum": "vocaloid-original",
+      "voice": "洛天依 (VOCALOID)",
+      "stratum_evidence": "title 'feat. 洛天依'",
+      "bpm_from_ust": 184.0,
+      "grid_division": 24,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "fukagyakuteki-henyou",
+      "expected_title": "不可逆的変容または景色の一貫性",
+      "ust_zip": "不可逆的変容または景色の一貫性.zip",
+      "ust_zip_sha256": "ddbfe20158387f94ab38624144168fd307ebd18dc4ddc64c29de8c7dc7d72def",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=vnJa7v_aHqs",
+      "original_title": "不可逆的変容または景色の一貫性 - Yuki",
+      "original_duration_s": 232.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=At3o3yPpyac",
+      "upload_date": "2026-10-22",
+      "stratum": "vocaloid-original",
+      "voice": "Yuki (VOCALOID)",
+      "stratum_evidence": "title '- Yuki'; tagged VOCALOID",
+      "bpm_from_ust": 236.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    },
+    {
+      "id": "invariant",
+      "expected_title": "Invariant",
+      "ust_zip": "Invariant.zip",
+      "ust_zip_sha256": "72df3009f6acda6cd7fe635e42c3379dda2a3c9178efcbc43d5c0f1b7b2324bd",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "ahh.ust",
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm25245565",
+      "original_title": "【Lily】Invariant【オリジナル】",
+      "original_duration_s": 238.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=RFrBMA1gZcM",
+      "upload_date": "2026-10-22",
+      "stratum": "vocaloid-original",
+      "voice": "Lily (VOCALOID)",
+      "stratum_evidence": "title 【Lily】; tagged VOCALOID / Lilyオリジナル曲",
+      "bpm_from_ust": 104.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "notes": null
+    }
+  ],
+  "excluded": [
+    {
+      "title": "キミアイギミー",
+      "cover_video_url": "https://www.youtube.com/watch?v=i4K4yrAyuaU",
+      "reason": "two tempos: the sung intro (intro.ust) is 109 BPM, the rest of the song (main.ust and every other voice) 129 BPM. The corpus requires one exact BPM per song, and dropping the intro would leave lead singing out of the reference."
+    }
+  ]
+}

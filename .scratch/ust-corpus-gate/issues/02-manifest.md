@@ -1,6 +1,6 @@
 # 02 — Corpus manifest (walk @pifuyuu, resolve 20, label strata)
 
-Status: ready-for-agent
+Status: done
 
 Blocked by: 01
 
@@ -83,3 +83,24 @@ The OneDrive folder is flat: 459 zips named by song title. Each zip holds a lead
 overlapping notes). The manifest must record which files are the lead, the merge rule for split
 leads, and the `cho` files, which mark where the original has harmony (useful for masking it out
 of scoring). The first 5 songs (the 5 most recent uploads) are already in the cache.
+
+**2026-11-20 — Done.** Manifest: [`crates/sona-eval/corpus/ust-manifest.json`](../../../crates/sona-eval/corpus/ust-manifest.json).
+Validator: `sona-eval-ust-manifest` (`--fill` writes `bpm_from_ust` and `grid_division` from the parser).
+
+- **20 songs** from the 21 most recent uploads (2026-10-22 → 11-16). **19 `vocaloid-original`, 1 `human-sung`**
+  (Light Seeker, sung by krage). `vocaloid-original` means any synthesized vocal; each song records its
+  `voice` and the evidence for its label. One judgment call: 畦道に落ちた銀河's singer "めろう" has no
+  named engine, so it's labelled synthesized because ボカコレ entries must be.
+- **1 exclusion:** KimiAiGimme has a 109 BPM intro and a 129 BPM body across files, which breaks
+  one-BPM-per-song. Backfilled with Invariant. No title triggered the mashup, arrangement or cut rules.
+- **Version-cut check:** every cover video matches its original's length (±5 s), so none is a short version.
+- **Schema changes from the spec:**
+  - `youtube_url` became `original_url`, because 3 originals are on niconico.
+  - Added `ust_lead_files`: `main*` plus a sung `intro`.
+  - Added `ust_other_voice_files`: harmony, doubling, delay/echo, backing, spoken.
+  - Added `ust_zip_sha256`, `voice`, `stratum_evidence`, `original_title`, `original_duration_s` and
+    `grid_division` (24 for the 3 majority-triplet songs).
+- **Finding for 06:** harmony overlaps the lead almost everywhere. Only 2–85% of lead notes are
+  monophonic, and demucs can't separate harmony from lead. So 06 must also score **monophonic regions
+  only**, which `SongUsts::polyphonic_spans` computes from the other-voice USTs.
+- `fetch-pifuyuu-ust.sh` (part of 03) is written and was run: idempotent, sha256-verified, zip-slip-safe.

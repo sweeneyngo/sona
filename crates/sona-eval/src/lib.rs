@@ -35,6 +35,7 @@ pub mod session;
 pub mod synth;
 pub mod ust;
 pub mod ust_audit;
+pub mod ust_corpus;
 pub mod vocadito;
 pub mod wav;
 

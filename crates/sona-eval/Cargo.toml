@@ -95,3 +95,9 @@ path = "src/bin/ust_audit.rs"
 [[bin]]
 name = "sona-eval-ust-to-midi"
 path = "src/bin/ust_to_midi.rs"
+
+# UST corpus manifest check (UST corpus gate, ticket 02): validates every song's
+# USTs against corpus/ust-manifest.json; `--fill` writes bpm_from_ust/grid_division.
+[[bin]]
+name = "sona-eval-ust-manifest"
+path = "src/bin/ust_manifest.rs"
