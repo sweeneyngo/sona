@@ -1,6 +1,6 @@
 # Spec: UST corpus — the target-domain eval gate
 
-Status: ready-for-agent
+Status: done — see crates/sona-eval/reports/ust-in-domain-gate.md
 
 ## Goal
 

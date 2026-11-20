@@ -171,6 +171,9 @@ struct SongResult {
     views: [View; 4],
     mono_share: f64,
     below_prune: f64,
+    /// Signed raw offset errors (estimate − reference, seconds) on COnP-matched,
+    /// rest-terminated, monophonic pairs: which way sona's offsets miss.
+    rt_offset_err: Vec<f64>,
 }
 
 /// Map `f` over `items` on a bounded pool of scoped threads (one per core),
@@ -228,8 +231,15 @@ fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &Not
         score(&mono_refs, &mono_rt, &mono_est(&raw), params, None),
         score(&mono_refs, &mono_rt, &mono_est(&quant), params, Some(spacing)),
     ];
+    let mono_raw = mono_est(&raw);
+    let rt_offset_err: Vec<f64> = match_notes(&mono_refs, &mono_raw, params, false)
+        .into_iter()
+        .filter(|&(r, _)| mono_rt[r])
+        .map(|(r, e)| mono_raw[e].offset_s - mono_refs[r].offset_s)
+        .collect();
     let n = reference.notes.len().max(1) as f64;
     Ok(SongResult {
+        rt_offset_err,
         id: song.id.clone(),
         stratum: song.stratum.clone(),
         split: song.split.clone().unwrap_or_default(),
@@ -376,6 +386,17 @@ fn print_stratum(stratum: &str, results: &[SongResult]) {
                 total
             );
         }
+    }
+    let mut errs: Vec<f64> = rs.iter().flat_map(|r| r.rt_offset_err.iter().copied()).collect();
+    errs.sort_by(f64::total_cmp);
+    if !errs.is_empty() {
+        let q = |p: f64| errs[((errs.len() - 1) as f64 * p).round() as usize] * 1000.0;
+        let early = errs.iter().filter(|&&e| e < -0.05).count();
+        let late = errs.iter().filter(|&&e| e > 0.05).count();
+        println!(
+            "\n  raw offset error, rest-terminated mono pairs (est − ref, ms; n={}): p10 {:+.0} · p25 {:+.0} · p50 {:+.0} · p75 {:+.0} · p90 {:+.0}   |   >50 ms early {} · >50 ms late {}",
+            errs.len(), q(0.1), q(0.25), q(0.5), q(0.75), q(0.9), pct(early, errs.len()), pct(late, errs.len())
+        );
     }
     print_bootstrap(&rs);
     // Per split: iterate on `dev` only; `holdout` is read once, at the end.

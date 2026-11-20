@@ -1,6 +1,6 @@
 # 06 — The in-domain gate: quantized COnP/COnPOff vs UST, per stratum
 
-Status: ready-for-agent
+Status: done
 
 Blocked by: 05
 
@@ -91,3 +91,27 @@ write down the decision before you run).
   onset-delta check), harmony bleed (the monophonic view), demucs artifacts, the quantizer anchor (the gate uses
   the UST-derived anchor, which is more optimistic than the UI's auto-anchor), the escape hatch, notes below the
   prune floor, and errors in the UST itself (it's a fan transcription, not the producer's MIDI).
+
+**2026-11-20 — Done. Verdict under the pre-registered rule: a real offset gap remains.**
+Report: [`reports/ust-in-domain-gate.md`](../../../crates/sona-eval/reports/ust-in-domain-gate.md).
+
+- **The offset number:** 0.571, 95% interval [0.476, 0.678], n = 184 (quantized, rest-terminated, monophonic,
+  18 vocaloid-original songs). Raw it's 0.656; Vocadito on the same measure is 0.86. Dev and holdout agree
+  (57% / 56%).
+- **Against the ticket's hypotheses:** quantization makes offsets worse (1-cell snap errors fail tolerance for
+  147 of the 184 pairs). Offsets are worse in-domain than on Vocadito. Misses go both ways: 24% end early,
+  18% end late.
+- **The bigger in-domain gap is recall:** COnP R is 0.25 (all notes) / 0.39 (monophonic) at P 0.53–0.60, and
+  COnP F1 is 0.34–0.47 against Vocadito's 0.639–0.646. The drivers are harmony in the stem, the 100 ms prune
+  floor (14.9% of notes), same-pitch re-articulations (22% of monophonic notes, recall 0.26), and 2
+  separation failures.
+- **Adversarial review** (pstack `interrogate`, one adversary, findings proven by runs): no claim broken.
+  - Robust to dropping songs, alternative rest-terminated definitions, the escape hatch, and grid shifts.
+  - Weakened 05's check: note onsets lag +23 to +32 ms in 2 songs. Recorded in both reports.
+- **Recommendation:** don't run the pre-written Release re-sweep first. Ranked by measured size:
+  1. a tempo-aware prune floor;
+  2. same-pitch / legato recall;
+  3. the offset snap policy;
+  4. only then, an offset mechanism (with the ADR the ticket requires).
+
+  Iterate on dev; read holdout once.
