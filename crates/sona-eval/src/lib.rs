@@ -29,6 +29,7 @@ pub mod error;
 pub mod estimate;
 pub mod fixtures;
 pub mod metrics;
+pub mod quantize;
 pub mod reference;
 pub mod session;
 pub mod synth;

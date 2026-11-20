@@ -89,3 +89,9 @@ path = "src/bin/calibrate_report.rs"
 [[bin]]
 name = "sona-eval-ust-audit"
 path = "src/bin/ust_audit.rs"
+
+# UST → MIDI (UST corpus gate, ticket 04): rests/breaths become gaps, written at
+# the UST's own tempo, for eyeballing a UST's note data.
+[[bin]]
+name = "sona-eval-ust-to-midi"
+path = "src/bin/ust_to_midi.rs"

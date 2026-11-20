@@ -1,6 +1,6 @@
 # 04 — UST→annotation converter + hard-snap port to `sona-eval`
 
-Status: ready-for-agent
+Status: done
 
 Blocked by: 01
 
@@ -60,3 +60,17 @@ snapped. This is not a trivial port — the escape hatch reads confidence.
 15% of real note starts sit on triplet lines (ノイズゴト is 96%), so a 16th-only port of `grid.ts`
 would quantize them onto the wrong grid. The converter can build on `ust::Ust::timeline()` (absolute
 ticks and seconds, tempo changes applied). Breath blocks are already classified separately.
+
+**2026-11-20 — Done.**
+- **Converter:** `Ust::to_reference(offset_s)` returns a `UstReference` (notes plus a parallel
+  `rest_terminated` flag). Rests and breaths become gaps, tick→second conversion is exact (tempo
+  changes included), and `UstReference::merge` combines split leads. Tested on the 01 fixtures.
+- **Quantizer:** `src/quantize.rs` is a faithful port of `grid.ts`, including the escape hatch and
+  JavaScript's half-rounding (`Math.round(-0.5) = -0`, which Rust's `round` gets wrong). Std-only,
+  so it can be promoted.
+- **Drift guard:** `fixtures/quantize/cases.json` (13 cases) is asserted by both
+  `quantize.rs` and `web/lib/grid.test.ts`.
+- **ADR-0014** records the temporary home and the promotion path.
+- **Triplets:** `grid.ts` already accepts any spacing, so no code change was needed. The grid
+  division is a per-song manifest field (02).
+- **Optional `.mid`:** `sona-eval-ust-to-midi <in.ust> <out.mid> [--offset s]`.

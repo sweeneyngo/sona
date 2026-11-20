@@ -32,6 +32,7 @@ use std::path::{Path, PathBuf};
 use encoding_rs::{Encoding, SHIFT_JIS, UTF_8};
 
 use crate::error::EvalError;
+use crate::reference::{RefNote, Reference};
 
 /// UST tick resolution: ticks per quarter note. Fixed by the format.
 pub const TICKS_PER_QUARTER: u32 = 480;
@@ -346,6 +347,59 @@ impl Ust {
     }
 }
 
+/// A UST as ground truth on a stem's timeline: reference notes plus, for each,
+/// whether its offset is a **genuine musical end** (rest-, breath- or
+/// track-terminated) or just the next note's onset (legato).
+///
+/// The UST corpus audit found only ~14% of notes rest-terminated, so offset
+/// accuracy must be read on that subset; the flag travels with every note.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct UstReference {
+    /// Sung notes in onset order. Rests and breaths are **gaps**, not notes.
+    pub notes: Vec<RefNote>,
+    /// Parallel to [`notes`](Self::notes): the offset is a real musical end.
+    pub rest_terminated: Vec<bool>,
+}
+
+impl UstReference {
+    /// Combine several lead USTs (a split lead such as `main1` + `main2`) into
+    /// one reference, sorted by onset. Overlaps are kept: where the original has
+    /// two lead voices at once, both are real reference notes.
+    pub fn merge(parts: impl IntoIterator<Item = UstReference>) -> Self {
+        let mut pairs: Vec<(RefNote, bool)> = parts
+            .into_iter()
+            .flat_map(|p| p.notes.into_iter().zip(p.rest_terminated))
+            .collect();
+        pairs.sort_by(|a, b| a.0.onset_s.total_cmp(&b.0.onset_s));
+        let (notes, rest_terminated) = pairs.into_iter().unzip();
+        UstReference { notes, rest_terminated }
+    }
+
+    /// The common [`Reference`] the metrics score against (notes only — a UST
+    /// carries no f0 contour, so the pitch-contour metrics don't apply).
+    pub fn reference(&self) -> Reference {
+        Reference { notes: self.notes.clone(), f0: Vec::new() }
+    }
+}
+
+impl Ust {
+    /// Convert to ground truth on the stem's timeline: `stem_time = ust_time +
+    /// offset_s` (the per-song alignment). Tick→second conversion uses the UST's
+    /// exact tempo, tempo changes included. `NoteNum` is already MIDI.
+    pub fn to_reference(&self, offset_s: f64) -> UstReference {
+        let timeline = self.timeline();
+        let mut out = UstReference::default();
+        for (k, p) in timeline.iter().enumerate() {
+            if p.kind != BlockKind::Note {
+                continue;
+            }
+            out.notes.push(RefNote { onset_s: p.start_s + offset_s, offset_s: p.end_s + offset_s, midi_pitch: p.note_num });
+            out.rest_terminated.push(timeline.get(k + 1).is_none_or(|n| n.kind != BlockKind::Note));
+        }
+        out
+    }
+}
+
 /// Convert a tick count to seconds at `bpm`.
 pub fn ticks_to_seconds(ticks: f64, bpm: f64) -> f64 {
     ticks * 60.0 / (bpm * TICKS_PER_QUARTER as f64)
@@ -589,6 +643,52 @@ mod tests {
     fn decimal_comma_tempo_parses() {
         assert_eq!(parse_tempo("150,00"), Ok(150.0));
         assert!(parse_tempo("0").is_err());
+    }
+
+    #[test]
+    fn converter_makes_rests_into_gaps_with_exact_times() {
+        let r = fixture("staccato.ust").to_reference(0.0);
+        assert_eq!(r.notes.len(), 5, "rests are gaps, not notes");
+        // さ starts after a 1920-tick (4-beat) rest: 4 × 0.4 s = 1.6 s, lasts 0.2 s.
+        let first = r.notes[0];
+        assert!((first.onset_s - 1.6).abs() < 1e-12 && (first.offset_s - 1.8).abs() < 1e-12);
+        assert_eq!(first.midi_pitch, 72);
+        // Every staccato note is followed by a rest: its offset is the musical end,
+        // and the next note starts *after* a gap.
+        assert!(r.rest_terminated.iter().all(|&t| t));
+        assert!(r.notes.windows(2).all(|w| w[1].onset_s > w[0].offset_s + 1e-9));
+    }
+
+    #[test]
+    fn converter_flags_legato_offsets_and_drops_breaths() {
+        let r = fixture("legato.ust").to_reference(0.0);
+        assert_eq!(r.notes.len(), 7, "the breath is a gap, not a note");
+        assert_eq!(r.rest_terminated, [false, false, false, false, false, true, true]);
+        // A legato note's offset is exactly the next onset…
+        assert!((r.notes[0].offset_s - r.notes[1].onset_s).abs() < 1e-12);
+        // …while か ends where the breath begins (2880 ticks @120 = 3.0 s): a real end.
+        assert!((r.notes[5].offset_s - 3.0).abs() < 1e-12);
+        assert!(r.notes[6].onset_s > r.notes[5].offset_s);
+    }
+
+    #[test]
+    fn alignment_offset_shifts_every_note() {
+        let u = fixture("staccato.ust");
+        let (a, b) = (u.to_reference(0.0), u.to_reference(0.25));
+        for (x, y) in a.notes.iter().zip(&b.notes) {
+            assert!((y.onset_s - x.onset_s - 0.25).abs() < 1e-12 && (y.offset_s - x.offset_s - 0.25).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn merge_interleaves_split_leads_by_onset() {
+        let a = fixture("staccato.ust").to_reference(0.0);
+        let b = fixture("staccato.ust").to_reference(0.1);
+        let merged = UstReference::merge([a.clone(), b]);
+        assert_eq!(merged.notes.len(), 10);
+        assert!(merged.notes.windows(2).all(|w| w[0].onset_s <= w[1].onset_s));
+        assert_eq!(merged.reference().notes.len(), 10);
+        assert!(merged.reference().f0.is_empty());
     }
 
     #[test]

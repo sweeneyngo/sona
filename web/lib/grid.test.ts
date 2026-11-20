@@ -1,5 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   gridSpacingSeconds,
@@ -110,4 +111,45 @@ test("noteFlags flags an escaped note regardless of its scalar", () => {
   const f = noteFlags({ confidence: 0.95 }, { escaped: true }, 0.5);
   assert.equal(f.flagged, true);
   assert.equal(f.escaped, true);
+});
+
+// Drift guard (ADR-0014): the harness carries a Rust port of quantizeNote
+// (crates/sona-eval/src/quantize.rs). Both implementations assert this one shared
+// case file, so a change to either that the other doesn't mirror fails a test.
+interface SharedCase {
+  name: string;
+  onset_s: number;
+  offset_s: number;
+  onset_clarity: number | null;
+  spacing: number;
+  anchor: number;
+  escapeDistanceCells?: number;
+  onsetConfidenceThreshold?: number;
+  expected: { onset_s: number; offset_s: number; escaped: boolean };
+}
+
+const sharedCases: SharedCase[] = JSON.parse(
+  readFileSync(new URL("../../crates/sona-eval/fixtures/quantize/cases.json", import.meta.url), "utf8"),
+);
+
+test("quantizeNote agrees with the Rust port on every shared case", () => {
+  assert.ok(sharedCases.length >= 10);
+  for (const c of sharedCases) {
+    const q = quantizeNote(
+      {
+        onset_s: c.onset_s,
+        offset_s: c.offset_s,
+        sub_scores: c.onset_clarity === null ? undefined : { onset_clarity: c.onset_clarity },
+      },
+      {
+        spacing: c.spacing,
+        anchor: c.anchor,
+        escapeDistanceCells: c.escapeDistanceCells,
+        onsetConfidenceThreshold: c.onsetConfidenceThreshold,
+      },
+    );
+    assert.equal(q.escaped, c.expected.escaped, `${c.name}: escaped`);
+    assert.ok(Math.abs(q.onset_s - c.expected.onset_s) < 1e-9, `${c.name}: onset ${q.onset_s}`);
+    assert.ok(Math.abs(q.offset_s - c.expected.offset_s) < 1e-9, `${c.name}: offset ${q.offset_s}`);
+  }
 });
