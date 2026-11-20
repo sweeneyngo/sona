@@ -15,6 +15,8 @@ pub enum EvalError {
     /// The Vocadito corpus directory is missing or not configured. Carries a
     /// hint on how to populate it, since this is the expected first-run state.
     CorpusMissing(PathBuf),
+    /// The UST cache directory is missing or holds no `.ust` files.
+    UstCorpusMissing(PathBuf),
     /// A WAV fixture could not be decoded.
     Wav { path: PathBuf, reason: String },
 }
@@ -45,6 +47,12 @@ impl fmt::Display for EvalError {
                 f,
                 "Vocadito corpus not found at {}. Set SONA_VOCADITO_DIR or run \
                  crates/sona-eval/scripts/fetch-vocadito.sh to download it.",
+                path.display()
+            ),
+            EvalError::UstCorpusMissing(path) => write!(
+                f,
+                "no .ust files found at {}. Set SONA_UST_DIR, or download USTs into it \
+                 (Pifuyuu's UST blog links the OneDrive folder; the files are never committed).",
                 path.display()
             ),
             EvalError::Wav { path, reason } => {

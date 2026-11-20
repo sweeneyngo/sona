@@ -11,6 +11,10 @@
 //! - [`vocadito`] — the Vocadito corpus (large, git-ignored, fetched by
 //!   `scripts/fetch-vocadito.sh`).
 //!
+//! [`ust`] parses UTAU USTs — the in-domain reference for staccato Vocaloid (the
+//! UST corpus gate) — and [`ust_audit`] measures whether they carry real offset
+//! labels. Real USTs are git-ignored; the committed UST fixtures are synthetic.
+//!
 //! [`synth`] is the shared source of truth from which the golden fixtures'
 //! audio *and* ground truth are generated, and [`wav`] is the fixture WAV I/O.
 //!
@@ -28,6 +32,8 @@ pub mod metrics;
 pub mod reference;
 pub mod session;
 pub mod synth;
+pub mod ust;
+pub mod ust_audit;
 pub mod vocadito;
 pub mod wav;
 
@@ -38,4 +44,5 @@ pub use fixtures::Fixture;
 pub use metrics::{evaluate, MetricParams, StageReport};
 pub use reference::{RefF0, RefNote, Reference};
 pub use session::Session;
+pub use ust::Ust;
 pub use vocadito::Corpus;

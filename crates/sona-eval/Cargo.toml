@@ -20,6 +20,8 @@ serde_json.workspace = true
 # Decode fixture WAVs. The core is deliberately I/O-free (it takes mono `&[f32]`),
 # so WAV decoding lives here, as it does in the CLI.
 hound.workspace = true
+# Decode UST files explicitly (Shift-JIS by default, UTF-8 when declared/valid).
+encoding_rs.workspace = true
 
 # The report harness: runs the pipeline over each stem and scores it with the
 # metrics, printing the per-stage baseline table.
@@ -80,3 +82,10 @@ path = "src/bin/session_report.rs"
 [[bin]]
 name = "sona-eval-calibrate"
 path = "src/bin/calibrate_report.rs"
+
+# UST format audit (UST corpus gate, ticket 01): per UST, the rest-terminated note
+# fraction (how much genuine offset signal exists), grid-alignment tightness, and
+# notes below the prune floor. Fixtures by default; `--corpus` for the UST cache.
+[[bin]]
+name = "sona-eval-ust-audit"
+path = "src/bin/ust_audit.rs"

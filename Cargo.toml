@@ -29,6 +29,10 @@ ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dy
 # FFT (no C, no ML runtime), so ADR-0005's "builds anywhere" holds; only ADR-0006's
 # "no FFT" line is retired. Opt-in until the harness earns the default swap.
 realfft = "3"
+# UST parsing (sona-eval, UST corpus gate): USTs are commonly Shift-JIS (CP932),
+# not UTF-8. Pure-Rust WHATWG decoder — no C, no ICU — so the harness stays
+# "builds anywhere" like the core.
+encoding_rs = "0.8"
 
 # Internal
 sona-core = { path = "crates/sona-core" }
