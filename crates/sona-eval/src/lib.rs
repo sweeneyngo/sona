@@ -34,6 +34,7 @@ pub mod reference;
 pub mod session;
 pub mod synth;
 pub mod ust;
+pub mod ust_align;
 pub mod ust_audit;
 pub mod ust_corpus;
 pub mod vocadito;

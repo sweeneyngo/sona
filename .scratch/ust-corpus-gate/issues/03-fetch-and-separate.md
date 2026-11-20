@@ -1,6 +1,6 @@
 # 03 — Fetch scripts + demucs separation with recorded provenance
 
-Status: ready-for-human
+Status: done
 
 Blocked by: 02
 
@@ -45,3 +45,22 @@ Keeping the corpus's input contract identical to sona's is deliberate.
 - All three scripts exist, are idempotent, and verify what they downloaded.
 - Corpus data lands git-ignored; only scripts and manifest are committed.
 - Manifest `stem.model` / `stem.version` / `stem.path` populated for every song.
+
+## Comments
+
+**2026-11-20 — Done.** All three scripts exist, are idempotent, and verify their output. All three were run;
+the maintainer approved the audio fetch in-session.
+- `fetch-pifuyuu-ust.sh`: lists the public OneDrive folder through the anonymous token its web viewer uses.
+  Downloads are checked against the manifest's sha256 (`--record` fills it in) and extracted with zip-slip
+  protection and Shift-JIS filename decoding. It also checks that every lead and other-voice file listed in
+  the manifest exists.
+- `fetch-pifuyuu-audio.sh`: yt-dlp, run from the manifest. Each download must match `original_duration_s`
+  within ±5 s, which rejects the wrong video or a different cut. All 20 fetched.
+  - YouTube returned 403s until yt-dlp was updated (2026.07.04 → 2026.10.26).
+  - One song needed a retry.
+- `separate-stems.sh`: demucs `htdemucs`, 4.0.1, torch 2.5.1, CPU, in a venv at
+  `~/.local/share/sona/demucs-venv`, outside the workspace. The venv needs Python 3.10–3.12, and the script
+  checks that by running the interpreter, because pyenv shims exist on PATH even when inactive.
+  - Writes mono 44.1 kHz `vocals.wav`, plus `drums.wav` as an alignment aid (05).
+  - Records `stem.model` / `version` / `path` for all 20 songs.
+  - Took 63 min on 16 CPU cores, about 3 min per song, roughly 75% of the cores (compute-bound).

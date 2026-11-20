@@ -1,6 +1,6 @@
 # 05 — Manual phase alignment, recorded in the manifest
 
-Status: ready-for-human
+Status: done
 
 Blocked by: 03, 04
 
@@ -45,3 +45,29 @@ that "getting phase wrong makes hard-snap quantization actively harmful."
 - Onset-delta distribution printed per song, and every song either reads as
   aligned or is explicitly flagged (drift / unalignable) with a reason.
 - Flagged songs are excluded from the gate in 06 rather than silently degrading it.
+
+## Comments
+
+**2026-11-20 — Done, with an automated method instead of by-ear alignment.** Tool: `sona-eval-ust-align --write`.
+
+The by-ear step was replaced so the plan could run without the maintainer. The offset is still **set without
+sona** (the circularity this ticket rules out) and **stored as data** (reviewable, and can be overridden by ear):
+1. **Coarse:** cross-correlate the any-voice-singing mask from the USTs with the vocal stem's log-RMS
+   envelope (10 ms frames).
+2. **Fine:** within ±½ grid cell, line the UST's grid lines up with drum-stem onsets (1 ms resolution).
+   The search was ±½ *beat* at first. That moved INNOCENT ADDICT a whole 16th, because a UST's tick 0 can be
+   a pickup, so every-480-ticks lines aren't reliably beats. A regression test now covers this.
+3. **Verify with sona's onsets:** this ticket's onset-delta distribution. It prints p10/p25/p50/p75/p90 and
+   the drift from the first third of the song to the last.
+
+**Result: 19 / 20 aligned.**
+- Every aligned song's median delta is between −32 and +3 ms (typically about −8 ms), with drift ≤ 13 ms.
+  That −8 ms matches sona's −11.6 ms early-onset bias measured on Vocadito (`reports/onset-deviation.md`):
+  two independent measurements agreeing.
+- かまいたちに因る (−32 ms) is the borderline case. Its spread is tight and its drum grid strong, so it reads
+  as sona firing early on consonants, not as misalignment.
+- **Flagged and excluded: plus-space**, a constant +38 ms shift. It's a piano-led duet with the weakest drum
+  grid (peak 1.42). The drum step moved the coarse offset −37 ms in the wrong direction.
+  - Not fixed by tuning the drum threshold, because choosing the threshold by agreement with sona would be
+    circular.
+  - A by-ear alignment could bring it back.

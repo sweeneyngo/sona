@@ -19,6 +19,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::EvalError;
 use crate::ust::{BlockKind, Ust, UstReference};
 
+/// Where separated stems live: `$SONA_UST_STEMS_DIR`, else the crate's
+/// git-ignored `data/pifuyuu-stems` (written by `scripts/separate-stems.sh`).
+pub fn stems_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("SONA_UST_STEMS_DIR") {
+        return PathBuf::from(p);
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("data/pifuyuu-stems")
+}
+
 /// The committed manifest's default location.
 pub fn manifest_path() -> PathBuf {
     if let Some(p) = std::env::var_os("SONA_UST_MANIFEST") {
@@ -74,7 +83,15 @@ pub struct Song {
     pub grid_division: Option<u32>,
     /// `stem_time = ust_time + alignment_offset_s` (ticket 05).
     pub alignment_offset_s: Option<f64>,
+    /// `aligned`, or `flagged: <reason>` — flagged songs are excluded from the
+    /// gate (ticket 05), never silently scored.
+    #[serde(default)]
+    pub alignment_status: Option<String>,
     pub stem: Stem,
+    /// `dev` (iterate and tune on these) or `holdout` (scored once, at the end).
+    /// Assigned by upload order before any tuning: odd positions dev, even holdout.
+    #[serde(default)]
+    pub split: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -130,6 +147,18 @@ impl SongUsts {
             return Err(EvalError::parse(&dir, format!("{}: no lead UST listed in the manifest", song.id)));
         }
         Ok(SongUsts { lead, other: load_all(&song.ust_other_voice_files)? })
+    }
+
+    /// Every voice's sung spans (lead and other voices) on the stem timeline,
+    /// unmerged — what the vocal stem should contain.
+    pub fn all_voice_spans(&self, offset_s: f64) -> Vec<(f64, f64)> {
+        self.lead
+            .iter()
+            .chain(&self.other)
+            .flat_map(|u| u.timeline())
+            .filter(|p| p.kind == BlockKind::Note)
+            .map(|p| (p.start_s + offset_s, p.end_s + offset_s))
+            .collect()
     }
 
     /// The merged lead reference on the stem timeline.

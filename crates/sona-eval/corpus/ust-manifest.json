@@ -1,5 +1,5 @@
 {
-  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s.",
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev).",
   "channel": "https://www.youtube.com/@pifuyuu",
   "selected_on": "2026-11-20",
   "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
@@ -27,12 +27,14 @@
       "stratum_evidence": "original tagged VOCALOID; credits 'Vocal: MIKU Append'",
       "bpm_from_ust": 198.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -4.913,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "innocent-addict/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -57,12 +59,14 @@
       "stratum_evidence": "title 'feat.初音ミク'",
       "bpm_from_ust": 138.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.953,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kinsei/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -86,12 +90,14 @@
       "stratum_evidence": "title 'feat.音街ウナ'; tagged VOCALOID",
       "bpm_from_ust": 144.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.74,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kamaitachi-ni-yoru/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -115,12 +121,14 @@
       "stratum_evidence": "title 'feat. 羽累'; credits a vocal tuner (音纏), i.e. a tuned synth voice",
       "bpm_from_ust": 204.0,
       "grid_division": 24,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -4.757,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "noizugoto/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -144,12 +152,14 @@
       "stratum_evidence": "title 'feat.初音ミク'",
       "bpm_from_ust": 123.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -7.905,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "telescope-nevermore/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -174,12 +184,14 @@
       "stratum_evidence": "title names 結月ゆかり; tagged VOCALOID",
       "bpm_from_ust": 160.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.053,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "bass-sousha-e-no-henjin-ronsou/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -203,12 +215,14 @@
       "stratum_evidence": "title 【鏡音リン】…【鏡音レン】; tagged VOCALOID. Duet: two lead voices",
       "bpm_from_ust": 108.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -8.947,
+      "alignment_status": "flagged: constant shift +38 ms",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "plus-space/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -235,12 +249,14 @@
       "stratum_evidence": "title 'feat. krage' — krage is a human vocalist",
       "bpm_from_ust": 150.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.505,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "light-seeker/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -267,12 +283,14 @@
       "stratum_evidence": "credits 'Singer: 初音ミクV6'",
       "bpm_from_ust": 244.0,
       "grid_division": 24,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -3.972,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "atamaro-deluxe/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -296,12 +314,14 @@
       "stratum_evidence": "title 'feat. Yuzuki Yukari'; tagged VOCALOID",
       "bpm_from_ust": 160.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.034,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "smolder/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -327,12 +347,14 @@
       "stratum_evidence": "entered in ボカコレ2025冬, which requires synthesized vocals; the engine of 'めろう' is not named",
       "bpm_from_ust": 196.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -4.934,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "azemichi-ni-ochita-ginga/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -357,12 +379,14 @@
       "stratum_evidence": "title 'feat.初音ミク'",
       "bpm_from_ust": 92.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -10.533,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "dm/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -386,12 +410,14 @@
       "stratum_evidence": "title '/ 重音テト'; tagged VOCALOID",
       "bpm_from_ust": 250.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -3.897,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "yamineko/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -416,12 +442,14 @@
       "stratum_evidence": "title '/ 重音テトSV'. A separate human-sung version exists; the linked original is the Teto one",
       "bpm_from_ust": 168.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -5.745,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "sandatsu/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -447,12 +475,14 @@
       "stratum_evidence": "title and credits name がくっぽいど V4 Power",
       "bpm_from_ust": 195.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -4.997,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "my-axiom/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -479,12 +509,14 @@
       "stratum_evidence": "title 'feat. 初音ミク'",
       "bpm_from_ust": 146.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -6.662,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "emerald/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -510,12 +542,14 @@
       "stratum_evidence": "credits 'vocal: 初音ミク'; tagged VOCALOID",
       "bpm_from_ust": 163.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -5.918,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "amaten/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -543,12 +577,14 @@
       "stratum_evidence": "title 'feat. 洛天依'",
       "bpm_from_ust": 184.0,
       "grid_division": 24,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -5.302,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "moumoku-shabon/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     },
     {
@@ -572,12 +608,14 @@
       "stratum_evidence": "title '- Yuki'; tagged VOCALOID",
       "bpm_from_ust": 236.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -4.126,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "fukagyakuteki-henyou/vocals.wav"
       },
+      "split": "dev",
       "notes": null
     },
     {
@@ -602,12 +640,14 @@
       "stratum_evidence": "title 【Lily】; tagged VOCALOID / Lilyオリジナル曲",
       "bpm_from_ust": 104.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
+      "alignment_offset_s": -9.149,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "invariant/vocals.wav"
       },
+      "split": "holdout",
       "notes": null
     }
   ],

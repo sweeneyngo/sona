@@ -72,3 +72,22 @@ Only 14% of UST notes are rest-terminated. Report COnPOff on the **rest-terminat
 offset number; all-notes or legato COnPOff mostly re-measures onsets. Also report the per-song
 recall ceiling from the 100 ms prune floor (50% of ノイズゴト's notes are below it) and split out
 triplet songs.
+
+**2026-11-20 — Decision rule, pre-registered before any result** (pstack `principle-explain-the-number`:
+write down the decision before you run).
+
+- **The offset number** is offset accuracy given a correct onset and pitch, on **rest-terminated** reference
+  notes, in **monophonic** regions, on **quantized** output, pooled over the `vocaloid-original` songs that 05
+  aligned. (From 01: legato UST offsets are just the next onset, and harmony is in the stem.)
+- **Close the offset item** if that number is **≥ 0.85** *and* the lower end of its 95% bootstrap interval
+  (resampling songs) is **≥ 0.80**. Then the bottleneck was largely a measurement artifact in-domain.
+- **A real gap remains** if the number is **< 0.75**, *or* its interval's upper end is **< 0.85**. Next move per
+  the ticket: an ADR arguing the in-domain re-sweep of the ADR-0012 Release path.
+- **Inconclusive** if the result falls between those cases, or if fewer than 150 rest-terminated monophonic pairs
+  are scored. Report it as inconclusive and name the gap; don't round it toward either side.
+- **Noise floor:** sona is deterministic, so runs don't vary. The spread that matters is song sampling, which the
+  bootstrap interval measures.
+- **What else the number could be measuring** (each to rule out or bound in the report): misalignment (05's
+  onset-delta check), harmony bleed (the monophonic view), demucs artifacts, the quantizer anchor (the gate uses
+  the UST-derived anchor, which is more optimistic than the UI's auto-anchor), the escape hatch, notes below the
+  prune floor, and errors in the UST itself (it's a fan transcription, not the producer's MIDI).

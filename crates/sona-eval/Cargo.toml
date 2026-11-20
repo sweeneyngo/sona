@@ -101,3 +101,17 @@ path = "src/bin/ust_to_midi.rs"
 [[bin]]
 name = "sona-eval-ust-manifest"
 path = "src/bin/ust_manifest.rs"
+
+# UST phase alignment (UST corpus gate, ticket 05): offset set WITHOUT sona
+# (vocal-loudness coarse + drum-onset fine), verified WITH sona's onsets.
+# `--write` records alignment_offset_s + alignment_status in the manifest.
+[[bin]]
+name = "sona-eval-ust-align"
+path = "src/bin/ust_align.rs"
+
+# The in-domain gate (UST corpus gate, ticket 06): sona vs. UST, raw and
+# quantized, all notes and monophonic regions, per stratum; `--vocadito` adds the
+# proxy-domain baseline with the same conditional offset measure.
+[[bin]]
+name = "sona-eval-ust-gate"
+path = "src/bin/ust_gate.rs"
