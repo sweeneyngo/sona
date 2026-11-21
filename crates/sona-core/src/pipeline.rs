@@ -16,11 +16,11 @@
 //! or a basic-pitch adapter later, and names the matching [`Producer`] so the
 //! annotation records which backend spoke.
 
-use crate::annotation::{Annotation, Producer, SCHEMA_VERSION};
+use crate::annotation::{Annotation, F0Frame, Producer, SCHEMA_VERSION};
 use crate::confidence::ConfidenceScorer;
 use crate::grid::{GridMode, GridSpec};
 use crate::onset::OnsetDetector;
-use crate::pitch::PitchTracker;
+use crate::pitch::{HarmonicSalience, PitchCandidate, PitchTracker};
 use crate::segment::Segmenter;
 
 /// Composes the perception stages into a single `stem -> annotation` transform.
@@ -62,12 +62,19 @@ impl Transcriber {
         let f0_contour = tracker.track(samples, sample_rate);
         let onset_result = self.onset.detect(samples, sample_rate);
         let segments = match &self.grid {
-            Some(g) => g.decoder.segment(
-                &GridSpec { bpm, division: g.division, anchor_s: g.anchor_s },
-                &onset_result.onsets,
-                &f0_contour,
-                &onset_result.energy_envelope,
-            ),
+            Some(g) => {
+                let candidates = match g.decoder.candidates {
+                    Some(_) => candidates_for(&f0_contour, samples, sample_rate),
+                    None => Vec::new(),
+                };
+                g.decoder.segment_with_candidates(
+                    &GridSpec { bpm, division: g.division, anchor_s: g.anchor_s },
+                    &onset_result.onsets,
+                    &f0_contour,
+                    &candidates,
+                    &onset_result.energy_envelope,
+                )
+            }
             None => self.segmenter.segment(
                 &onset_result.onsets,
                 &f0_contour,
@@ -89,6 +96,22 @@ impl Transcriber {
             energy_envelope: onset_result.energy_envelope,
         }
     }
+}
+
+/// Harmonic-sum pitch candidates aligned to `contour`'s frames by time (the
+/// tracker's hop is its own business): each contour frame takes the salience
+/// frame that starts nearest it.
+fn candidates_for(contour: &[F0Frame], samples: &[f32], sample_rate: u32) -> Vec<Vec<PitchCandidate>> {
+    let hs = HarmonicSalience::default();
+    let frames = hs.track(samples, sample_rate);
+    let hop_s = hs.hop_length as f64 / sample_rate.max(1) as f64;
+    contour
+        .iter()
+        .map(|f| {
+            let k = (f.time_s / hop_s).round().max(0.0) as usize;
+            frames.get(k).cloned().unwrap_or_default()
+        })
+        .collect()
 }
 
 #[cfg(test)]

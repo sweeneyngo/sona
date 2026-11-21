@@ -12,10 +12,23 @@
 //! [`Annotation`](crate::annotation::Annotation).
 
 pub mod pyin;
+pub mod salience;
 
 pub use pyin::PYin;
+pub use salience::HarmonicSalience;
 
 use crate::annotation::F0Frame;
+
+/// One frame's pitch hypothesis with its strength: evidence for decoders that
+/// weigh several pitches per frame (where voices overlap) rather than one f0.
+/// Internal to the core; it is not part of the annotation JSON.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PitchCandidate {
+    /// Candidate f0, Hz.
+    pub frequency_hz: f32,
+    /// Strength, `>= 0`; comparable within one producer only.
+    pub salience: f32,
+}
 
 /// A pluggable pitch-tracking backend (ADR-0001).
 ///

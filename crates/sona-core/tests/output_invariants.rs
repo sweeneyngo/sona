@@ -11,7 +11,8 @@
 //! notes, dropouts, bleed) that would produce one.
 
 use sona_core::{
-    Annotation, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, NoteHmm, NoteSegment, Onset, PYin, Producer, Transcriber,
+    Annotation, CandidateEvidence, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, NoteHmm, NoteSegment, Onset, PYin, PitchCandidate,
+    Producer, Transcriber,
 };
 use std::f32::consts::PI;
 
@@ -109,6 +110,23 @@ fn both_segmenters_emit_one_voice_on_random_stems() {
         let what = format!("grid case {case} ({grid:?})");
         assert_one_voice(&cells, &what);
         assert_on_one_grid(&cells, grid.spacing_s(), &what);
+
+        // With pitch candidates (some frames with none, the tail missing), drawn
+        // from their own stream so the cases above stay as they were.
+        let mut crng = Rng(0xca4d_0000 + case);
+        let n = contour.len().saturating_sub((crng.unit() * 20.0) as usize);
+        let cands: Vec<Vec<PitchCandidate>> = (0..n)
+            .map(|_| {
+                (0..(crng.unit() * 5.0) as usize)
+                    .map(|_| PitchCandidate { frequency_hz: crng.range(50.0, 1500.0) as f32, salience: crng.range(0.0, 3.0) as f32 })
+                    .collect()
+            })
+            .collect();
+        let decoder = GridDecoder { candidates: Some(CandidateEvidence::default()), ..GridDecoder::default() };
+        let cells = decoder.segment_with_candidates(&grid, &onsets, &contour, &cands, &envelope);
+        let what = format!("grid+candidates case {case} ({grid:?})");
+        assert_one_voice(&cells, &what);
+        assert_on_one_grid(&cells, grid.spacing_s(), &what);
     }
 }
 
@@ -152,5 +170,9 @@ fn transcribed_annotations_are_valid_in_both_modes() {
         let grid = Transcriber { grid: Some(GridMode::sixteenths()), ..Transcriber::default() }
             .transcribe(&PYin::default(), &audio, SR, bpm, Producer::Pyin);
         assert_valid_annotation(&grid, &format!("grid case {case}"));
+        let mut mode = GridMode::sixteenths();
+        mode.decoder.candidates = Some(CandidateEvidence::default());
+        let cands = Transcriber { grid: Some(mode), ..Transcriber::default() }.transcribe(&PYin::default(), &audio, SR, bpm, Producer::Pyin);
+        assert_valid_annotation(&cands, &format!("grid+candidates case {case}"));
     }
 }

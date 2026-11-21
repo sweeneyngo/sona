@@ -11,6 +11,7 @@
 
 use crate::annotation::{EnergyFrame, F0Frame};
 use crate::onset::Onset;
+use crate::pitch::PitchCandidate;
 use crate::segment::{drop_steepness, hz_to_midi, NoteSegment, OffsetInfo, OffsetKind};
 
 /// The grid a stem is decoded on.
@@ -88,6 +89,58 @@ pub struct GridDecoder {
     pub phase_candidates: usize,
     /// Half-window (seconds) for the offset energy-drop steepness (confidence).
     pub drop_window_s: f64,
+    /// Weigh per-frame **pitch candidates** (pitches with saliences, from
+    /// [`HarmonicSalience`](crate::pitch::HarmonicSalience)) alongside the
+    /// contour. Where two voices sing, pYIN often unvoices the frame or picks
+    /// the other voice; harmonic-sum salience still finds the lead's f0, and its
+    /// strength argues against a rest. `None` (the default) uses the contour
+    /// alone. [`Transcriber`](crate::Transcriber) computes the candidates when
+    /// this is set; [`segment_with_candidates`](Self::segment_with_candidates)
+    /// takes them directly.
+    pub candidates: Option<CandidateEvidence>,
+}
+
+/// How the cell emission weighs pitch candidates (see [`GridDecoder::candidates`]).
+///
+/// Each frame's candidates are normalised two ways: by the frame's strongest
+/// (`r`, relative salience in `0..=1`) and by the stem's
+/// `strength_percentile`-th strongest frame (`v`, frame strength in `0..=1`).
+/// A note at pitch *p* then pays, per frame, `weight · v · min(cap, min_k
+/// (gauss(m_k − p) + rank_cost · (1 − r_k)))`, and a rest pays
+/// `rest_cost · v^rest_pow`; the contour's own terms are scaled by
+/// `contour_weight`.
+///
+/// Defaults are the dev-split optimum (vocal and lead-only stems). A high
+/// `rank_cost` means only near-ties to the strongest candidate are followed:
+/// on dev, letting the continuity prior pick weaker candidates scored lower.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CandidateEvidence {
+    /// Scale of the candidate pitch term, relative to the contour's.
+    pub weight: f32,
+    /// Extra cost of following a weaker candidate, at relative salience `0`.
+    pub rank_cost: f32,
+    /// Cost per frame of strength `1` decoded as a rest.
+    pub rest_cost: f32,
+    /// Exponent on frame strength in the rest cost: above `1`, weak frames
+    /// (reverb tails, bleed) barely argue against a rest.
+    pub rest_pow: f32,
+    /// The stem's frame-strength reference, as a percentile of frames with a
+    /// candidate (`0.9` = the 90th-percentile frame has strength `1`).
+    pub strength_percentile: f32,
+    /// Scale on the contour's own terms (`1` keeps them; `0` decodes from the
+    /// candidates alone, the contour still setting tuning and range).
+    pub contour_weight: f32,
+    /// Delay (seconds) applied to the candidates before weighing them.
+    /// Salience rises as soon as a note enters the analysis window, pYIN's
+    /// periodicity only once the note fills much of it, so on the same frame
+    /// clock the candidates lead the contour.
+    pub lag_s: f64,
+}
+
+impl Default for CandidateEvidence {
+    fn default() -> Self {
+        Self { weight: 1.0, rank_cost: 8.0, rest_cost: 2.0, rest_pow: 2.0, strength_percentile: 0.9, contour_weight: 0.5, lag_s: 0.012 }
+    }
 }
 
 impl Default for GridDecoder {
@@ -109,6 +162,7 @@ impl Default for GridDecoder {
             fill_gap_cells: 1,
             phase_candidates: 24,
             drop_window_s: 0.04,
+            candidates: None,
         }
     }
 }
@@ -125,6 +179,10 @@ struct Frames {
     semi: Vec<Option<f32>>,
     voicing: Vec<f32>,
     loud: Vec<f32>,
+    /// Per frame × pitch, the candidate term of a note's cost (empty if none).
+    cand_note: Vec<f32>,
+    /// Per frame, the candidate term of a rest's cost (empty if none).
+    cand_rest: Vec<f32>,
     env_time: Vec<f64>,
     env_rms: Vec<f32>,
     lo: i32,
@@ -135,15 +193,36 @@ impl GridDecoder {
     /// Decode a stem into grid-aligned note segments. Empty when the contour has
     /// no voiced frame or the grid is degenerate.
     pub fn segment(&self, grid: &GridSpec, onsets: &[Onset], contour: &[F0Frame], envelope: &[EnergyFrame]) -> Vec<NoteSegment> {
+        self.segment_with_candidates(grid, onsets, contour, &[], envelope)
+    }
+
+    /// [`segment`](Self::segment) with per-frame pitch candidates aligned to
+    /// `contour` (frame `i` of each). They are weighed only when
+    /// [`candidates`](Self::candidates) is set; missing frames count as none.
+    pub fn segment_with_candidates(
+        &self,
+        grid: &GridSpec,
+        onsets: &[Onset],
+        contour: &[F0Frame],
+        candidates: &[Vec<PitchCandidate>],
+        envelope: &[EnergyFrame],
+    ) -> Vec<NoteSegment> {
         let sp = grid.spacing_s();
         if !(sp.is_finite() && sp > 0.0) {
             return Vec::new();
         }
-        let Some(fr) = self.prepare(contour, envelope) else {
+        let Some(fr) = self.prepare(contour, candidates, envelope) else {
             return Vec::new();
         };
         let notes = match grid.anchor_s {
             Some(a) => self.decode(&fr, sp, a).0,
+            // The phase comes from the contour alone even when candidates are
+            // weighed: salience onsets lead pYIN's by part of a window, and on
+            // dev the candidate-weighted cost picked a wrong phase on one song.
+            None if !fr.cand_rest.is_empty() => match self.estimate_phase(grid, contour, envelope) {
+                Some(a) => self.decode(&fr, sp, a).0,
+                None => Vec::new(),
+            },
             None => self.best_phase(&fr, sp),
         };
         let notes = self.fill_gaps(notes, sp);
@@ -153,7 +232,7 @@ impl GridDecoder {
     /// Estimated grid phase (seconds within one cell) for a stem.
     pub fn estimate_phase(&self, grid: &GridSpec, contour: &[F0Frame], envelope: &[EnergyFrame]) -> Option<f64> {
         let sp = grid.spacing_s();
-        let fr = self.prepare(contour, envelope)?;
+        let fr = self.prepare(contour, &[], envelope)?;
         let n = self.phase_candidates.max(1);
         (0..n)
             .map(|i| {
@@ -176,7 +255,7 @@ impl GridDecoder {
         best.map(|b| b.1).unwrap_or_default()
     }
 
-    fn prepare(&self, contour: &[F0Frame], envelope: &[EnergyFrame]) -> Option<Frames> {
+    fn prepare(&self, contour: &[F0Frame], candidates: &[Vec<PitchCandidate>], envelope: &[EnergyFrame]) -> Option<Frames> {
         let raw: Vec<Option<f32>> =
             contour.iter().map(|f| (f.frequency_hz > 0.0).then(|| hz_to_midi(f.frequency_hz))).collect();
         let voiced: Vec<f32> = raw.iter().flatten().copied().collect();
@@ -186,6 +265,23 @@ impl GridDecoder {
         let tune = if self.estimate_tuning { tuning_offset(&voiced) } else { 0.0 };
         let semi: Vec<Option<f32>> = raw.iter().map(|s| s.map(|v| v - tune)).collect();
         let mut sorted: Vec<f32> = voiced.iter().map(|v| v - tune).collect();
+        let candidates: Vec<&[PitchCandidate]> = match self.candidates {
+            Some(ev) if !candidates.is_empty() => {
+                let hop = match (contour.first(), contour.last()) {
+                    (Some(a), Some(b)) if contour.len() > 1 => (b.time_s - a.time_s) / (contour.len() - 1) as f64,
+                    _ => 1.0,
+                };
+                let shift = if hop > 0.0 { (ev.lag_s / hop).round().max(0.0) as usize } else { 0 };
+                (0..contour.len()).map(|i| i.checked_sub(shift).and_then(|j| candidates.get(j)).map_or(&[][..], |c| &c[..])).collect()
+            }
+            _ => Vec::new(),
+        };
+        if self.candidates.is_some() {
+            // The pitch range must also reach the pitches only the candidates
+            // see: under a harmony, pYIN may never voice the lead's register.
+            let tops = candidates.iter().filter_map(|c| c.iter().max_by(|a, b| a.salience.total_cmp(&b.salience)));
+            sorted.extend(tops.filter(|k| k.frequency_hz > 0.0 && k.salience > 0.0).map(|k| hz_to_midi(k.frequency_hz) - tune));
+        }
         sorted.sort_by(f32::total_cmp);
         let pct = |p: f64| sorted[((sorted.len() - 1) as f64 * p).round() as usize];
         let lo = pct(0.005).floor() as i32 - 1;
@@ -201,16 +297,56 @@ impl GridDecoder {
                 env_rms.get(k).copied().unwrap_or(0.0) / peak
             })
             .collect();
+        let (cand_note, cand_rest) = match self.candidates {
+            Some(ev) => self.candidate_terms(&ev, &candidates, tune, lo, hi),
+            None => (Vec::new(), Vec::new()),
+        };
         Some(Frames {
             time: contour.iter().map(|f| f.time_s).collect(),
             semi,
             voicing: contour.iter().map(|f| f.voicing).collect(),
             loud,
+            cand_note,
+            cand_rest,
             env_time,
             env_rms,
             lo,
             hi,
         })
+    }
+
+    /// The candidate terms of the emission, per frame (see [`CandidateEvidence`]).
+    fn candidate_terms(&self, ev: &CandidateEvidence, cands: &[&[PitchCandidate]], tune: f32, lo: i32, hi: i32) -> (Vec<f32>, Vec<f32>) {
+        let n = cands.len();
+        let top_of = |c: &[PitchCandidate]| c.iter().map(|k| k.salience).reduce(f32::max).filter(|&s| s > 0.0);
+        let mut tops: Vec<f32> = cands.iter().filter_map(|c| top_of(c)).collect();
+        if tops.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        tops.sort_by(f32::total_cmp);
+        let pct = ev.strength_percentile.clamp(0.0, 1.0) as f64;
+        let reference = tops[((tops.len() - 1) as f64 * pct).round() as usize];
+        let np = (hi - lo + 1) as usize;
+        let inv2s2 = 1.0 / (2.0 * self.sigma * self.sigma);
+        let mut note = vec![0.0f32; n * np];
+        let mut rest = vec![0.0f32; n];
+        for (i, c) in cands.iter().enumerate() {
+            let Some(top) = top_of(c) else { continue };
+            let v = (top / reference).min(1.0);
+            rest[i] = ev.rest_cost * v.powf(ev.rest_pow);
+            // (tuned semitone, rank penalty) per candidate
+            let ks: Vec<(f32, f32)> = c
+                .iter()
+                .filter(|k| k.frequency_hz > 0.0)
+                .map(|k| (hz_to_midi(k.frequency_hz) - tune, ev.rank_cost * (1.0 - k.salience / top)))
+                .collect();
+            for (p, slot) in note[i * np..(i + 1) * np].iter_mut().enumerate() {
+                let pitch = (lo + p as i32) as f32;
+                let best = ks.iter().map(|&(m, r)| ((m - pitch) * (m - pitch) * inv2s2).min(self.cost_cap) + r).fold(self.cost_cap, f32::min);
+                *slot = ev.weight * v * best;
+            }
+        }
+        (note, rest)
     }
 
     fn decode(&self, fr: &Frames, sp: f64, anchor: f64) -> (Vec<CellNote>, f64) {
@@ -231,6 +367,8 @@ impl GridDecoder {
         let mut em_rest = vec![0.0f32; nc];
         let mut cue = vec![0.0f32; nc];
         let inv2s2 = 1.0 / (2.0 * self.sigma * self.sigma);
+        let has_cands = !fr.cand_rest.is_empty();
+        let cw = self.candidates.map_or(1.0, |e| e.contour_weight);
         for (c, &a) in starts.iter().enumerate() {
             let (i0, i1) = (at(a), at(a + sp));
             let mut unvoiced = 0usize;
@@ -250,6 +388,18 @@ impl GridDecoder {
             }
             for p in 0..np {
                 em_note[c * np + p] += unvoiced as f32 * self.unvoiced_in_note;
+            }
+            if has_cands {
+                for p in 0..np {
+                    em_note[c * np + p] *= cw;
+                }
+                em_rest[c] *= cw;
+                for i in i0..i1 {
+                    em_rest[c] += fr.cand_rest[i];
+                    for p in 0..np {
+                        em_note[c * np + p] += fr.cand_note[i * np + p];
+                    }
+                }
             }
             cue[c] = self.cue(fr, a, sp, &at, &env_at);
         }
