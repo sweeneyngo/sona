@@ -55,13 +55,13 @@ pub struct GridFit {
 
 impl GridFit {
     fn add(&mut self, tick: u64, seconds_per_tick: f64) {
-        if tick % SIXTEENTH == 0 {
+        if tick.is_multiple_of(SIXTEENTH) {
             self.on_16th += 1;
             return;
         }
-        if tick % THIRTY_SECOND == 0 {
+        if tick.is_multiple_of(THIRTY_SECOND) {
             self.on_32nd += 1;
-        } else if tick % TRIPLET == 0 {
+        } else if tick.is_multiple_of(TRIPLET) {
             self.on_triplet += 1;
         } else {
             self.off_grid += 1;

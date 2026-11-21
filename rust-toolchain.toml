@@ -1,0 +1,6 @@
+# One toolchain for local builds and CI, so clippy's lints are the same
+# everywhere. Bump deliberately: a newer clippy brings new lints that CI
+# treats as errors.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy"]

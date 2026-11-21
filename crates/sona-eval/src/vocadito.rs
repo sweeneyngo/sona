@@ -96,7 +96,7 @@ pub fn discover(root: &Path) -> Result<Corpus, EvalError> {
         return Err(EvalError::CorpusMissing(root.to_path_buf()));
     }
 
-    tracks.sort_by(|a, b| track_id_key(&a.id).cmp(&track_id_key(&b.id)));
+    tracks.sort_by_key(|a| track_id_key(&a.id));
     Ok(Corpus { root: root.to_path_buf(), tracks })
 }
 
