@@ -20,11 +20,13 @@
 #
 # Usage:  crates/sona-eval/scripts/separate-lead.sh [song-id ...]
 # Env:    SONA_LEAD_VENV  (default ~/.local/share/sona/separator-venv)
-#         SONA_LEAD_MODEL (default the UVR mel-band roformer karaoke model)
+#         SONA_LEAD_MODEL (default UVR_MDXNET_KARA_2.onnx, a few minutes per song on
+#                          CPU; the mel-band roformer karaoke model separates better
+#                          but took over 40 minutes for one song on 10 CPU cores)
 #         SONA_UST_STEMS_DIR
 set -euo pipefail
 
-MODEL="${SONA_LEAD_MODEL:-mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt}"
+MODEL="${SONA_LEAD_MODEL:-UVR_MDXNET_KARA_2.onnx}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 stems="${SONA_UST_STEMS_DIR:-$script_dir/../data/pifuyuu-stems}"
@@ -42,8 +44,15 @@ if [ ! -x "$venv/bin/audio-separator" ]; then
   echo "Creating separator venv at $venv (one-time, ~2 GB with torch)"
   "$py" -m venv "$venv"
   "$venv/bin/pip" install --quiet --upgrade pip
-  "$venv/bin/pip" install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+  "$venv/bin/pip" install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
   "$venv/bin/pip" install --quiet "audio-separator[cpu]>=0.30"
+fi
+# torch and torchvision must come from the same build (audio-separator can pull a
+# PyPI torchvision built against a different torch); repair a mismatched venv.
+if ! "$venv/bin/python" -c "import torchvision" >/dev/null 2>&1; then
+  echo "Repairing torchvision to match torch $("$venv/bin/python" -c 'import torch; print(torch.__version__)')"
+  torch_v="$("$venv/bin/python" -c 'import torch; print(torch.__version__.split("+")[0])')"
+  "$venv/bin/pip" install --quiet --force-reinstall --no-deps "torch==$torch_v" torchvision --index-url https://download.pytorch.org/whl/cpu
 fi
 mkdir -p "$models_dir"
 # Record the version actually installed: the provenance pins it, not this script.
@@ -65,8 +74,8 @@ for id in "${ids[@]}"; do
   echo "  lead    $id"
   tmp="$(mktemp -d)"
   "$venv/bin/audio-separator" "$src" --model_filename "$MODEL" --model_file_dir "$models_dir" \
-      --output_dir "$tmp" --output_format WAV --single_stem Vocals >/dev/null 2>&1 \
-    || { echo "error: audio-separator failed on $id" >&2; rm -rf "$tmp"; exit 1; }
+      --output_dir "$tmp" --output_format WAV --single_stem Vocals >"$tmp/separator.log" 2>&1 \
+    || { echo "error: audio-separator failed on $id:" >&2; tail -15 "$tmp/separator.log" >&2; rm -rf "$tmp"; exit 1; }
   lead="$(find "$tmp" -iname '*Vocals*.wav' | head -1)"
   [ -n "$lead" ] || { echo "error: no Vocals output for $id in $tmp" >&2; ls "$tmp" >&2; exit 1; }
   ffmpeg -nostdin -loglevel error -y -i "$lead" -ac 1 -ar 44100 -c:a pcm_s16le "$out/lead.wav"
