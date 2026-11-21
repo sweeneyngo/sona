@@ -7,7 +7,7 @@
 //!     --cfg base: --cfg grid:grid=est [--vocadito] [--diag] [--stem lead]
 //! ```
 //!
-//! Each stem's f0 contour is cached under `target/ust-dev-cache/`, keyed by the
+//! Each stem's f0 contour is cached under `target/ust-dev-cache/` (or `$SONA_DEV_CACHE`), keyed by the
 //! tracker's settings. A config is `name:key=value,key=value`; see [`apply`]
 //! for the keys. `--diag` prints where the first config's misses go.
 
@@ -47,7 +47,9 @@ enum GridChoice {
 }
 
 fn cache_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ust-dev-cache")
+    std::env::var_os("SONA_DEV_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ust-dev-cache"))
 }
 
 fn tracker_key(p: &PYin) -> String {
@@ -70,7 +72,10 @@ fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec
     let c = pyin.track(samples, sr);
     std::fs::create_dir_all(cache_dir()).map_err(|e| EvalError::io(cache_dir(), e))?;
     let text = serde_json::to_string(&c).map_err(|e| EvalError::parse(&path, e.to_string()))?;
-    std::fs::write(&path, text).map_err(|e| EvalError::io(&path, e))?;
+    // Write-then-rename, so parallel runs sharing SONA_DEV_CACHE never read a torn file.
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| EvalError::io(&tmp, e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| EvalError::io(&path, e))?;
     Ok(c)
 }
 

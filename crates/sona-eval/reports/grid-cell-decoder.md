@@ -110,6 +110,23 @@ Tried on dev and rejected (the gains were within the song-bootstrap noise or neg
 - A lower pYIN voicing threshold (0.3): +0.01 on all notes, −0.01 monophonic.
 - Re-tuning the rest cost around that threshold.
 
+## Lyrics: what the dev experiments showed (2026-11-20)
+
+Pifuyuu's lyrics are CV kana, one mora per note, with `R` for rests. All 5,336 dev notes line up with a lyric. Each attempt below is a Python prototype on the dev split, scored against grid mode's output with the gate's matcher. (Those grid-mode baselines are slightly below the table above because the prototype keeps the raw decoder phase.)
+
+| lyric information used | method | all COnP | mono COnP |
+|---|---|---|---|
+| (none, grid mode) | | 0.458 | 0.589 |
+| mora count per phrase (oracle phrase spans) | greedy split/merge at the strongest/weakest cues | 0.467 | 0.577 |
+| mora count per phrase (oracle phrase spans) | count-constrained Viterbi re-decode | 0.473 | 0.562 |
+| mora vowel sequence | global forced alignment, vowel templates self-learned per song | 0.462 (best) | 0.569 (best) |
+
+**Counts don't help, because placement is the problem.** In monophonic phrases where grid mode already emits exactly the right number of notes, only 71% of them match. Knowing *how many* notes there are doesn't say *where* the boundaries go.
+
+**Vowels are identifiable, but global alignment drifts.** A per-song nearest-centroid classifier on the cepstrum at a note's middle identifies its vowel 80% of the time (chance is 20–30%). Of the misplaced same-pitch boundaries, 53 of 60 change vowel. But aligning about 600 morae to a whole song at once drifts: one slip, often on a bleed note, shifts every later mora, so the self-learned templates train on misaligned cells. Raising the vowel weight makes it worse (0.36 all notes).
+
+The vowel evidence is real. What it needs is **anchoring**: lyric lines matched to sung phrases, re-anchored at every rest, before vowels can place boundaries. That is the next lyrics step, if it is pursued. It also needs no vowel model trained on the UST.
+
 ## Next
 
 1. Run `scripts/separate-lead.sh`, then `sona-eval-ust-dev --stem lead --cfg grid:grid=est` to measure the polyphony fix.
