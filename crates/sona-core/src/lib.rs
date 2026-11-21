@@ -31,9 +31,9 @@ pub use confidence::{soft_min, ConfidenceScorer};
 pub use midi::{to_smf, write_midi};
 pub use onset::{Onset, OnsetDetector, OnsetResult};
 pub use pipeline::Transcriber;
-pub use pitch::{PYin, PitchTracker};
+pub use pitch::{HarmonicSalience, PYin, PitchCandidate, PitchTracker};
 pub use prefilter::{PitchFrame, PitchPreFilter};
-pub use grid::{GridDecoder, GridMode, GridSpec};
+pub use grid::{CandidateEvidence, GridDecoder, GridMode, GridSpec};
 pub use hmm::NoteHmm;
 pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 

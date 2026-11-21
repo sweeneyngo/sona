@@ -10,10 +10,17 @@
 //! Each stem's f0 contour is cached under `target/ust-dev-cache/` (or `$SONA_DEV_CACHE`), keyed by the
 //! tracker's settings. A config is `name:key=value,key=value`; see [`apply`]
 //! for the keys. `--diag` prints where the first config's misses go.
+//!
+//! `cands=1` (or any `c.*` knob) adds harmonic-salience pitch candidates to
+//! the cell emission (`GridDecoder::candidates`); they are cached beside the
+//! contour. `--cand-diag` prints how often the lead's pitch is pYIN's f0 or a
+//! top-k candidate, monophonic vs polyphonic.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use sona_core::grid::CandidateEvidence;
+use sona_core::pitch::{HarmonicSalience, PitchCandidate};
 use sona_core::{Annotation, F0Frame, GridDecoder, GridSpec, PYin, PitchTracker, Producer, Transcriber};
 use sona_eval::estimate::EstNote;
 use sona_eval::metrics::note::{match_notes, NoteParams};
@@ -28,8 +35,13 @@ struct Item {
     samples: Vec<f32>,
     sr: u32,
     contour: Vec<F0Frame>,
+    /// Per-frame harmonic-salience pitch candidates, aligned with `contour`;
+    /// loaded only when a config weighs them (`c.*`) or `--cand-diag` asks.
+    cands: Option<Vec<Vec<PitchCandidate>>>,
     grid: Option<Grid>,
     refs: Vec<RefNote>,
+    /// Every other voice's notes (harmonies, other lead parts' overlaps).
+    others: Vec<RefNote>,
     poly: Vec<(f64, f64)>,
 }
 
@@ -52,7 +64,7 @@ fn cache_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ust-dev-cache"))
 }
 
-fn tracker_key(p: &PYin) -> String {
+fn tracker_key(p: &impl std::fmt::Debug) -> String {
     let s = format!("{p:?}");
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
@@ -73,6 +85,24 @@ fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec
     std::fs::create_dir_all(cache_dir()).map_err(|e| EvalError::io(cache_dir(), e))?;
     let text = serde_json::to_string(&c).map_err(|e| EvalError::parse(&path, e.to_string()))?;
     // Write-then-rename, so parallel runs sharing SONA_DEV_CACHE never read a torn file.
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| EvalError::io(&tmp, e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| EvalError::io(&path, e))?;
+    Ok(c)
+}
+
+fn cands_cached(id: &str, samples: &[f32], sr: u32) -> Result<Vec<Vec<PitchCandidate>>, EvalError> {
+    let hs = HarmonicSalience::default();
+    let path = cache_dir().join(format!("{id}.hs{}.cand.json", tracker_key(&hs)));
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Ok(c) = serde_json::from_str(&text) {
+            return Ok(c);
+        }
+    }
+    eprintln!("  harmonic salience for {id} (cached after this run)…");
+    let c = hs.track(samples, sr);
+    std::fs::create_dir_all(cache_dir()).map_err(|e| EvalError::io(cache_dir(), e))?;
+    let text = serde_json::to_string(&c).map_err(|e| EvalError::parse(&path, e.to_string()))?;
     let tmp = path.with_extension(format!("tmp{}", std::process::id()));
     std::fs::write(&tmp, text).map_err(|e| EvalError::io(&tmp, e))?;
     std::fs::rename(&tmp, &path).map_err(|e| EvalError::io(&path, e))?;
@@ -114,6 +144,20 @@ fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
         "g.estimate_tuning" => g.estimate_tuning = f()? != 0.0,
         "g.fill_gap_cells" => g.fill_gap_cells = f()? as u32,
         "g.phase_candidates" => g.phase_candidates = f()? as usize,
+        "cands" => g.candidates = (f()? != 0.0).then(CandidateEvidence::default),
+        k if k.starts_with("c.") => {
+            let e = g.candidates.get_or_insert_with(CandidateEvidence::default);
+            match k {
+                "c.weight" => e.weight = f()? as f32,
+                "c.rank_cost" => e.rank_cost = f()? as f32,
+                "c.rest_cost" => e.rest_cost = f()? as f32,
+                "c.rest_pow" => e.rest_pow = f()? as f32,
+                "c.pct" => e.strength_percentile = f()? as f32,
+                "c.contour_weight" => e.contour_weight = f()? as f32,
+                "c.lag_s" => e.lag_s = f()?,
+                _ => return Err(format!("unknown knob {k}")),
+            }
+        }
         _ => return apply_t(&mut cfg.t, key, val),
     }
     Ok(())
@@ -166,7 +210,8 @@ fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
     let segs = match (&it.grid, cfg.grid) {
         (Some(g), GridChoice::Estimated | GridChoice::UstAnchor) => {
             let anchor = (cfg.grid == GridChoice::UstAnchor).then_some(g.opts.anchor);
-            cfg.cell.segment(&GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor }, &onset.onsets, &it.contour, &onset.energy_envelope)
+            let cands = it.cands.as_deref().unwrap_or(&[]);
+            cfg.cell.segment_with_candidates(&GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor }, &onset.onsets, &it.contour, cands, &onset.energy_envelope)
         }
         _ => t.segmenter.segment(&onset.onsets, &it.contour, &onset.energy_envelope),
     };
@@ -198,11 +243,21 @@ struct Counts {
     conp: usize,
     conpoff: usize,
     cells: [(usize, usize); 4],
+    /// Sung lead cells in polyphonic regions: right, rest, a harmony's pitch,
+    /// octave error, other pitch.
+    poly_cells: [usize; 5],
 }
 
 impl Counts {
     fn of(refs: &[RefNote], est: &[EstNote], p: &NoteParams) -> Self {
-        Counts { n_ref: refs.len(), n_est: est.len(), conp: match_notes(refs, est, p, false).len(), conpoff: match_notes(refs, est, p, true).len(), cells: [(0, 0); 4] }
+        Counts {
+            n_ref: refs.len(),
+            n_est: est.len(),
+            conp: match_notes(refs, est, p, false).len(),
+            conpoff: match_notes(refs, est, p, true).len(),
+            cells: [(0, 0); 4],
+            poly_cells: [0; 5],
+        }
     }
     fn add(&mut self, o: Counts) {
         self.n_ref += o.n_ref;
@@ -213,6 +268,9 @@ impl Counts {
             self.cells[i].0 += o.cells[i].0;
             self.cells[i].1 += o.cells[i].1;
         }
+        for i in 0..5 {
+            self.poly_cells[i] += o.poly_cells[i];
+        }
     }
     fn conp(&self) -> Prf1 {
         Prf1::from_counts(self.conp, self.n_ref, self.n_est)
@@ -222,10 +280,14 @@ impl Counts {
     }
 }
 
-fn cell_accuracy(refs: &[RefNote], est: &[EstNote], poly: &[(f64, f64)], spacing: f64, anchor: f64) -> [(usize, usize); 4] {
+type CellStats = ([(usize, usize); 4], [usize; 5]);
+
+fn cell_accuracy(it: &Item, est: &[EstNote], spacing: f64, anchor: f64) -> CellStats {
+    let (refs, poly) = (&it.refs, &it.poly);
     let mut out = [(0, 0); 4];
+    let mut pc = [0usize; 5];
     let (Some(first), Some(last)) = (refs.iter().map(|r| r.onset_s).reduce(f64::min), refs.iter().map(|r| r.offset_s).reduce(f64::max)) else {
-        return out;
+        return (out, pc);
     };
     fn at(v: impl Iterator<Item = (f64, f64, u8)>, t: f64) -> Option<u8> {
         v.filter(|n| n.0 <= t && t < n.1).map(|n| n.2).next()
@@ -246,14 +308,23 @@ fn cell_accuracy(refs: &[RefNote], est: &[EstNote], poly: &[(f64, f64)], spacing
         if mono {
             add(1);
         }
-        if r.is_some() {
+        if let Some(rp) = r {
             add(2);
             if mono {
                 add(3);
+            } else {
+                let harm = |p: u8| it.others.iter().any(|n| n.onset_s <= t && t < n.offset_s && n.midi_pitch == p);
+                pc[match e {
+                    Some(p) if p == rp => 0,
+                    None => 1,
+                    Some(p) if harm(p) => 2,
+                    Some(p) if (p as i32 - rp as i32).abs() == 12 => 3,
+                    Some(_) => 4,
+                }] += 1;
             }
         }
     }
-    out
+    (out, pc)
 }
 
 fn score_item(t: &Cfg, it: &Item, p: &NoteParams) -> (Vec<Counts>, Annotation) {
@@ -263,14 +334,18 @@ fn score_item(t: &Cfg, it: &Item, p: &NoteParams) -> (Vec<Counts>, Annotation) {
         return (vec![Counts::of(&it.refs, &raw, p)], a);
     };
     let quant = est(&a, Some(&g.opts));
+    let (cells, poly_cells) = cell_accuracy(it, &quant, g.opts.spacing, g.opts.anchor);
     let mono_refs: Vec<RefNote> = it.refs.iter().copied().filter(|r| !overlaps_any(&it.poly, r.onset_s, r.offset_s)).collect();
     let mono = |v: &[EstNote]| -> Vec<EstNote> { v.iter().copied().filter(|n| !overlaps_any(&it.poly, n.onset_s, n.offset_s)).collect() };
     (
         vec![
             Counts::of(&it.refs, &raw, p),
-            Counts { cells: cell_accuracy(&it.refs, &quant, &it.poly, g.opts.spacing, g.opts.anchor), ..Counts::of(&it.refs, &quant, p) },
+            Counts { cells, poly_cells, ..Counts::of(&it.refs, &quant, p) },
             Counts::of(&mono_refs, &mono(&raw), p),
             Counts::of(&mono_refs, &mono(&quant), p),
+            // Mono references against the whole line: unlike [3], a note that
+            // runs on into a polyphonic span still counts.
+            Counts::of(&mono_refs, &quant, p),
         ],
         a,
     )
@@ -294,7 +369,7 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
     slots.into_iter().map(|r| r.expect("processed")).collect()
 }
 
-fn load_ust_items(split: &str, pyin: &PYin, stem: &str) -> Result<Vec<Item>, EvalError> {
+fn load_ust_items(split: &str, pyin: &PYin, stem: &str, with_cands: bool) -> Result<Vec<Item>, EvalError> {
     let file = format!("{stem}.wav");
     let manifest = Manifest::load(&manifest_path())?;
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
@@ -313,13 +388,20 @@ fn load_ust_items(split: &str, pyin: &PYin, stem: &str) -> Result<Vec<Item>, Eva
         let (samples, sr) = wav::read_mono(&stems.join(&song.id).join(&file))?;
         let key = if stem == "vocals" { song.id.clone() } else { format!("{}.{stem}", song.id) };
         let contour = contour_cached(&key, &samples, sr, pyin)?;
+        let cands = if with_cands { Some(cands_cached(&key, &samples, sr)?) } else { None };
+        let mut others: Vec<RefNote> = usts.other.iter().flat_map(|u| u.to_reference(offset).notes).collect();
+        if usts.lead.len() > 1 {
+            others.extend(usts.lead.iter().flat_map(|u| u.to_reference(offset).notes));
+        }
         Ok(Item {
             id: song.id.clone(),
             samples,
             sr,
             contour,
+            cands,
             grid: Some(Grid { opts: QuantizeOptions::new(spacing, offset), bpm, division: song.grid_division.unwrap_or(16) }),
             refs: usts.reference(offset).notes,
+            others,
             poly: usts.polyphonic_spans(offset),
         })
     });
@@ -334,7 +416,8 @@ fn load_vocadito(pyin: &PYin) -> Result<Vec<Item>, EvalError> {
         let (samples, sr) = wav::read_mono(&track.audio)?;
         let id = format!("vocadito-{}", track.audio.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
         let contour = contour_cached(&id, &samples, sr, pyin)?;
-        Ok(Item { id, samples, sr, contour, grid: None, refs, poly: Vec::new() })
+        // Vocadito has no grid, so grid mode (and its candidates) never runs.
+        Ok(Item { id, samples, sr, contour, cands: None, grid: None, refs, others: Vec::new(), poly: Vec::new() })
     })
     .into_iter()
     .collect()
@@ -359,6 +442,7 @@ fn run() -> Result<(), String> {
     let mut stem = "vocals".to_string();
     let (mut reason, mut reread): (Option<String>, bool) = (None, false);
     let mut pyin = PYin::default();
+    let mut cand_diag = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -385,6 +469,7 @@ fn run() -> Result<(), String> {
                 stem = args.get(i).ok_or("--stem needs vocals|lead")?.clone();
             }
             "--diag" => diag = true,
+            "--cand-diag" => cand_diag = true,
             "--per-song" => per_song = true,
             "--dump" => {
                 i += 1;
@@ -408,12 +493,16 @@ fn run() -> Result<(), String> {
         let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
         sona_eval::holdout::authorize(&manifest, "sona-eval-ust-dev", reason.as_deref(), reread)?;
     }
-    let items = load_ust_items(&split, &pyin, &stem).map_err(|e| e.to_string())?;
+    let with_cands = cand_diag || cfgs.iter().any(|(_, c)| c.cell.candidates.is_some());
+    let items = load_ust_items(&split, &pyin, &stem, with_cands).map_err(|e| e.to_string())?;
     if items.is_empty() {
         return Err(format!("no {split} songs have a {stem}.wav stem (for lead, run scripts/separate-lead.sh)"));
     }
     let voc = if with_voc { load_vocadito(&pyin).map_err(|e| e.to_string())? } else { Vec::new() };
     eprintln!("{} {split} songs ({stem} stems){}", items.len(), if with_voc { format!(" + {} Vocadito stems", voc.len()) } else { String::new() });
+    if cand_diag {
+        print_cand_oracle(&items);
+    }
 
     println!(
         "{:<22} | {:^31} | {:^19} | {:^13} | {:^13}",
@@ -425,10 +514,10 @@ fn run() -> Result<(), String> {
     );
     for (ci, (name, t)) in cfgs.iter().enumerate() {
         let scored = parallel_map(&items, |it| score_item(t, it, &params));
-        let mut tot = [Counts::default(); 4];
+        let mut tot = [Counts::default(); 5];
         for (v, _) in &scored {
-            for k in 0..4 {
-                tot[k].add(v[k]);
+            for (k, c) in v.iter().enumerate() {
+                tot[k].add(*c);
             }
         }
         let vtxt = if with_voc {
@@ -458,6 +547,19 @@ fn run() -> Result<(), String> {
         println!(
             "{:<22}   cell accuracy (quantized, vs UST): all {:.1}% · mono {:.1}% · sung cells {:.1}% · sung mono {:.1}%",
             "", pc(c[0]), pc(c[1]), pc(c[2]), pc(c[3])
+        );
+        let b = tot[1].poly_cells;
+        let n: usize = b.iter().sum();
+        let f = |x: usize| 100.0 * x as f64 / n.max(1) as f64;
+        println!(
+            "{:<22}   poly sung cells (n={n}): right {:.1}% · rest {:.1}% · harmony {:.1}% · octave {:.1}% · other {:.1}%",
+            "", f(b[0]), f(b[1]), f(b[2]), f(b[3]), f(b[4])
+        );
+        println!(
+            "{:<22}   monophonic reference notes matched by the whole line (quantized): COnP {:.1}% · COnPOff {:.1}%",
+            "",
+            100.0 * tot[4].conp().recall,
+            100.0 * tot[4].conpoff().recall
         );
         if per_song {
             for (it, (v, _)) in items.iter().zip(&scored) {
@@ -557,3 +659,44 @@ fn print_diag(items: &[Item], scored: &[(Vec<Counts>, Annotation)], p: &NotePara
     }
 }
 
+
+/// Oracle for multi-candidate evidence: over sung lead frames, how often the
+/// lead's pitch is pYIN's f0, or among a frame's top-k candidates, split
+/// monophonic / polyphonic.
+fn print_cand_oracle(items: &[Item]) {
+    // [mono, poly] x [pYIN f0 right, top-1, top-2, top-3, top-5, frames]
+    let mut acc = [[0usize; 6]; 2];
+    for it in items {
+        let Some(cands) = &it.cands else { continue };
+        let semi = |hz: f32| 69.0 + 12.0 * (hz / 440.0).log2();
+        let (mut x, mut y) = (0.0f64, 0.0f64);
+        for f in it.contour.iter().filter(|f| f.frequency_hz > 0.0) {
+            let v = semi(f.frequency_hz);
+            let a = std::f64::consts::TAU * (v - v.round()) as f64;
+            x += a.cos();
+            y += a.sin();
+        }
+        let tune = (y.atan2(x) / std::f64::consts::TAU) as f32;
+        let near = |hz: f32, r: u8| hz > 0.0 && (semi(hz) - tune - r as f32).abs() < 0.5;
+        for (fi, f) in it.contour.iter().enumerate() {
+            let t = f.time_s;
+            let Some(r) = it.refs.iter().find(|n| n.onset_s <= t && t < n.offset_s).map(|n| n.midi_pitch) else { continue };
+            let m = overlaps_any(&it.poly, t, t + 1e-3) as usize;
+            let c = &cands[fi];
+            let a = &mut acc[m];
+            a[0] += near(f.frequency_hz, r) as usize;
+            for (slot, k) in [(1usize, 1usize), (2, 2), (3, 3), (4, 5)] {
+                a[slot] += c.iter().take(k).any(|c| near(c.frequency_hz, r)) as usize;
+            }
+            a[5] += 1;
+        }
+    }
+    for (m, name) in [(0, "mono"), (1, "poly")] {
+        let a = acc[m];
+        let pc = |x: usize| 100.0 * x as f64 / a[5].max(1) as f64;
+        println!(
+            "  cand oracle, {name} sung frames (n={}): pYIN f0 right {:.1}% · cand top1 {:.1}% · top2 {:.1}% · top3 {:.1}% · top5 {:.1}%",
+            a[5], pc(a[0]), pc(a[1]), pc(a[2]), pc(a[3]), pc(a[4])
+        );
+    }
+}
