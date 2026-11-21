@@ -2,7 +2,7 @@
 //! on the songs it targets, quantized and raw, per stratum — never pooled across.
 //!
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate               # UST corpus, dev split
-//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --include-holdout --reason "…"  # + holdout (logged)
+//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --include-split holdout2 --reason "…"  # + a held-out split (logged)
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --vocadito # + baseline
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid     # cell decoder (ADR-0015)
 //!
@@ -257,7 +257,10 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let with_vocadito = args.iter().any(|a| a == "--vocadito");
     let grid_mode = args.iter().any(|a| a == "--grid");
-    let holdout = args.iter().any(|a| a == "--include-holdout").then(|| HoldoutRead {
+    let named = args.iter().position(|a| a == "--include-split").and_then(|i| args.get(i + 1)).cloned();
+    let split = named.or_else(|| args.iter().any(|a| a == "--include-holdout").then(|| "holdout".to_string()));
+    let holdout = split.map(|split| HoldoutRead {
+        split,
         reason: args.iter().position(|a| a == "--reason").and_then(|i| args.get(i + 1)).cloned(),
         reread: args.iter().any(|a| a == "--reread"),
     });
@@ -270,8 +273,10 @@ fn main() -> ExitCode {
     }
 }
 
-/// `--include-holdout --reason "…" [--reread]`: also score the holdout split (logged).
+/// `--include-split NAME --reason "…" [--reread]` (`--include-holdout` = `--include-split holdout`):
+/// also score that held-out split. Logged in the holdout ledger.
 struct HoldoutRead {
+    split: String,
     reason: Option<String>,
     reread: bool,
 }
@@ -282,10 +287,10 @@ fn run(with_vocadito: bool, grid_mode: bool, holdout: Option<HoldoutRead>) -> Re
     }
     let manifest = Manifest::load(&manifest_path())?;
     if let Some(h) = &holdout {
-        sona_eval::holdout::authorize(&manifest, "sona-eval-ust-gate", h.reason.as_deref(), h.reread)
+        sona_eval::holdout::authorize(&manifest, &h.split, "sona-eval-ust-gate", h.reason.as_deref(), h.reread)
             .map_err(|e| EvalError::parse(sona_eval::holdout::ledger_path(), e))?;
     } else {
-        println!("Scoring the dev split only (add --include-holdout --reason \"…\" to read the holdout; it is logged).\n");
+        println!("Scoring the dev split only (add --include-split NAME --reason \"…\" to read a held-out split; it is logged).\n");
     }
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let params = NoteParams::default();
@@ -295,7 +300,9 @@ fn run(with_vocadito: bool, grid_mode: bool, holdout: Option<HoldoutRead>) -> Re
     // score, one song per worker — songs are independent and pYIN is the cost.
     let mut eligible: Vec<(&Song, f64)> = Vec::new();
     for song in &manifest.songs {
-        if holdout.is_none() && song.split.as_deref() == Some("holdout") {
+        // Dev always; a held-out split only when asked for (and logged above).
+        let wanted = song.split.as_deref() == Some("dev") || holdout.as_ref().is_some_and(|h| song.split.as_deref() == Some(h.split.as_str()));
+        if !wanted {
             continue;
         }
         let status = song.alignment_status.clone().unwrap_or_else(|| "not aligned".into());
@@ -427,7 +434,7 @@ fn print_stratum(stratum: &str, results: &[SongResult], grid_mode: bool) {
     }
     print_bootstrap(&rs);
     // Per split: iterate on `dev` only; `holdout` is read once, at the end.
-    for split in ["dev", "holdout"] {
+    for split in ["dev", "holdout", "holdout2"] {
         let part: Vec<&&SongResult> = rs.iter().filter(|r| r.split == split).collect();
         if part.is_empty() {
             continue;

@@ -1,4 +1,5 @@
-//! The holdout ledger: reading the UST corpus's `holdout` split leaves a trace.
+//! The holdout ledger: reading any held-out split of the UST corpus (every split
+//! but `dev`: `holdout`, `holdout2`, …) leaves a trace.
 //!
 //! The holdout exists to confirm a result once, after tuning on `dev`. A second
 //! read of the same songs is how a tuning loop quietly starts fitting it, so
@@ -16,9 +17,9 @@ pub fn ledger_path() -> PathBuf {
     manifest_path().with_file_name("holdout-reads.jsonl")
 }
 
-/// The holdout song ids, sorted, joined: the identity of "this holdout".
-pub fn holdout_set(manifest: &Manifest) -> String {
-    let mut ids: Vec<&str> = manifest.songs.iter().filter(|s| s.split.as_deref() == Some("holdout")).map(|s| s.id.as_str()).collect();
+/// The song ids of a held-out `split`, sorted, joined: the identity of "this holdout".
+pub fn holdout_set(manifest: &Manifest, split: &str) -> String {
+    let mut ids: Vec<&str> = manifest.songs.iter().filter(|s| s.split.as_deref() == Some(split)).map(|s| s.id.as_str()).collect();
     ids.sort_unstable();
     ids.join(",")
 }
@@ -33,9 +34,12 @@ pub fn prior_reads(set: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Allow a holdout read and log it, or explain why not.
-pub fn authorize(manifest: &Manifest, tool: &str, reason: Option<&str>, reread: bool) -> Result<(), String> {
-    let set = holdout_set(manifest);
+/// Allow a read of a held-out `split` (anything but `dev`) and log it, or explain why not.
+pub fn authorize(manifest: &Manifest, split: &str, tool: &str, reason: Option<&str>, reread: bool) -> Result<(), String> {
+    let set = holdout_set(manifest, split);
+    if set.is_empty() {
+        return Err(format!("the manifest has no songs in split {split:?}"));
+    }
     let Some(reason) = reason.map(str::trim).filter(|r| !r.is_empty()) else {
         return Err("reading the holdout needs --reason \"<what this read confirms>\"; it is logged in corpus/holdout-reads.jsonl".into());
     };
@@ -56,7 +60,7 @@ pub fn authorize(manifest: &Manifest, tool: &str, reason: Option<&str>, reread: 
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
     let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let entry = serde_json::json!({ "unix_time": when, "commit": commit, "tool": tool, "reason": reason, "reread": reread, "set": set });
+    let entry = serde_json::json!({ "unix_time": when, "commit": commit, "tool": tool, "split": split, "reason": reason, "reread": reread, "set": set });
     let path = ledger_path();
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     writeln!(f, "{entry}").map_err(|e| format!("{}: {e}", path.display()))?;

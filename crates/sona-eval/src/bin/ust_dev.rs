@@ -1,6 +1,7 @@
 //! **Dev-split iteration harness** for the in-domain UST corpus: score one or
-//! more segmentation configs on the manifest's `dev` songs (`--holdout-once`
-//! reads the holdout instead), with Vocadito as a no-regression guard.
+//! more segmentation configs on the manifest's `dev` songs (`--split NAME
+//! --reason "…"` reads a held-out split instead, logged), with Vocadito as a
+//! no-regression guard.
 //!
 //! ```sh
 //! cargo run --release -p sona-eval --bin sona-eval-ust-dev -- \
@@ -520,6 +521,10 @@ fn run() -> Result<(), String> {
                 dump = Some(PathBuf::from(args.get(i).ok_or("--dump needs a dir")?));
             }
             "--holdout-once" => split = "holdout".into(),
+            "--split" => {
+                i += 1;
+                split = args.get(i).ok_or("--split needs a split name")?.clone();
+            }
             "--reason" => {
                 i += 1;
                 reason = Some(args.get(i).ok_or("--reason needs text")?.clone());
@@ -533,9 +538,9 @@ fn run() -> Result<(), String> {
         cfgs.push(parse_cfg("base:")?);
     }
     let params = NoteParams::default();
-    if split == "holdout" {
+    if split != "dev" {
         let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
-        sona_eval::holdout::authorize(&manifest, "sona-eval-ust-dev", reason.as_deref(), reread)?;
+        sona_eval::holdout::authorize(&manifest, &split, "sona-eval-ust-dev", reason.as_deref(), reread)?;
     }
     let with_cands = cand_diag || cfgs.iter().any(|(_, c)| c.cell.candidates.is_some());
     let items = load_ust_items(&split, &pyin, &stem, with_cands).map_err(|e| e.to_string())?;

@@ -1,5 +1,5 @@
 {
-  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev).",
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl.",
   "channel": "https://www.youtube.com/@pifuyuu",
   "selected_on": "2026-11-20",
   "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
@@ -649,6 +649,334 @@
       },
       "split": "holdout",
       "notes": null
+    },
+    {
+      "id": "tengai",
+      "expected_title": "天涯",
+      "ust_zip": "天涯.zip",
+      "ust_zip_sha256": "a21675144caebed551e2297486b852b5b16095c095bfa27a3fca634fd2b7695d",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high1.ust",
+        "cho-high2.ust",
+        "cho-low.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=kynK1sfIf-4",
+      "original_title": "天涯 / 洛天依",
+      "original_duration_s": 154.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=TOeBczq4vWU",
+      "upload_date": "2026-10-22",
+      "stratum": "vocaloid-original",
+      "voice": "洛天依 (VOCALOID / Synthesizer V)",
+      "stratum_evidence": "original's title credits 洛天依; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 132.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "cinema-mitaina",
+      "expected_title": "シネマみたいな",
+      "ust_zip": "シネマみたいな.zip",
+      "ust_zip_sha256": "a64f21588e9e24910cecd108f5231602bba204c411b2b61712d4ae696bb69e97",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1-high.ust",
+        "cho1-low.ust",
+        "cho2-high.ust",
+        "cho2-low.ust",
+        "low1.ust",
+        "low2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=wZtr9JO5JMA",
+      "original_title": "シネマみたいな - 重音テト",
+      "original_duration_s": 124.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=9b8-TsoeCUc",
+      "upload_date": "2026-10-19",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト (UTAU / Synthesizer V)",
+      "stratum_evidence": "original's title credits 重音テト; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 200.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "kieru-mama",
+      "expected_title": "消える侭",
+      "ust_zip": "消える侭.zip",
+      "ust_zip_sha256": "d992593d551e6d872d2e21e4c18d8e57b50826398870fffbd432367ec0e4b23e",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://youtu.be/kqrFCzy5AXQ",
+      "original_title": "消える侭 / デフォ子",
+      "original_duration_s": 140.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=SmWAr9JQRP4",
+      "upload_date": "2026-10-15",
+      "stratum": "vocaloid-original",
+      "voice": "デフォ子 (UTAU)",
+      "stratum_evidence": "original's title credits デフォ子; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 180.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "over-dreamin",
+      "expected_title": "OVER DREAMIN’",
+      "ust_zip": "OVER DREAMIN’.zip",
+      "ust_zip_sha256": "75339f3eb7eb1b19d66d10ab3dd8143cf099ddf288c9e812ac868101da62b717",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=GIUoMS5wcqg",
+      "original_title": "【MV】OVER DREAMIN’ / Sumia feat.重音テト",
+      "original_duration_s": 136.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=dxf5GOnYiv0",
+      "upload_date": "2026-10-15",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト (UTAU / Synthesizer V)",
+      "stratum_evidence": "original's title credits 重音テト; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 160.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "jumble-jungle",
+      "expected_title": "Jumble Jungle",
+      "ust_zip": "Jumble Jungle.zip",
+      "ust_zip_sha256": "9c412ef13867b8315e4c5ba190cd29db89cda93d947f55574cab1ad933848664",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=aEiUnByVplU",
+      "original_title": "Jumble Jungle／164 feat.鏡音レン",
+      "original_duration_s": 241.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=ZbR6Txm4Y_g",
+      "upload_date": "2026-10-11",
+      "stratum": "vocaloid-original",
+      "voice": "鏡音レン (VOCALOID)",
+      "stratum_evidence": "original's title credits 鏡音レン; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 140.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "one",
+      "expected_title": "1",
+      "ust_zip": "1.zip",
+      "ust_zip_sha256": "17c17152c63cf95675e379275bbd28231f0ab6cc2e14481febdb8bf17e13e8a4",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=edMPfBdm2h0",
+      "original_title": "1 / feat.鳴花ヒメ",
+      "original_duration_s": 188.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=j-p_ErnA9ZA",
+      "upload_date": "2026-10-10",
+      "stratum": "vocaloid-original",
+      "voice": "鳴花ヒメ (synthesized voicebank)",
+      "stratum_evidence": "original's title credits 鳴花ヒメ; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 173.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "lady-bug",
+      "expected_title": "LADY BUG",
+      "ust_zip": "LADY BUG.zip",
+      "ust_zip_sha256": "9351b0cc4d80b592b34f49e180c4d6c6d66285fecceef526d57f93aa6caf3187",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "cho-low2.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=_Sxchpt6ZBA",
+      "original_title": "LADY BUG / 巡音ルカ - ナナホシ管弦楽団",
+      "original_duration_s": 196.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=5GLaQqyri7E",
+      "upload_date": "2026-10-09",
+      "stratum": "vocaloid-original",
+      "voice": "巡音ルカ (VOCALOID)",
+      "stratum_evidence": "original's title credits 巡音ルカ; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 162.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "shinki-mousou-heki",
+      "expected_title": "心気妄想壁",
+      "ust_zip": "心気妄想壁.zip",
+      "ust_zip_sha256": "b79335b9f7b3daaa2a5311cf354c526c735f4808184c3c508d840f2696d2ba31",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=n-DXeT6MxV4",
+      "original_title": "【初音ミク】心気妄想壁【オリジナル曲】",
+      "original_duration_s": 162.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=gM3lKQBuF7Q",
+      "upload_date": "2026-10-09",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 142.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "teni-suru-bug",
+      "expected_title": "転移するバグ",
+      "ust_zip": "転移するバグ.zip",
+      "ust_zip_sha256": "897ae9db188b00cb850ece352ab32df3f94ab111190228dd4fee11b24436595b",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=M_e-tNqo1p8",
+      "original_title": "転移するバグ　/　MidLuster feat.結月ゆかり",
+      "original_duration_s": 136.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=wc7l9HlnKgQ",
+      "upload_date": "2026-10-06",
+      "stratum": "vocaloid-original",
+      "voice": "結月ゆかり (VOCALOID / VOICEROID)",
+      "stratum_evidence": "original's title credits 結月ゆかり; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 178.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
+    },
+    {
+      "id": "kajikamu-suigin",
+      "expected_title": "悴む水銀",
+      "ust_zip": "悴む水銀.zip",
+      "ust_zip_sha256": "e7c0f71f406a2cb9fccae4aa3b45aeebf06968dca16ae36d5216e14d5661a4f3",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1.ust",
+        "cho2.ust"
+      ],
+      "original_url": "https://youtu.be/UtBU43mO7ro",
+      "original_title": "悴む水銀 / SF-A2 開発コードmiki SV",
+      "original_duration_s": 208.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=nIV7Msx2eho",
+      "upload_date": "2026-10-01",
+      "stratum": "vocaloid-original",
+      "voice": "SF-A2 開発コードmiki (Synthesizer V)",
+      "stratum_evidence": "original's title credits SF-A2 開発コードmiki; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 135.0,
+      "grid_division": 16,
+      "alignment_offset_s": null,
+      "alignment_status": null,
+      "stem": {
+        "model": null,
+        "version": null,
+        "path": null
+      },
+      "split": "holdout2",
+      "notes": null
     }
   ],
   "excluded": [
@@ -656,6 +984,11 @@
       "title": "キミアイギミー",
       "cover_video_url": "https://www.youtube.com/watch?v=i4K4yrAyuaU",
       "reason": "two tempos: the sung intro (intro.ust) is 109 BPM, the rest of the song (main.ust and every other voice) 129 BPM. The corpus requires one exact BPM per song, and dropping the intro would leave lead singing out of the reference."
+    },
+    {
+      "title": "虚飾",
+      "cover_video_url": "https://www.youtube.com/watch?v=CT_ITC9QGQY",
+      "reason": "no resolvable original: the linked original (quMByzKHLbU) is a private video (checked 2026-11-21)"
     }
   ]
 }
