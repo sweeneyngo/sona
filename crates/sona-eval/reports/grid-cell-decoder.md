@@ -159,6 +159,33 @@ What each worker learned:
 - **Both features are now grid mode's defaults.**
 - **Absolute level:** below dev (70% against 80%). holdout2 is more polyphonic, and cinema-mitaina (38%) needs a data check.
 
+## Toward 90%: where the remaining 20.5% of wrong cells are (dev, vocal stems, defaults)
+
+| error | share of all cells | monophonic / polyphonic | at a note's first or last cell |
+|---|---|---|---|
+| UST sings, sona rests | 8.3% | 399 / 1506 cells | 71% |
+| UST rests, sona sings | 4.2% | 527 / 426 | (n/a) |
+| wrong pitch ±1 | 3.2% | 267 / 460 | 69% |
+| wrong pitch ±2 | 2.0% | 149 / 299 | 78% |
+| wrong pitch, other | 1.8% | 65 / 344 | 65% |
+| wrong pitch ±12 | 1.3% | 9 / 294 | 60% |
+
+- **Boundaries dominate.** 56% of wrong cells are a note's first or last cell: a boundary one cell off, not a wrong note.
+- **Onsets** are 78% exact, 9% one cell late and 4% one cell early. On amaten, 37% are one cell late.
+- **Rest-terminated offsets** are only 48% exact, and miss in both directions.
+- **Phase is not the cause.** Every dev song's estimated grid phase is within ¼ cell of the UST's.
+- **The mechanism.** In the late onsets, the new note's first cell is unvoiced in pYIN (its consonant), so nothing argues for the change there, and the decoder extends the previous note.
+- **azemichi** accounts for most of "UST rests, sona sings" (15% of its cells), probably singing the UST doesn't transcribe.
+
+Tried on dev and rejected (default-off knobs, removed again):
+
+| idea | best result (cells, all) |
+|---|---|
+| core-weighted emission (head/tail frames of a cell down-weighted) | 79.1% (from 79.5%): worse at every setting |
+| onset-cue bonus on note starts, from the spectral cue's log-odds | all starts: sung cells +1.4 but spurious notes, all cells 79.7%; pitch changes only: 79.6% (+0.1) |
+
+The consonant evidence the spectral cue sees at those lines isn't distinctive enough to place them. The next levers are a stronger front end: a neural f0, or note-onset models from the singing-transcription literature (a research swarm is surveying them).
+
 ## Next
 
 0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy:
