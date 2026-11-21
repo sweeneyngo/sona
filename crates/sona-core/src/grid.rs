@@ -13,6 +13,7 @@ use crate::annotation::{EnergyFrame, F0Frame};
 use crate::onset::Onset;
 use crate::pitch::PitchCandidate;
 use crate::segment::{drop_steepness, hz_to_midi, NoteSegment, OffsetInfo, OffsetKind};
+use crate::timbre::TimbreFrames;
 
 /// The grid a stem is decoded on.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +74,10 @@ pub struct GridDecoder {
     /// Note → rest.
     pub offset_cost: f32,
     /// Same-pitch re-articulation, before the cue discount.
+    ///
+    /// Continuing a note is free and leads to the same states as re-articulating
+    /// it, so a line re-articulates only where this cost is discounted to zero:
+    /// the decision is the threshold `cue ≥ rearticulate_cost / cue_weight`.
     pub rearticulate_cost: f32,
     /// How much a full-strength re-articulation cue discounts that cost.
     pub cue_weight: f32,
@@ -98,6 +103,8 @@ pub struct GridDecoder {
     /// this is set; [`segment_with_candidates`](Self::segment_with_candidates)
     /// takes them directly.
     pub candidates: Option<CandidateEvidence>,
+    /// What scores a same-pitch re-articulation at a grid line.
+    pub cue_model: CueModel,
 }
 
 /// How the cell emission weighs pitch candidates (see [`GridDecoder::candidates`]).
@@ -143,6 +150,78 @@ impl Default for CandidateEvidence {
     }
 }
 
+
+/// The evidence for a same-pitch re-articulation (a new syllable on a held
+/// pitch) at a grid line.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CueModel {
+    /// `(0.75 − min voicing)⁺ + (0.9 − energy dip)⁺` over ±40 ms; the
+    /// re-articulation costs `(rearticulate_cost − cue_weight · cue)⁺`.
+    #[default]
+    VoicingEnergy,
+    /// A logistic model on spectral flux and the spectral-envelope change; needs
+    /// [`TimbreFrames`] (see [`GridDecoder::segment_with_timbre`]). Without
+    /// them the decoder falls back to [`CueModel::VoicingEnergy`].
+    Spectral(SpectralCue),
+}
+
+/// Logistic re-articulation model on [`TimbreFrames`]. Its log-odds `L` at a
+/// grid line `a` is
+/// `flux · ln(max flux in a ± 20 ms + 0.01) + ceps · ‖c̄[a−80, a−10 ms) − c̄[a+20, a+90 ms)‖
+/// + flux_lo · ln(max low-band flux in a ± 40 ms + 0.01) + bias`
+/// (`c̄` is the mean cepstrum over the span). A held note re-articulates at the
+/// line when `L ≥ threshold`.
+///
+/// On the dev songs' same-pitch lines it separates re-articulations from held
+/// lines with a leave-one-song-out AUC of 0.80 per song (the voicing/energy cue:
+/// 0.69).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpectralCue {
+    /// Weight on the log peak spectral flux near the line.
+    pub flux: f32,
+    /// Weight on the cepstral distance between the two sides of the line.
+    pub ceps: f32,
+    /// Weight on the log peak low-band (< 1 kHz) flux near the line.
+    pub flux_lo: f32,
+    /// Intercept (the base rate is about 1 re-articulation in 8 held lines).
+    pub bias: f32,
+    /// Log-odds at or above which a held note re-articulates.
+    pub threshold: f32,
+}
+
+impl Default for SpectralCue {
+    /// Weights fitted on the dev songs' same-pitch grid lines (lead stems).
+    fn default() -> Self {
+        Self { flux: 3.387, ceps: 0.992, flux_lo: 1.748, bias: -4.650, threshold: -1.5 }
+    }
+}
+
+impl SpectralCue {
+    /// Log-odds that the grid line at `a` (seconds) starts a new syllable.
+    pub fn log_odds(&self, tf: &TimbreFrames, a: f64) -> f32 {
+        let at = |t: f64| tf.time_s.partition_point(|&x| x < t);
+        let peak = |v: &[f32], h: f64| v.get(at(a - h)..at(a + h)).map_or(0.0, |w| w.iter().copied().fold(0.0f32, f32::max));
+        let mean = |t0: f64, t1: f64| {
+            let (i0, i1) = (at(t0), at(t1).min(tf.ceps.len()));
+            (i1 > i0).then(|| {
+                let mut m = [0.0f32; crate::timbre::N_CEPS];
+                for c in &tf.ceps[i0..i1] {
+                    m.iter_mut().zip(c).for_each(|(s, x)| *s += x);
+                }
+                m.map(|s| s / (i1 - i0) as f32)
+            })
+        };
+        let ceps = match (mean(a - 0.08, a - 0.01), mean(a + 0.02, a + 0.09)) {
+            (Some(l), Some(r)) => l.iter().zip(&r).map(|(x, y)| (x - y) * (x - y)).sum::<f32>().sqrt(),
+            _ => 0.0,
+        };
+        self.flux * (peak(&tf.flux, 0.02) + 0.01).ln()
+            + self.ceps * ceps
+            + self.flux_lo * (peak(&tf.flux_lo, 0.04) + 0.01).ln()
+            + self.bias
+    }
+}
+
 impl Default for GridDecoder {
     fn default() -> Self {
         Self {
@@ -163,6 +242,7 @@ impl Default for GridDecoder {
             phase_candidates: 24,
             drop_window_s: 0.04,
             candidates: None,
+            cue_model: CueModel::VoicingEnergy,
         }
     }
 }
@@ -174,7 +254,8 @@ struct CellNote {
     midi: i32,
 }
 
-struct Frames {
+struct Frames<'a> {
+    timbre: Option<&'a TimbreFrames>,
     time: Vec<f64>,
     semi: Vec<Option<f32>>,
     voicing: Vec<f32>,
@@ -193,7 +274,7 @@ impl GridDecoder {
     /// Decode a stem into grid-aligned note segments. Empty when the contour has
     /// no voiced frame or the grid is degenerate.
     pub fn segment(&self, grid: &GridSpec, onsets: &[Onset], contour: &[F0Frame], envelope: &[EnergyFrame]) -> Vec<NoteSegment> {
-        self.segment_with_candidates(grid, onsets, contour, &[], envelope)
+        self.segment_with_evidence(grid, onsets, contour, &[], envelope, None)
     }
 
     /// [`segment`](Self::segment) with per-frame pitch candidates aligned to
@@ -207,11 +288,39 @@ impl GridDecoder {
         candidates: &[Vec<PitchCandidate>],
         envelope: &[EnergyFrame],
     ) -> Vec<NoteSegment> {
+        self.segment_with_evidence(grid, onsets, contour, candidates, envelope, None)
+    }
+
+    /// [`segment`](Self::segment) with the stem's [`TimbreFrames`], which
+    /// [`CueModel::Spectral`] reads (other cue models ignore them).
+    pub fn segment_with_timbre(
+        &self,
+        grid: &GridSpec,
+        onsets: &[Onset],
+        contour: &[F0Frame],
+        envelope: &[EnergyFrame],
+        timbre: Option<&TimbreFrames>,
+    ) -> Vec<NoteSegment> {
+        self.segment_with_evidence(grid, onsets, contour, &[], envelope, timbre)
+    }
+
+    /// [`segment`](Self::segment) with both optional evidence tracks: pitch
+    /// candidates (read when [`candidates`](Self::candidates) is set) and
+    /// [`TimbreFrames`] (read by [`CueModel::Spectral`]).
+    pub fn segment_with_evidence(
+        &self,
+        grid: &GridSpec,
+        onsets: &[Onset],
+        contour: &[F0Frame],
+        candidates: &[Vec<PitchCandidate>],
+        envelope: &[EnergyFrame],
+        timbre: Option<&TimbreFrames>,
+    ) -> Vec<NoteSegment> {
         let sp = grid.spacing_s();
         if !(sp.is_finite() && sp > 0.0) {
             return Vec::new();
         }
-        let Some(fr) = self.prepare(contour, candidates, envelope) else {
+        let Some(fr) = self.prepare(contour, candidates, envelope, timbre) else {
             return Vec::new();
         };
         let notes = match grid.anchor_s {
@@ -229,10 +338,12 @@ impl GridDecoder {
         self.segments_of(&notes, &fr, onsets, envelope)
     }
 
-    /// Estimated grid phase (seconds within one cell) for a stem.
+    /// Estimated grid phase (seconds within one cell) for a stem. The
+    /// re-articulation cue never changes a decode's cost, so no cue model
+    /// changes the phase.
     pub fn estimate_phase(&self, grid: &GridSpec, contour: &[F0Frame], envelope: &[EnergyFrame]) -> Option<f64> {
         let sp = grid.spacing_s();
-        let fr = self.prepare(contour, &[], envelope)?;
+        let fr = self.prepare(contour, &[], envelope, None)?;
         let n = self.phase_candidates.max(1);
         (0..n)
             .map(|i| {
@@ -255,7 +366,13 @@ impl GridDecoder {
         best.map(|b| b.1).unwrap_or_default()
     }
 
-    fn prepare(&self, contour: &[F0Frame], candidates: &[Vec<PitchCandidate>], envelope: &[EnergyFrame]) -> Option<Frames> {
+    fn prepare<'a>(
+        &self,
+        contour: &[F0Frame],
+        candidates: &[Vec<PitchCandidate>],
+        envelope: &[EnergyFrame],
+        timbre: Option<&'a TimbreFrames>,
+    ) -> Option<Frames<'a>> {
         let raw: Vec<Option<f32>> =
             contour.iter().map(|f| (f.frequency_hz > 0.0).then(|| hz_to_midi(f.frequency_hz))).collect();
         let voiced: Vec<f32> = raw.iter().flatten().copied().collect();
@@ -302,6 +419,7 @@ impl GridDecoder {
             None => (Vec::new(), Vec::new()),
         };
         Some(Frames {
+            timbre: timbre.filter(|t| !t.time_s.is_empty()),
             time: contour.iter().map(|f| f.time_s).collect(),
             semi,
             voicing: contour.iter().map(|f| f.voicing).collect(),
@@ -365,7 +483,7 @@ impl GridDecoder {
 
         let mut em_note = vec![0.0f32; nc * np];
         let mut em_rest = vec![0.0f32; nc];
-        let mut cue = vec![0.0f32; nc];
+        let mut reart = vec![0.0f32; nc];
         let inv2s2 = 1.0 / (2.0 * self.sigma * self.sigma);
         let has_cands = !fr.cand_rest.is_empty();
         let cw = self.candidates.map_or(1.0, |e| e.contour_weight);
@@ -401,7 +519,16 @@ impl GridDecoder {
                     }
                 }
             }
-            cue[c] = self.cue(fr, a, sp, &at, &env_at);
+            reart[c] = match (self.cue_model, fr.timbre) {
+                (CueModel::Spectral(m), Some(tf)) => {
+                    if m.log_odds(tf, a) >= m.threshold {
+                        0.0
+                    } else {
+                        self.rearticulate_cost.max(f32::MIN_POSITIVE)
+                    }
+                }
+                _ => (self.rearticulate_cost - self.cue_weight * self.cue(fr, a, sp, &at, &env_at)).max(0.0),
+            };
         }
 
         let ns = 2 * np + 1;
@@ -437,7 +564,7 @@ impl GridDecoder {
             }
             next[0] = best + em_rest[c];
             row[0] = arg;
-            let reart = (self.rearticulate_cost - self.cue_weight * cue[c]).max(0.0);
+            let reart = reart[c];
             for q in 0..np {
                 let e = em_note[c * np + q];
                 next[1 + np + q] = note_prev[q] + e;
@@ -710,5 +837,95 @@ mod tests {
     fn silence_yields_no_notes() {
         let (c, e) = stem(&[(1.0, 0.0, 0.0)]);
         assert!(GridDecoder::default().segment(&grid(None), &[], &c, &e).is_empty());
+    }
+
+    /// Timbre frames on the contour's frame grid: steady (median flux, fixed
+    /// envelope) except that at each time in `changes` a flux burst marks a new
+    /// syllable and the spectral envelope moves to a new vowel.
+    fn timbre(end_s: f64, changes: &[f64]) -> TimbreFrames {
+        let n = (end_s / HOP_S) as usize;
+        let mut tf = TimbreFrames::default();
+        for i in 0..n {
+            let t = i as f64 * HOP_S;
+            let burst = changes.iter().any(|&c| (t - c).abs() < 0.012);
+            let vowel = changes.iter().filter(|&&c| t >= c).count();
+            tf.time_s.push(t);
+            tf.flux.push(if burst { 6.0 } else { 1.0 });
+            tf.flux_lo.push(if burst { 6.0 } else { 1.0 });
+            tf.ceps.push([if vowel % 2 == 0 { 0.0 } else { 0.8 }; crate::timbre::N_CEPS]);
+        }
+        tf
+    }
+
+    fn spectral() -> GridDecoder {
+        GridDecoder { cue_model: CueModel::Spectral(SpectralCue::default()), ..GridDecoder::default() }
+    }
+
+    fn spans(notes: &[NoteSegment]) -> Vec<(f64, f64, u8)> {
+        notes.iter().map(|n| ((n.onset_s * 1e6).round() / 1e6, (n.offset_s * 1e6).round() / 1e6, n.midi_pitch)).collect()
+    }
+
+    /// A held pitch with steady voicing and energy: only the spectrum says that a
+    /// second syllable starts at 0.5 s.
+    fn held_note() -> (Vec<F0Frame>, Vec<EnergyFrame>) {
+        stem(&[(0.1, 0.0, 0.01), (0.9, 64.0, 0.5), (1.0, 0.0, 0.01)])
+    }
+
+    #[test]
+    fn the_spectral_cue_splits_a_held_pitch_where_a_new_syllable_starts() {
+        let (c, e) = held_note();
+        let tf = timbre(1.0, &[0.5]);
+        let notes = spectral().segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf));
+        assert_eq!(spans(&notes), vec![(0.1, 0.5, 64), (0.5, 0.9, 64)]);
+    }
+
+    #[test]
+    fn without_a_timbre_change_the_held_pitch_stays_one_note() {
+        let (c, e) = held_note();
+        let notes = spectral().segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&timbre(1.0, &[])));
+        assert_eq!(spans(&notes), vec![(0.1, 0.9, 64)]);
+    }
+
+    #[test]
+    fn the_voicing_energy_cue_and_a_missing_timbre_track_ignore_the_spectrum() {
+        let (c, e) = held_note();
+        let tf = timbre(1.0, &[0.5]);
+        let one = vec![(0.1, 0.9, 64)];
+        assert_eq!(spans(&GridDecoder::default().segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf))), one);
+        assert_eq!(spans(&spectral().segment(&grid(Some(0.0)), &[], &c, &e)), one);
+    }
+
+    #[test]
+    fn a_higher_threshold_needs_stronger_spectral_evidence() {
+        let (c, e) = held_note();
+        let tf = timbre(1.0, &[0.5]);
+        let at_line = SpectralCue::default().log_odds(&tf, 0.5);
+        let strict = GridDecoder { cue_model: CueModel::Spectral(SpectralCue { threshold: at_line + 0.1, ..SpectralCue::default() }), ..GridDecoder::default() };
+        assert_eq!(spans(&strict.segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf))), vec![(0.1, 0.9, 64)]);
+        let lax = GridDecoder { cue_model: CueModel::Spectral(SpectralCue { threshold: at_line, ..SpectralCue::default() }), ..GridDecoder::default() };
+        assert_eq!(spans(&lax.segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf))).len(), 2);
+    }
+
+    #[test]
+    fn each_kind_of_spectral_evidence_raises_the_log_odds() {
+        let m = SpectralCue::default();
+        let steady = m.log_odds(&timbre(1.0, &[]), 0.5);
+        let mut vowel_only = timbre(1.0, &[0.5]);
+        vowel_only.flux.iter_mut().chain(vowel_only.flux_lo.iter_mut()).for_each(|x| *x = 1.0);
+        let mut burst_only = timbre(1.0, &[0.5]);
+        burst_only.ceps.iter_mut().for_each(|c| *c = [0.0; crate::timbre::N_CEPS]);
+        let mut low_burst_only = burst_only.clone();
+        low_burst_only.flux.iter_mut().for_each(|x| *x = 1.0);
+        for (what, tf) in [("vowel change", &vowel_only), ("flux burst", &burst_only), ("low-band burst", &low_burst_only)] {
+            assert!(m.log_odds(tf, 0.5) > steady + 0.5, "{what}: {} vs steady {steady}", m.log_odds(tf, 0.5));
+        }
+    }
+
+    #[test]
+    fn a_timbre_change_at_a_pitch_change_adds_no_extra_note() {
+        let (c, e) = stem(&[(0.1, 0.0, 0.01), (0.5, 64.0, 0.5), (0.9, 67.0, 0.5), (1.0, 0.0, 0.01)]);
+        let tf = timbre(1.0, &[0.5]);
+        let notes = spectral().segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf));
+        assert_eq!(spans(&notes), vec![(0.1, 0.5, 64), (0.5, 0.9, 67)]);
     }
 }

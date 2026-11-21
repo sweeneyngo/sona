@@ -15,13 +15,15 @@
 //! the cell emission (`GridDecoder::candidates`); they are cached beside the
 //! contour. `--cand-diag` prints how often the lead's pitch is pYIN's f0 or a
 //! top-k candidate, monophonic vs polyphonic.
+//! The spectral re-articulation cue (`g.cue=spectral`, `g.sc.*`) needs
+//! `--features spectral`.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use sona_core::grid::CandidateEvidence;
 use sona_core::pitch::{HarmonicSalience, PitchCandidate};
-use sona_core::{Annotation, F0Frame, GridDecoder, GridSpec, PYin, PitchTracker, Producer, Transcriber};
+use sona_core::{Annotation, CueModel, F0Frame, GridDecoder, GridSpec, PYin, PitchTracker, Producer, SpectralCue, TimbreFrames, Transcriber};
 use sona_eval::estimate::EstNote;
 use sona_eval::metrics::note::{match_notes, NoteParams};
 use sona_eval::metrics::Prf1;
@@ -38,6 +40,7 @@ struct Item {
     /// Per-frame harmonic-salience pitch candidates, aligned with `contour`;
     /// loaded only when a config weighs them (`c.*`) or `--cand-diag` asks.
     cands: Option<Vec<Vec<PitchCandidate>>>,
+    timbre: Option<TimbreFrames>,
     grid: Option<Grid>,
     refs: Vec<RefNote>,
     /// Every other voice's notes (harmonies, other lead parts' overlaps).
@@ -158,6 +161,28 @@ fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
                 _ => return Err(format!("unknown knob {k}")),
             }
         }
+        "g.cue" => {
+            g.cue_model = match val {
+                "ve" | "voicing-energy" => CueModel::VoicingEnergy,
+                "spectral" => CueModel::Spectral(SpectralCue::default()),
+                _ => return Err(format!("g.cue={val}: want ve|spectral")),
+            }
+        }
+        k if k.starts_with("g.sc.") => {
+            if !matches!(g.cue_model, CueModel::Spectral(_)) {
+                g.cue_model = CueModel::Spectral(SpectralCue::default());
+            }
+            let CueModel::Spectral(m) = &mut g.cue_model else { unreachable!("set above") };
+            let x = f()? as f32;
+            match &k[5..] {
+                "flux" => m.flux = x,
+                "ceps" => m.ceps = x,
+                "flux_lo" => m.flux_lo = x,
+                "bias" => m.bias = x,
+                "threshold" => m.threshold = x,
+                _ => return Err(format!("unknown knob {k}")),
+            }
+        }
         _ => return apply_t(&mut cfg.t, key, val),
     }
     Ok(())
@@ -201,6 +226,9 @@ fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
         let (k, v) = kv.split_once('=').ok_or_else(|| format!("bad knob {kv}"))?;
         apply(&mut cfg, k, v)?;
     }
+    if matches!(cfg.cell.cue_model, CueModel::Spectral(_)) && !cfg!(feature = "spectral") {
+        return Err(format!("{name}: the spectral cue needs --features spectral"));
+    }
     Ok((name.to_string(), cfg))
 }
 
@@ -210,8 +238,9 @@ fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
     let segs = match (&it.grid, cfg.grid) {
         (Some(g), GridChoice::Estimated | GridChoice::UstAnchor) => {
             let anchor = (cfg.grid == GridChoice::UstAnchor).then_some(g.opts.anchor);
+            let grid = GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor };
             let cands = it.cands.as_deref().unwrap_or(&[]);
-            cfg.cell.segment_with_candidates(&GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor }, &onset.onsets, &it.contour, cands, &onset.energy_envelope)
+            cfg.cell.segment_with_evidence(&grid, &onset.onsets, &it.contour, cands, &onset.energy_envelope, it.timbre.as_ref())
         }
         _ => t.segmenter.segment(&onset.onsets, &it.contour, &onset.energy_envelope),
     };
@@ -395,6 +424,7 @@ fn load_ust_items(split: &str, pyin: &PYin, stem: &str, with_cands: bool) -> Res
         }
         Ok(Item {
             id: song.id.clone(),
+            timbre: timbre_of(&samples, sr),
             samples,
             sr,
             contour,
@@ -408,6 +438,20 @@ fn load_ust_items(split: &str, pyin: &PYin, stem: &str, with_cands: bool) -> Res
     items.into_iter().collect()
 }
 
+/// Timbre frames on the default onset detector's frame grid (spectral builds only).
+fn timbre_of(samples: &[f32], sr: u32) -> Option<TimbreFrames> {
+    #[cfg(feature = "spectral")]
+    {
+        let o = sona_core::OnsetDetector::default();
+        Some(TimbreFrames::from_samples(samples, sr, o.frame_length, o.hop_length))
+    }
+    #[cfg(not(feature = "spectral"))]
+    {
+        let _ = (samples, sr);
+        None
+    }
+}
+
 fn load_vocadito(pyin: &PYin) -> Result<Vec<Item>, EvalError> {
     let corpus = vocadito::discover(&vocadito::corpus_dir())?;
     parallel_map(&corpus.tracks, |track| {
@@ -416,8 +460,8 @@ fn load_vocadito(pyin: &PYin) -> Result<Vec<Item>, EvalError> {
         let (samples, sr) = wav::read_mono(&track.audio)?;
         let id = format!("vocadito-{}", track.audio.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
         let contour = contour_cached(&id, &samples, sr, pyin)?;
-        // Vocadito has no grid, so grid mode (and its candidates) never runs.
-        Ok(Item { id, samples, sr, contour, cands: None, grid: None, refs, others: Vec::new(), poly: Vec::new() })
+        // Vocadito has no grid, so grid mode (and its evidence tracks) never runs.
+        Ok(Item { id, timbre: timbre_of(&samples, sr), samples, sr, contour, cands: None, grid: None, refs, others: Vec::new(), poly: Vec::new() })
     })
     .into_iter()
     .collect()
@@ -565,8 +609,21 @@ fn run() -> Result<(), String> {
             for (it, (v, _)) in items.iter().zip(&scored) {
                 let c = v[1].conp();
                 println!(
-                    "    {:<30} n={:<4} est={:<4} P {:.2} R {:.2} F1 {:.2} | COnPOff {:.2} | conp={} conpoff={}",
-                    it.id, v[1].n_ref, v[1].n_est, c.precision, c.recall, c.f1, v[1].conpoff().f1, v[1].conp, v[1].conpoff
+                    "    {:<30} n={:<4} est={:<4} P {:.2} R {:.2} F1 {:.2} | COnPOff {:.2} | conp={} conpoff={} | mono n={} est={} conp={} conpoff={} | cells {}",
+                    it.id,
+                    v[1].n_ref,
+                    v[1].n_est,
+                    c.precision,
+                    c.recall,
+                    c.f1,
+                    v[1].conpoff().f1,
+                    v[1].conp,
+                    v[1].conpoff,
+                    v[3].n_ref,
+                    v[3].n_est,
+                    v[3].conp,
+                    v[3].conpoff,
+                    v[1].cells.iter().map(|(a, b)| format!("{a}/{b}")).collect::<Vec<_>>().join(" ")
                 );
             }
         }

@@ -11,8 +11,8 @@
 //! notes, dropouts, bleed) that would produce one.
 
 use sona_core::{
-    Annotation, CandidateEvidence, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, NoteHmm, NoteSegment, Onset, PYin, PitchCandidate,
-    Producer, Transcriber,
+    timbre::N_CEPS, Annotation, CandidateEvidence, CueModel, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, NoteHmm, NoteSegment,
+    Onset, PYin, PitchCandidate, Producer, SpectralCue, TimbreFrames, Transcriber,
 };
 use std::f32::consts::PI;
 
@@ -125,6 +125,21 @@ fn both_segmenters_emit_one_voice_on_random_stems() {
         let decoder = GridDecoder { candidates: Some(CandidateEvidence::default()), ..GridDecoder::default() };
         let cells = decoder.segment_with_candidates(&grid, &onsets, &contour, &cands, &envelope);
         let what = format!("grid+candidates case {case} ({grid:?})");
+        assert_one_voice(&cells, &what);
+        assert_on_one_grid(&cells, grid.spacing_s(), &what);
+
+        // The spectral re-articulation cue, on random timbre frames (own stream, so
+        // the cases above stay the same).
+        let mut trng = Rng(0x7153_0000 + case);
+        let timbre = TimbreFrames {
+            time_s: contour.iter().map(|f| f.time_s).collect(),
+            flux: contour.iter().map(|_| trng.range(0.0, 8.0) as f32).collect(),
+            flux_lo: contour.iter().map(|_| trng.range(0.0, 8.0) as f32).collect(),
+            ceps: contour.iter().map(|_| [trng.range(-1.0, 1.0) as f32; N_CEPS]).collect(),
+        };
+        let spectral = GridDecoder { cue_model: CueModel::Spectral(SpectralCue::default()), ..GridDecoder::default() };
+        let cells = spectral.segment_with_timbre(&grid, &onsets, &contour, &envelope, Some(&timbre));
+        let what = format!("spectral-cue grid case {case} ({grid:?})");
         assert_one_voice(&cells, &what);
         assert_on_one_grid(&cells, grid.spacing_s(), &what);
     }

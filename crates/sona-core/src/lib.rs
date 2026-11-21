@@ -25,6 +25,7 @@ pub mod pipeline;
 pub mod pitch;
 pub mod prefilter;
 pub mod segment;
+pub mod timbre;
 
 pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
 pub use confidence::{soft_min, ConfidenceScorer};
@@ -33,7 +34,8 @@ pub use onset::{Onset, OnsetDetector, OnsetResult};
 pub use pipeline::Transcriber;
 pub use pitch::{HarmonicSalience, PYin, PitchCandidate, PitchTracker};
 pub use prefilter::{PitchFrame, PitchPreFilter};
-pub use grid::{CandidateEvidence, GridDecoder, GridMode, GridSpec};
+pub use grid::{CandidateEvidence, CueModel, GridDecoder, GridMode, GridSpec, SpectralCue};
+pub use timbre::TimbreFrames;
 pub use hmm::NoteHmm;
 pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 
