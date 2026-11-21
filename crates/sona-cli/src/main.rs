@@ -14,7 +14,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::process::ExitCode;
 
-use sona_core::{PYin, Producer, Transcriber};
+use sona_core::{GridMode, PYin, Producer, Transcriber};
 
 const USAGE: &str = "\
 sona — vocal-to-MIDI perception core (CLI)
@@ -29,6 +29,8 @@ COMMANDS:
 OPTIONS (transcribe):
     --bpm <BPM>      Tempo, carried into the annotation for the UI's grid (required)
     --midi <PATH>    Also write a raw, unquantized .mid alongside the JSON
+    --grid <16|24>   Decode notes on a 16th (16) or 16th-triplet (24) grid at --bpm,
+                     for grid-locked material such as Vocaloid songs (phase is estimated)
     -h, --help       Print this usage
     -V, --version    Print version
 
@@ -68,6 +70,8 @@ struct TranscribeArgs {
     stem: String,
     bpm: f64,
     midi: Option<String>,
+    /// Grid-conditioned decoding (ADR-0015): cells per whole note, 16 or 24.
+    grid: Option<u32>,
 }
 
 /// The `transcribe` subcommand: parse args, decode the stem, run the pipeline,
@@ -76,7 +80,11 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
     let parsed = parse_transcribe_args(args)?;
 
     let (samples, sample_rate) = load_wav_mono(&parsed.stem)?;
-    let annotation = Transcriber::default().transcribe(
+    let transcriber = Transcriber {
+        grid: parsed.grid.map(|division| GridMode { division, ..GridMode::sixteenths() }),
+        ..Transcriber::default()
+    };
+    let annotation = transcriber.transcribe(
         &PYin::default(),
         &samples,
         sample_rate,
@@ -101,12 +109,13 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Hand-rolled parse of `<STEM> --bpm <BPM> [--midi <PATH>]`. Accepts both
+/// Hand-rolled parse of `<STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]`. Accepts both
 /// `--flag value` and `--flag=value` forms; the stem is the lone positional.
 fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let mut stem: Option<String> = None;
     let mut bpm: Option<f64> = None;
     let mut midi: Option<String> = None;
+    let mut grid: Option<u32> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -121,6 +130,16 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
                 return Err(format!("--bpm must be positive, got '{raw}'"));
             }
             bpm = Some(value);
+        } else if let Some(rest) = arg.strip_prefix("--grid") {
+            let (raw, next) = flag_value(args, i, rest, "--grid")?;
+            let value: u32 = raw
+                .parse()
+                .map_err(|_| format!("--grid must be 16 or 24, got '{raw}'"))?;
+            if value != 16 && value != 24 {
+                return Err(format!("--grid must be 16 or 24, got '{raw}'"));
+            }
+            grid = Some(value);
+            i = next;
         } else if let Some(rest) = arg.strip_prefix("--midi") {
             let (value, next) = flag_value(args, i, rest, "--midi")?;
             i = next;
@@ -137,7 +156,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
 
     let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>]")?;
     let bpm = bpm.ok_or("transcribe needs --bpm <BPM>")?;
-    Ok(TranscribeArgs { stem, bpm, midi })
+    Ok(TranscribeArgs { stem, bpm, midi, grid })
 }
 
 /// Resolve a flag's value at index `i`, where `rest` is whatever followed the

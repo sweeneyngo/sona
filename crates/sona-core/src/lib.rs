@@ -17,6 +17,7 @@
 
 pub mod annotation;
 pub mod confidence;
+pub mod grid;
 pub mod hmm;
 pub mod midi;
 pub mod onset;
@@ -32,6 +33,7 @@ pub use onset::{Onset, OnsetDetector, OnsetResult};
 pub use pipeline::Transcriber;
 pub use pitch::{PYin, PitchTracker};
 pub use prefilter::{PitchFrame, PitchPreFilter};
+pub use grid::{GridDecoder, GridMode, GridSpec};
 pub use hmm::NoteHmm;
 pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 

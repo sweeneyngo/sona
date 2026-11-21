@@ -3,6 +3,7 @@
 //!
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate               # UST corpus
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --vocadito # + baseline
+//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid     # cell decoder (ADR-0015)
 //!
 //! Only songs whose `alignment_status` starts with `aligned` are scored; the rest
 //! are listed with their reason (no silent truncation).
@@ -27,7 +28,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use sona_core::{Annotation, Producer, PYin, Transcriber};
+use sona_core::{Annotation, GridMode, Producer, PYin, Transcriber};
 use sona_eval::estimate::EstNote;
 use sona_eval::metrics::note::{match_notes, NoteParams};
 use sona_eval::metrics::Prf1;
@@ -140,8 +141,11 @@ fn pitch_offsets(refs: &[RefNote], est: &[EstNote]) -> Vec<(i32, usize)> {
     v
 }
 
-fn transcribe(samples: &[f32], sr: u32, bpm: f64) -> Annotation {
-    Transcriber::default().transcribe(&PYin::default(), samples, sr, bpm, Producer::Pyin)
+/// `grid`: decode with the cell decoder on this many cells per whole note, phase
+/// estimated from the stem (ADR-0015); `None` is the default note-HMM path.
+fn transcribe(samples: &[f32], sr: u32, bpm: f64, grid: Option<u32>) -> Annotation {
+    let t = Transcriber { grid: grid.map(|division| GridMode { division, ..GridMode::sixteenths() }), ..Transcriber::default() };
+    t.transcribe(&PYin::default(), samples, sr, bpm, Producer::Pyin)
 }
 
 fn raw_notes(a: &Annotation) -> Vec<EstNote> {
@@ -197,7 +201,7 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
 }
 
 /// Transcribe one aligned song and score every view.
-fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &NoteParams) -> Result<SongResult, EvalError> {
+fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &NoteParams, grid_mode: bool) -> Result<SongResult, EvalError> {
     eprintln!("transcribing {}…", song.id);
     let usts = SongUsts::load(song, cache)?;
     let bpm = song.bpm_from_ust.unwrap_or(usts.lead[0].tempo);
@@ -206,7 +210,7 @@ fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &Not
     let opts = QuantizeOptions::new(spacing, offset);
 
     let (samples, sr) = wav::read_mono(&stems.join(&song.id).join("vocals.wav"))?;
-    let annotation = transcribe(&samples, sr, bpm);
+    let annotation = transcribe(&samples, sr, bpm, grid_mode.then_some(grid));
     let (raw, quant) = (raw_notes(&annotation), quantized_notes(&annotation, &opts));
 
     let reference = usts.reference(offset);
@@ -252,7 +256,8 @@ fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &Not
 
 fn main() -> ExitCode {
     let with_vocadito = std::env::args().any(|a| a == "--vocadito");
-    match run(with_vocadito) {
+    let grid_mode = std::env::args().any(|a| a == "--grid");
+    match run(with_vocadito, grid_mode) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("sona-eval-ust-gate: {e}");
@@ -261,7 +266,10 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(with_vocadito: bool) -> Result<(), EvalError> {
+fn run(with_vocadito: bool, grid_mode: bool) -> Result<(), EvalError> {
+    if grid_mode {
+        println!("Mode: grid-conditioned cell decoder (ADR-0015), phase estimated from each stem. Vocadito stays on the default path (no grid).\n");
+    }
     let manifest = Manifest::load(&manifest_path())?;
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let params = NoteParams::default();
@@ -282,7 +290,7 @@ fn run(with_vocadito: bool) -> Result<(), EvalError> {
         }
         eligible.push((song, offset));
     }
-    let results: Vec<SongResult> = parallel_map(&eligible, |&(song, offset)| score_song(song, offset, &cache, &stems, &params))
+    let results: Vec<SongResult> = parallel_map(&eligible, |&(song, offset)| score_song(song, offset, &cache, &stems, &params, grid_mode))
         .into_iter()
         .collect::<Result<_, _>>()?;
 
@@ -491,7 +499,7 @@ fn print_vocadito(params: &NoteParams) -> Result<(), EvalError> {
     let views: Vec<View> = parallel_map(&corpus.tracks, |track| -> Result<View, EvalError> {
         let reference = vocadito::load_reference(track)?;
         let (samples, sr) = wav::read_mono(&track.audio)?;
-        let est = raw_notes(&transcribe(&samples, sr, 120.0));
+        let est = raw_notes(&transcribe(&samples, sr, 120.0, None));
         let mut refs = reference.notes.clone();
         refs.sort_by(|a, b| a.onset_s.total_cmp(&b.onset_s));
         let rest_term: Vec<bool> =

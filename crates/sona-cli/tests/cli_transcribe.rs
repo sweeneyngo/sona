@@ -148,3 +148,40 @@ fn help_and_version_succeed() {
         assert!(!out.stdout.is_empty(), "{flag} should print something");
     }
 }
+
+#[test]
+fn grid_flag_decodes_notes_onto_the_grid() {
+    // At 100 BPM a 16th is 150 ms: the stem's notes and gaps are whole cells.
+    let wav = tmp("two_note_grid.wav");
+    write_wav(&wav, &two_note_stem());
+    let out = sona()
+        .args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "16"])
+        .output()
+        .expect("run sona");
+    assert!(out.status.success(), "exit failure: {}", String::from_utf8_lossy(&out.stderr));
+    let annotation: Annotation = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(annotation.notes.len(), 2, "notes: {:?}", annotation.notes);
+    assert_eq!(annotation.notes[0].midi_pitch, 69);
+    assert_eq!(annotation.notes[1].midi_pitch, 72);
+    // Every boundary sits on one grid: whole cells apart from the first onset.
+    let cell = 0.15;
+    let first = annotation.notes[0].onset_s;
+    for n in &annotation.notes {
+        for t in [n.onset_s, n.offset_s] {
+            let k = (t - first) / cell;
+            assert!((k - k.round()).abs() < 1e-6, "{t} is off the grid anchored at {first}");
+        }
+    }
+}
+
+#[test]
+fn grid_flag_rejects_an_unsupported_division() {
+    let wav = tmp("bad_grid.wav");
+    write_wav(&wav, &two_note_stem());
+    let out = sona()
+        .args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "12"])
+        .output()
+        .expect("run sona");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--grid"));
+}

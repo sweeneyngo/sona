@@ -18,6 +18,7 @@
 
 use crate::annotation::{Annotation, Producer, SCHEMA_VERSION};
 use crate::confidence::ConfidenceScorer;
+use crate::grid::{GridMode, GridSpec};
 use crate::onset::OnsetDetector;
 use crate::pitch::PitchTracker;
 use crate::segment::Segmenter;
@@ -35,6 +36,12 @@ pub struct Transcriber {
     pub segmenter: Segmenter,
     /// Confidence scoring.
     pub scorer: ConfidenceScorer,
+    /// Grid-conditioned decoding ([ADR-0015]): when set, notes are decoded on
+    /// this grid at the call's BPM by the cell decoder instead of the
+    /// note-HMM. `None` (the default) keeps the grid-free perception path.
+    ///
+    /// [ADR-0015]: ../../../docs/adr/0015-grid-conditioned-cell-decoding.md
+    pub grid: Option<GridMode>,
 }
 
 impl Transcriber {
@@ -54,11 +61,19 @@ impl Transcriber {
     ) -> Annotation {
         let f0_contour = tracker.track(samples, sample_rate);
         let onset_result = self.onset.detect(samples, sample_rate);
-        let segments = self.segmenter.segment(
-            &onset_result.onsets,
-            &f0_contour,
-            &onset_result.energy_envelope,
-        );
+        let segments = match &self.grid {
+            Some(g) => g.decoder.segment(
+                &GridSpec { bpm, division: g.division, anchor_s: g.anchor_s },
+                &onset_result.onsets,
+                &f0_contour,
+                &onset_result.energy_envelope,
+            ),
+            None => self.segmenter.segment(
+                &onset_result.onsets,
+                &f0_contour,
+                &onset_result.energy_envelope,
+            ),
+        };
         let notes = self
             .scorer
             .score_all(&segments, &onset_result.energy_envelope);
