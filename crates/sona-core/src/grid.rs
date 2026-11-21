@@ -6,31 +6,6 @@
 //!
 //! [ADR-0015]: ../../../docs/adr/0015-grid-conditioned-cell-decoding.md
 //!
-//! Why cells, not frames (measured on the UST corpus's dev split, ADR-0015):
-//! the frame-level note-HMM loses most in-domain notes to three things a grid
-//! removes by construction — notes shorter than its ~100 ms prune floor, onsets
-//! dragged 50–150 ms off by consonants and pitch glides, and voiced spans cut
-//! short by unvoiced consonants. On a grid a note is at least one cell long, its
-//! onset is a grid line, and an unvoiced frame inside a cell costs little.
-//!
-//! - **Emission** per cell and pitch: a *capped* Gaussian over the cell's voiced
-//!   frames (robust to the glide at a note's start), plus a small cost per
-//!   unvoiced frame (consonants). A rest pays for each voiced frame in
-//!   proportion to its voicing and its loudness, so quiet bleed reads as rest.
-//! - **Transitions**: rest ↔ note are cheap; a pitch change pays a base cost plus
-//!   an interval term; a same-pitch re-articulation pays a cost lowered by the
-//!   boundary's **re-articulation cue** (a voicing dip and an energy dip at the
-//!   cell's start — what a syllable change at one pitch leaves behind).
-//! - **Tuning**: the stem's global tuning offset (the circular mean of every
-//!   voiced frame's distance to the nearest semitone) is removed first, so a
-//!   song pitched a quarter-tone flat doesn't decode a semitone low.
-//! - **Phase**: BPM is the user's; the grid's phase is not known. When no anchor
-//!   is given, every candidate phase across one cell is decoded and the one with
-//!   the lowest per-cell cost wins — the decode is its own phase likelihood.
-//! - **Gap fill**: a one-cell rest between two notes is almost always the next
-//!   syllable's unvoiced consonant, which a UST assigns to the previous note, so
-//!   the previous note is extended over it.
-//!
 //! Output is the same [`NoteSegment`] contract as the note-HMM, so confidence,
 //! the annotation JSON, and the CLI are unchanged.
 
@@ -138,7 +113,6 @@ impl Default for GridDecoder {
     }
 }
 
-/// One decoded note, in cells, before it becomes a [`NoteSegment`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CellNote {
     onset_s: f64,
@@ -146,13 +120,10 @@ struct CellNote {
     midi: i32,
 }
 
-/// The per-frame inputs, prepared once per stem (shared by every phase).
 struct Frames {
     time: Vec<f64>,
-    /// Tuning-corrected semitone, `None` if unvoiced.
     semi: Vec<Option<f32>>,
     voicing: Vec<f32>,
-    /// RMS at the frame, as a fraction of the stem's peak.
     loud: Vec<f32>,
     env_time: Vec<f64>,
     env_rms: Vec<f32>,
@@ -179,8 +150,7 @@ impl GridDecoder {
         self.segments_of(&notes, &fr, onsets, envelope)
     }
 
-    /// Estimated grid phase (seconds within one cell) for a stem — exposed so a
-    /// caller can show or reuse it.
+    /// Estimated grid phase (seconds within one cell) for a stem.
     pub fn estimate_phase(&self, grid: &GridSpec, contour: &[F0Frame], envelope: &[EnergyFrame]) -> Option<f64> {
         let sp = grid.spacing_s();
         let fr = self.prepare(contour, envelope)?;
@@ -243,8 +213,6 @@ impl GridDecoder {
         })
     }
 
-    /// Viterbi over the cells of one phase. Returns the notes and the path's
-    /// cost per cell (the phase likelihood).
     fn decode(&self, fr: &Frames, sp: f64, anchor: f64) -> (Vec<CellNote>, f64) {
         let last = *fr.time.last().expect("prepared frames are non-empty");
         let k0 = ((0.0 - anchor) / sp).ceil() as i64;
@@ -259,7 +227,6 @@ impl GridDecoder {
         let at = |t: f64| fr.time.partition_point(|&x| x < t);
         let env_at = |t: f64| fr.env_time.partition_point(|&x| x < t);
 
-        // Per-cell emissions and boundary cues.
         let mut em_note = vec![0.0f32; nc * np];
         let mut em_rest = vec![0.0f32; nc];
         let mut cue = vec![0.0f32; nc];
@@ -287,7 +254,6 @@ impl GridDecoder {
             cue[c] = self.cue(fr, a, sp, &at, &env_at);
         }
 
-        // States: 0 = rest, 1..=np = onset(p), np+1..=2np = continue(p).
         let ns = 2 * np + 1;
         let inf = f32::INFINITY;
         let mut cost = vec![inf; ns];
@@ -311,7 +277,6 @@ impl GridDecoder {
                 }
             }
             let row = &mut back[c * ns..(c + 1) * ns];
-            // Rest: stay, or end a note.
             let (mut best, mut arg) = (cost[0], 0u32);
             for p in 0..np {
                 let v = note_prev[p] + self.offset_cost;
@@ -325,10 +290,8 @@ impl GridDecoder {
             let reart = (self.rearticulate_cost - self.cue_weight * cue[c]).max(0.0);
             for q in 0..np {
                 let e = em_note[c * np + q];
-                // Continue(q): only from the note at q.
                 next[1 + np + q] = note_prev[q] + e;
                 row[1 + np + q] = note_arg[q];
-                // Onset(q): from rest, re-articulated from q, or a change from p≠q.
                 let mut b = cost[0] + self.onset_cost;
                 let mut a = 0u32;
                 let v = note_prev[q] + reart;
@@ -367,9 +330,6 @@ impl GridDecoder {
         (notes_from_path(&path, &starts, sp, np, fr.lo), total as f64 / nc as f64)
     }
 
-    /// Re-articulation evidence at the boundary that opens the cell at `a`: how
-    /// far the voicing dips below a held note's, plus how far the energy dips
-    /// below its surroundings.
     fn cue(&self, fr: &Frames, a: f64, sp: f64, at: &dyn Fn(f64) -> usize, env_at: &dyn Fn(f64) -> usize) -> f32 {
         let (w0, w1) = (at(a - 0.04), at(a + 0.04));
         let min_voicing = if w1 > w0 { fr.voicing[w0..w1].iter().copied().fold(f32::INFINITY, f32::min) } else { 1.0 };
@@ -439,7 +399,6 @@ impl GridDecoder {
             .collect()
     }
 
-    /// Steepest energy drop just after an offset (as the note-HMM measures it).
     fn offset_drop(&self, envelope: &[EnergyFrame], offset_s: f64) -> f32 {
         let step = (self.drop_window_s / 4.0).max(1e-4);
         let mut best = 0.0f32;
@@ -452,11 +411,7 @@ impl GridDecoder {
     }
 }
 
-/// Read a decoded state path (`0` = rest, `1..=np` = onset at pitch index,
-/// `np+1..=2np` = continue) into notes on the cells starting at `starts`. An
-/// onset — or a continue that doesn't seamlessly extend the last note at the
-/// same pitch — starts a note; a continue extends it. Model-checked against
-/// every path in `verification/grid-notes` (ReadCell).
+/// Model-checked in `verification/grid-notes` (ReadCell).
 fn notes_from_path(path: &[usize], starts: &[f64], sp: f64, np: usize, lo: i32) -> Vec<CellNote> {
     let mut notes: Vec<CellNote> = Vec::new();
     for (c, &st) in path.iter().enumerate() {
@@ -475,9 +430,7 @@ fn notes_from_path(path: &[usize], starts: &[f64], sp: f64, np: usize, lo: i32) 
     notes
 }
 
-/// Absorb each rest of at most `max_cells` cells between two notes into the
-/// earlier note (`0` disables). Model-checked in `verification/grid-notes`
-/// (FillGap).
+/// Model-checked in `verification/grid-notes` (FillGap).
 fn fill_gaps(mut notes: Vec<CellNote>, sp: f64, max_cells: u32) -> Vec<CellNote> {
     if max_cells == 0 {
         return notes;
@@ -492,8 +445,6 @@ fn fill_gaps(mut notes: Vec<CellNote>, sp: f64, max_cells: u32) -> Vec<CellNote>
     notes
 }
 
-/// The stem's global tuning offset in semitones (−0.5..0.5): the circular mean
-/// of every voiced frame's distance to its nearest semitone.
 fn tuning_offset(semis: &[f32]) -> f32 {
     let (mut x, mut y) = (0.0f64, 0.0f64);
     for &s in semis {
@@ -510,7 +461,6 @@ mod tests {
 
     const HOP_S: f64 = 256.0 / 44_100.0;
 
-    /// A contour + envelope from `(until_s, midi_or_0, rms)` segments.
     fn stem(segments: &[(f64, f32, f32)]) -> (Vec<F0Frame>, Vec<EnergyFrame>) {
         let end = segments.last().map(|s| s.0).unwrap_or(0.0);
         let n = (end / HOP_S) as usize;
@@ -527,13 +477,11 @@ mod tests {
     }
 
     fn grid(anchor: Option<f64>) -> GridSpec {
-        // 150 BPM 16ths: 100 ms cells.
         GridSpec { bpm: 150.0, division: 16, anchor_s: anchor }
     }
 
     #[test]
     fn notes_land_on_grid_lines_and_one_cell_notes_survive() {
-        // A 0.1 s note (one cell, at the old prune floor) then a 0.3 s note.
         let (c, e) = stem(&[(0.2, 0.0, 0.01), (0.3, 64.0, 0.5), (0.6, 67.0, 0.5), (0.8, 0.0, 0.01)]);
         let notes = GridDecoder::default().segment(&grid(Some(0.0)), &[], &c, &e);
         let got: Vec<(f64, f64, u8)> = notes.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch)).collect();
@@ -544,7 +492,6 @@ mod tests {
 
     #[test]
     fn a_one_cell_unvoiced_consonant_is_absorbed_by_the_previous_note() {
-        // 64 for 3 cells, a fully unvoiced but loud cell (a consonant), then 66.
         let (c, e) = stem(&[(0.1, 0.0, 0.01), (0.4, 64.0, 0.5), (0.5, 0.0, 0.4), (0.8, 66.0, 0.5), (1.0, 0.0, 0.01)]);
         let notes = GridDecoder::default().segment(&grid(Some(0.0)), &[], &c, &e);
         assert_eq!(notes.len(), 2, "{notes:?}");
@@ -553,7 +500,6 @@ mod tests {
 
     #[test]
     fn a_flat_tuned_stem_still_decodes_the_intended_semitone() {
-        // Sung a quarter-tone flat throughout: 63.75 is meant as 64.
         let (c, e) = stem(&[(0.1, 0.0, 0.01), (0.5, 63.7, 0.5), (0.9, 66.7, 0.5), (1.0, 0.0, 0.01)]);
         let notes = GridDecoder::default().segment(&grid(Some(0.0)), &[], &c, &e);
         let pitches: Vec<u8> = notes.iter().map(|n| n.midi_pitch).collect();
@@ -562,7 +508,6 @@ mod tests {
 
     #[test]
     fn the_estimated_phase_recovers_a_shifted_grid() {
-        // Notes on a grid shifted by 37 ms.
         let off = 0.037;
         let (c, e) = stem(&[
             (0.1 + off, 0.0, 0.01),
@@ -577,8 +522,7 @@ mod tests {
         assert!((phase - off).abs() < 0.01, "phase {phase}");
     }
 
-    /// The model-checked rules (verification/grid-notes/GridNotes.tla), on the
-    /// real reader + gap fill, for every state path up to 6 cells over 2 pitches.
+    /// Mirrors the invariants of `verification/grid-notes/GridNotes.tla`.
     #[test]
     fn every_short_path_reads_into_a_faithful_monophonic_line() {
         let (np, sp, max_len, fill) = (2usize, 0.1, 6usize, 1u32);

@@ -70,7 +70,6 @@ struct TranscribeArgs {
     stem: String,
     bpm: f64,
     midi: Option<String>,
-    /// Grid-conditioned decoding (ADR-0015): cells per whole note, 16 or 24.
     grid: Option<u32>,
 }
 
@@ -154,7 +153,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
         i += 1;
     }
 
-    let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>]")?;
+    let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]")?;
     let bpm = bpm.ok_or("transcribe needs --bpm <BPM>")?;
     Ok(TranscribeArgs { stem, bpm, midi, grid })
 }

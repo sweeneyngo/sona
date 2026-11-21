@@ -1,17 +1,15 @@
 //! **Dev-split iteration harness** for the in-domain UST corpus: score one or
-//! more segmentation configs on the manifest's `dev` songs (never `holdout`),
-//! with Vocadito as a no-regression guard.
+//! more segmentation configs on the manifest's `dev` songs (`--holdout-once`
+//! reads the holdout instead), with Vocadito as a no-regression guard.
 //!
-//!     cargo run --release -p sona-eval --bin sona-eval-ust-dev -- \
-//!         --cfg base: --cfg floor50:min_note_s=0.05 [--vocadito] [--diag] [--stem lead]
+//! ```sh
+//! cargo run --release -p sona-eval --bin sona-eval-ust-dev -- \
+//!     --cfg base: --cfg grid:grid=est [--vocadito] [--diag] [--stem lead]
+//! ```
 //!
-//! pYIN is the cost, and it does not depend on any segmentation knob, so each
-//! stem's f0 contour is cached under `target/ust-dev-cache/` (keyed by the
-//! tracker's settings). A config is `name:key=value,key=value`; see [`apply`]
+//! Each stem's f0 contour is cached under `target/ust-dev-cache/`, keyed by the
+//! tracker's settings. A config is `name:key=value,key=value`; see [`apply`]
 //! for the keys. `--diag` prints where the first config's misses go.
-//!
-//! Scoring matches `sona-eval-ust-gate` exactly (same views, same quantizer,
-//! same anchor), so a dev number here is the gate's dev number.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,13 +23,11 @@ use sona_eval::reference::RefNote;
 use sona_eval::ust_corpus::{manifest_path, overlaps_any, stems_dir, Manifest, SongUsts};
 use sona_eval::{ust, vocadito, wav, EvalError};
 
-/// One stem with everything segmentation needs, loaded once.
 struct Item {
     id: String,
     samples: Vec<f32>,
     sr: u32,
     contour: Vec<F0Frame>,
-    /// `None` for Vocadito (raw only, no grid).
     grid: Option<Grid>,
     refs: Vec<RefNote>,
     poly: Vec<(f64, f64)>,
@@ -43,8 +39,6 @@ struct Grid {
     division: u32,
 }
 
-/// How a config decodes: the note-HMM, or the cell decoder on each song's grid
-/// with an estimated phase (what a user gets) or the UST-derived one (an upper bound).
 #[derive(Clone, Copy, PartialEq)]
 enum GridChoice {
     Off,
@@ -56,7 +50,6 @@ fn cache_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ust-dev-cache")
 }
 
-/// The tracker's settings as a cache key, so a PYin change can't read a stale contour.
 fn tracker_key(p: &PYin) -> String {
     let s = format!("{p:?}");
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -81,7 +74,6 @@ fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec
     Ok(c)
 }
 
-/// A config: the transcriber's stages plus how (and whether) to decode on a grid.
 #[derive(Clone)]
 struct Cfg {
     t: Transcriber,
@@ -89,7 +81,6 @@ struct Cfg {
     cell: GridDecoder,
 }
 
-/// Set one `key=value` knob on a config.
 fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
     let f = || val.parse::<f64>().map_err(|e| format!("{key}={val}: {e}"));
     let g = &mut cfg.cell;
@@ -165,7 +156,6 @@ fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
 }
 
 fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
-    // The pipeline, with the cached contour standing in for `tracker.track`.
     let t = &cfg.t;
     let onset = t.onset.detect(&it.samples, it.sr);
     let segs = match (&it.grid, cfg.grid) {
@@ -188,7 +178,6 @@ fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
     }
 }
 
-/// Raw notes, or what the review surface exports (snap, then `resolve_overlaps`).
 fn est(a: &Annotation, q: Option<&QuantizeOptions>) -> Vec<EstNote> {
     let raw = a.notes.iter().map(|n| EstNote { onset_s: n.onset_s, offset_s: n.offset_s, midi_pitch: n.midi_pitch, confidence: n.confidence });
     let Some(o) = q else { return raw.collect() };
@@ -203,7 +192,6 @@ struct Counts {
     n_est: usize,
     conp: usize,
     conpoff: usize,
-    /// Cell accuracy (right, total): [all, all-mono, sung, sung-mono]; quant-all view only.
     cells: [(usize, usize); 4],
 }
 
@@ -229,10 +217,6 @@ impl Counts {
     }
 }
 
-/// Cell accuracy against the UST, on the UST-anchored grid: at each cell's centre
-/// between the first and last reference note, does the exported line have the
-/// UST's pitch (or a rest where the UST rests)? Returns `[all, all-mono, sung,
-/// sung-mono]` as (right, total).
 fn cell_accuracy(refs: &[RefNote], est: &[EstNote], poly: &[(f64, f64)], spacing: f64, anchor: f64) -> [(usize, usize); 4] {
     let mut out = [(0, 0); 4];
     let (Some(first), Some(last)) = (refs.iter().map(|r| r.onset_s).reduce(f64::min), refs.iter().map(|r| r.offset_s).reduce(f64::max)) else {
@@ -267,7 +251,6 @@ fn cell_accuracy(refs: &[RefNote], est: &[EstNote], poly: &[(f64, f64)], spacing
     out
 }
 
-/// [raw-all, quant-all, raw-mono, quant-mono] for a UST song; [raw] for Vocadito.
 fn score_item(t: &Cfg, it: &Item, p: &NoteParams) -> (Vec<Counts>, Annotation) {
     let a = transcribe(t, it);
     let raw = est(&a, None);
@@ -306,8 +289,6 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
     slots.into_iter().map(|r| r.expect("processed")).collect()
 }
 
-/// `stem`: which file per song to transcribe — `vocals` (demucs) or `lead`
-/// (`scripts/separate-lead.sh`, lead vocal only).
 fn load_ust_items(split: &str, pyin: &PYin, stem: &str) -> Result<Vec<Item>, EvalError> {
     let file = format!("{stem}.wav");
     let manifest = Manifest::load(&manifest_path())?;
@@ -381,7 +362,6 @@ fn run() -> Result<(), String> {
             }
             "--vocadito" => with_voc = true,
             "--pyin" => {
-                // Tracker knobs, e.g. --pyin voiced_threshold=0.2 (changes the contour cache key).
                 i += 1;
                 let kv = args.get(i).ok_or("--pyin needs key=value")?;
                 let (k, v) = kv.split_once('=').ok_or("--pyin needs key=value")?;
@@ -404,7 +384,6 @@ fn run() -> Result<(), String> {
                 i += 1;
                 dump = Some(PathBuf::from(args.get(i).ok_or("--dump needs a dir")?));
             }
-            // Reading the holdout is a one-time act (see the manifest's split rule).
             "--holdout-once" => split = "holdout".into(),
             a => return Err(format!("unknown arg {a}")),
         }
@@ -499,9 +478,6 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-/// Where the reference notes the raw output misses go (monophonic regions only,
-/// so harmony bleed doesn't pollute the taxonomy), and what the unmatched
-/// estimates are.
 fn print_diag(items: &[Item], scored: &[(Vec<Counts>, Annotation)], p: &NoteParams, floor: f64) {
     let mut miss = std::collections::BTreeMap::<&str, usize>::new();
     let mut fp = std::collections::BTreeMap::<&str, usize>::new();

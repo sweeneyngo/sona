@@ -100,9 +100,6 @@ pub fn quantize_note(
     QuantizedNote { onset_s: snapped_onset, offset_s: offset, escaped: false }
 }
 
-/// JavaScript's `Math.round`: halves round toward +∞ (`-2.5 → -2`), unlike
-/// Rust's `f64::round` (away from zero, `-2.5 → -3`). Matters for a note exactly
-/// half a cell before the anchor.
 /// `grid.ts` `resolveOverlaps`: keep a snapped line monophonic. Walking in onset
 /// order, a note that starts inside its predecessor trims the predecessor to its
 /// onset; a note on the predecessor's onset line moves to the predecessor's end and
@@ -126,6 +123,9 @@ pub fn resolve_overlaps(notes: &mut [QuantizedNote], spacing: f64) {
     }
 }
 
+/// JavaScript's `Math.round`: halves round toward +∞ (`-2.5 → -2`), unlike
+/// Rust's `f64::round` (away from zero, `-2.5 → -3`). Matters for a note exactly
+/// half a cell before the anchor.
 fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
 }

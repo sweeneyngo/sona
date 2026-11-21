@@ -433,7 +433,7 @@ function effectiveNotes(): EffectiveNote[] {
   const s = spacing();
   const key = currentKey();
   // Manual notes never escape; everything else uses grid.ts's documented
-  // escape-hatch defaults (ADR-0003). Snapped one by one, then kept monophonic.
+  // escape-hatch defaults (ADR-0003).
   const snapped = resolveOverlaps(
     workingNotes.map((n) =>
       quantizeNote(

@@ -88,9 +88,7 @@ export function quantizeNote(
 }
 
 /**
- * Keep a snapped line monophonic. `quantizeNote` snaps each note on its own, so
- * two neighbours can overlap: one snaps while its confident neighbour escapes,
- * or both round onto the same line (verification/grid-notes, SnappedMonophonic).
+ * Keep a snapped line monophonic (verification/grid-notes, SnappedMonophonic).
  * Walking in onset order:
  * - **Overlap.** The later note starts inside the earlier one, so the earlier
  *   note ends where the later begins.

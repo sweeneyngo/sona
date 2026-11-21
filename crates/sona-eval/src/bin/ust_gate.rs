@@ -141,8 +141,6 @@ fn pitch_offsets(refs: &[RefNote], est: &[EstNote]) -> Vec<(i32, usize)> {
     v
 }
 
-/// `grid`: decode with the cell decoder on this many cells per whole note, phase
-/// estimated from the stem (ADR-0015); `None` is the default note-HMM path.
 fn transcribe(samples: &[f32], sr: u32, bpm: f64, grid: Option<u32>) -> Annotation {
     let t = Transcriber { grid: grid.map(|division| GridMode { division, ..GridMode::sixteenths() }), ..Transcriber::default() };
     t.transcribe(&PYin::default(), samples, sr, bpm, Producer::Pyin)
@@ -155,8 +153,6 @@ fn raw_notes(a: &Annotation) -> Vec<EstNote> {
         .collect()
 }
 
-/// What the review surface exports: each note snapped (`quantizeNote`), then the
-/// line kept monophonic (`resolveOverlaps`).
 fn quantized_notes(a: &Annotation, opts: &QuantizeOptions) -> Vec<EstNote> {
     let mut q: Vec<_> = a.notes.iter().map(|n| quantize_note(n.onset_s, n.offset_s, Some(n.sub_scores.onset_clarity), opts)).collect();
     resolve_overlaps(&mut q, opts.spacing);

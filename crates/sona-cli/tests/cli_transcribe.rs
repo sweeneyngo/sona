@@ -151,7 +151,6 @@ fn help_and_version_succeed() {
 
 #[test]
 fn grid_flag_decodes_notes_onto_the_grid() {
-    // At 100 BPM a 16th is 150 ms: the stem's notes and gaps are whole cells.
     let wav = tmp("two_note_grid.wav");
     write_wav(&wav, &two_note_stem());
     let out = sona()
@@ -163,7 +162,6 @@ fn grid_flag_decodes_notes_onto_the_grid() {
     assert_eq!(annotation.notes.len(), 2, "notes: {:?}", annotation.notes);
     assert_eq!(annotation.notes[0].midi_pitch, 69);
     assert_eq!(annotation.notes[1].midi_pitch, 72);
-    // Every boundary sits on one grid: whole cells apart from the first onset.
     let cell = 0.15;
     let first = annotation.notes[0].onset_s;
     for n in &annotation.notes {

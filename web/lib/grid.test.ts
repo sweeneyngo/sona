@@ -155,7 +155,6 @@ test("quantizeNote agrees with the Rust port on every shared case", () => {
   }
 });
 
-// The sequence pass has its own shared case file, asserted by the Rust port too.
 interface SequenceCase {
   name: string;
   spacing: number;
@@ -180,7 +179,6 @@ test("resolveOverlaps agrees with the Rust port on every shared sequence case", 
 });
 
 test("resolveOverlaps leaves a monophonic line with every note kept", () => {
-  // Random snapped lines on a 0.1 s grid, some notes escaped (off-grid).
   let seed = 12345;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
   for (let trial = 0; trial < 2000; trial++) {
