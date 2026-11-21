@@ -186,9 +186,42 @@ Tried on dev and rejected (default-off knobs, removed again):
 
 The consonant evidence the spectral cue sees at those lines isn't distinctive enough to place them. The next levers are a stronger front end: a neural f0, or note-onset models from the singing-transcription literature (a research swarm is surveying them).
 
+## Where Pifuyuu's note starts sit (premise test, dev, monophonic pitch changes)
+
+The two rejected boundary fixes both assumed that late onsets come from weak consonant evidence. Measured directly:
+
+| first sound of the new syllable | new pitch first voiced, relative to the UST start | old pitch last voiced |
+|---|---|---|
+| unvoiced consonant, n=280 | median +0.52 cell (p10 +0.15, p90 +1.17) | median −0.68 cell |
+| voiced consonant, n=504 | median +0.30 | −0.29 |
+| vowel, n=161 | median +0.31 | −0.12 |
+
+The UST start sits inside the unvoiced gap, about 57% of the way from the old note's end to the new vowel. That is neither the consonant onset nor the vowel onset that UTAU, VOCALOID and DiffSinger use. Placing pitch-change boundaries at the grid line nearest that point *lowered* cell accuracy (79.2% → 78.8–78.9%). The decoder's placement already beats a fixed rule, so the remaining late onsets need better evidence, not a placement rule.
+
+## Web research swarm (2026-11-21): external methods, ranked for sona
+
+Four sourced reports (state-of-the-art transcription, open-source tools, robust pitch, syllable alignment). The main points:
+
+| candidate | why | licence / packaging | targets |
+|---|---|---|---|
+| **RMVPE** f0 (Interspeech 2023, [arXiv 2306.15412](https://arxiv.org/abs/2306.15412)) | Only released f0 model trained to pull the vocal out of a mix. Polyphonic MIR-1K raw pitch accuracy 95.4 against pYIN's 77.3. Outputs 360-bin salience, so it can also replace the candidates | code Apache-2.0, weights MIT (stated by the Hugging Face page), ONNX ([Scicom-intl/rmvpe-onnx](https://huggingface.co/Scicom-intl/rmvpe-onnx)), about 186 MB, about 18× real time on 1 core | sung-as-rest under harmony, octave errors |
+| **GAME** (openvpi; successor to SOME, [repo](https://github.com/openvpi/GAME)) | Singing-to-notes, trained with Japanese and with accompaniment/noise augmentation. Gives boundary probabilities, presence and pitch, and can estimate on given boundaries. OpenUtau runs it through ONNX Runtime | code MIT; **weights CC BY-NC-SA 4.0**; official ONNX; small model about 12.7M parameters | onsets, sung-as-rest, spurious notes |
+| Yong et al., phoneme-informed AST ([arXiv 2304.05917](https://arxiv.org/abs/2304.05917)) | Phoneme posteriors are what catch same-pitch re-onsets | MIT, 106 MB checkpoint; ONNX untested; English phoneme set | re-articulations |
+| Tatum-level CRNN-HSMM (Nishikimi 2021) | Same formulation as sona's grid Viterbi. A metrical onset prior plus a long-note penalty mainly fixes onset and offset errors | paper only (pure-Rust idea) | onsets, offsets |
+| basic-pitch (Spotify) | onset and frame posteriors as extra features | Apache-2.0, official ONNX, under 17K parameters | onsets (untested on singing) |
+
+Two more findings:
+- Published systems reach COnP F1 about 0.77 on pop vocals (MIR-ST500, [T3MS](https://arxiv.org/html/2502.12438v1)). sona's 0.51–0.61 trails mainly on boundaries.
+- sona's `crepe` feature is an empty placeholder, so any neural front end means building the `ort` path.
+
 ## Next
 
-0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy:
+0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy, in order:
+   - RMVPE as an opt-in `ort` f0 and candidate source (permissive licence; targets the largest polyphonic classes);
+   - GAME's boundary and presence probabilities as decoder evidence (needs a licence decision: user-downloaded, non-commercial weights);
+   - Nishikimi's metrical onset prior (pure Rust).
+
+   Older items still open:
    - break down the remaining wrong cells on dev;
    - fix the two known limitations (salience lead-in after silence; spectral cue on clean tones);
    - phase robustness (telescope-nevermore).
