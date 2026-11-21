@@ -1,7 +1,7 @@
 # Grid-conditioned cell decoder vs the note-HMM on the UST corpus (ADR-0015)
 
 Runs:
-- `cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid` for the gate, all songs (about 2 min).
+- `cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid --include-holdout --reason "…" --reread` for the gate, all songs (about 2 min). Without `--include-holdout` it scores dev only; holdout reads are logged in `corpus/holdout-reads.jsonl`.
 - `cargo run --release -p sona-eval --bin sona-eval-ust-dev -- --cfg base: --cfg grid:grid=est --per-song --vocadito` for the dev split; contours are cached after the first run.
 
 The pipeline is unchanged up to segmentation: pYIN and the energy envelope on the demucs vocal stem. Grid mode then decodes on each song's grid (16th, or 16th-triplet for the 3 triplet songs) at the UST's integer BPM, with the **phase estimated from the stem**. The UST anchor is never given to the decoder.

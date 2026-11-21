@@ -357,6 +357,7 @@ fn run() -> Result<(), String> {
     let mut dump: Option<PathBuf> = None;
     let mut split = "dev".to_string();
     let mut stem = "vocals".to_string();
+    let (mut reason, mut reread): (Option<String>, bool) = (None, false);
     let mut pyin = PYin::default();
     let mut i = 0;
     while i < args.len() {
@@ -390,6 +391,11 @@ fn run() -> Result<(), String> {
                 dump = Some(PathBuf::from(args.get(i).ok_or("--dump needs a dir")?));
             }
             "--holdout-once" => split = "holdout".into(),
+            "--reason" => {
+                i += 1;
+                reason = Some(args.get(i).ok_or("--reason needs text")?.clone());
+            }
+            "--reread" => reread = true,
             a => return Err(format!("unknown arg {a}")),
         }
         i += 1;
@@ -398,6 +404,10 @@ fn run() -> Result<(), String> {
         cfgs.push(parse_cfg("base:")?);
     }
     let params = NoteParams::default();
+    if split == "holdout" {
+        let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
+        sona_eval::holdout::authorize(&manifest, "sona-eval-ust-dev", reason.as_deref(), reread)?;
+    }
     let items = load_ust_items(&split, &pyin, &stem).map_err(|e| e.to_string())?;
     if items.is_empty() {
         return Err(format!("no {split} songs have a {stem}.wav stem (for lead, run scripts/separate-lead.sh)"));

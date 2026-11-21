@@ -1,0 +1,69 @@
+# Checks that encode what the project has learned, so a contributor (human or
+# agent) can't regress it by forgetting. See docs/agents/rules.md for the
+# rules that need judgment and can't be checked here.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  corpus-data:
+    # Pifuyuu's USTs forbid redistribution and the source songs are commercial:
+    # nothing from crates/sona-eval/data/ may ever be tracked.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci/check-no-corpus-data.sh
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Includes the output invariants (crates/sona-core/tests/output_invariants.rs),
+      # the exhaustive grid path test, and the quantizer cases shared with grid.ts.
+      - name: test
+        run: cargo test --workspace --release
+      - name: test spectral-flux onsets (ADR-0013 feature)
+        run: cargo test -p sona-core --features spectral --release
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      # Includes the grid.ts / quantize.rs drift guard (shared fixtures/quantize cases).
+      - run: npx vitest run
+
+  model-check:
+    # TLA+ model of grid-mode note assembly + review-surface snap
+    # (verification/grid-notes): every rule, plus mutants that must be caught.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: fetch tla2tools 1.7.4 (pinned by sha256)
+        run: |
+          mkdir -p "$HOME/.cache/tla"
+          curl -sSL -o "$HOME/.cache/tla/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $HOME/.cache/tla/tla2tools.jar" | sha256sum -c -
+      - run: verification/grid-notes/check.sh

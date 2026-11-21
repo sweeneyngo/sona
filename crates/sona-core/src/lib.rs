@@ -47,12 +47,5 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(feature = "crepe")]
 pub mod crepe {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_is_populated() {
-        assert!(!VERSION.is_empty());
-    }
-}
+// The CLI prints VERSION; an empty one is a build error, not a test failure.
+const _: () = assert!(!VERSION.is_empty());

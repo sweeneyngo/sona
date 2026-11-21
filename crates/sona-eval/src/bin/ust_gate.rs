@@ -1,7 +1,8 @@
 //! **The in-domain gate** (UST corpus gate, ticket 06): sona vs. UST ground truth
 //! on the songs it targets, quantized and raw, per stratum — never pooled across.
 //!
-//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate               # UST corpus
+//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate               # UST corpus, dev split
+//!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --include-holdout --reason "…"  # + holdout (logged)
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --vocadito # + baseline
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid     # cell decoder (ADR-0015)
 //!
@@ -253,9 +254,14 @@ fn score_song(song: &Song, offset: f64, cache: &Path, stems: &Path, params: &Not
 }
 
 fn main() -> ExitCode {
-    let with_vocadito = std::env::args().any(|a| a == "--vocadito");
-    let grid_mode = std::env::args().any(|a| a == "--grid");
-    match run(with_vocadito, grid_mode) {
+    let args: Vec<String> = std::env::args().collect();
+    let with_vocadito = args.iter().any(|a| a == "--vocadito");
+    let grid_mode = args.iter().any(|a| a == "--grid");
+    let holdout = args.iter().any(|a| a == "--include-holdout").then(|| HoldoutRead {
+        reason: args.iter().position(|a| a == "--reason").and_then(|i| args.get(i + 1)).cloned(),
+        reread: args.iter().any(|a| a == "--reread"),
+    });
+    match run(with_vocadito, grid_mode, holdout) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("sona-eval-ust-gate: {e}");
@@ -264,11 +270,23 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(with_vocadito: bool, grid_mode: bool) -> Result<(), EvalError> {
+/// `--include-holdout --reason "…" [--reread]`: also score the holdout split (logged).
+struct HoldoutRead {
+    reason: Option<String>,
+    reread: bool,
+}
+
+fn run(with_vocadito: bool, grid_mode: bool, holdout: Option<HoldoutRead>) -> Result<(), EvalError> {
     if grid_mode {
         println!("Mode: grid-conditioned cell decoder (ADR-0015), phase estimated from each stem. Vocadito stays on the default path (no grid).\n");
     }
     let manifest = Manifest::load(&manifest_path())?;
+    if let Some(h) = &holdout {
+        sona_eval::holdout::authorize(&manifest, "sona-eval-ust-gate", h.reason.as_deref(), h.reread)
+            .map_err(|e| EvalError::parse(sona_eval::holdout::ledger_path(), e))?;
+    } else {
+        println!("Scoring the dev split only (add --include-holdout --reason \"…\" to read the holdout; it is logged).\n");
+    }
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let params = NoteParams::default();
     let mut dropped: Vec<(String, String)> = Vec::new();
@@ -277,6 +295,9 @@ fn run(with_vocadito: bool, grid_mode: bool) -> Result<(), EvalError> {
     // score, one song per worker — songs are independent and pYIN is the cost.
     let mut eligible: Vec<(&Song, f64)> = Vec::new();
     for song in &manifest.songs {
+        if holdout.is_none() && song.split.as_deref() == Some("holdout") {
+            continue;
+        }
         let status = song.alignment_status.clone().unwrap_or_else(|| "not aligned".into());
         let (Some(offset), true) = (song.alignment_offset_s, status.starts_with("aligned")) else {
             dropped.push((song.id.clone(), status));
