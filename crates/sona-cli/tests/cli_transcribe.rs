@@ -183,3 +183,26 @@ fn grid_flag_rejects_an_unsupported_division() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--grid"));
 }
+
+#[test]
+fn salience_refines_grid_mode_and_keeps_notes_on_the_grid() {
+    let wav = tmp("two_note_salience.wav");
+    write_wav(&wav, &two_note_stem());
+    let out = sona()
+        .args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "16", "--salience"])
+        .output()
+        .expect("run sona");
+    assert!(out.status.success(), "exit failure: {}", String::from_utf8_lossy(&out.stderr));
+    let annotation: Annotation = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let pitches: Vec<u8> = annotation.notes.iter().map(|n| n.midi_pitch).collect();
+    assert_eq!(pitches, vec![69, 72], "notes: {:?}", annotation.notes);
+}
+
+#[test]
+fn grid_refinements_without_grid_are_a_usage_error() {
+    let wav = tmp("salience_no_grid.wav");
+    write_wav(&wav, &two_note_stem());
+    let out = sona().args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--salience"]).output().expect("run sona");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--grid"));
+}

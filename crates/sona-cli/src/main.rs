@@ -14,7 +14,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::process::ExitCode;
 
-use sona_core::{GridMode, PYin, Producer, Transcriber};
+use sona_core::{CandidateEvidence, CueModel, GridMode, PYin, Producer, SpectralCue, Transcriber};
 
 const USAGE: &str = "\
 sona — vocal-to-MIDI perception core (CLI)
@@ -31,6 +31,10 @@ OPTIONS (transcribe):
     --midi <PATH>    Also write a raw, unquantized .mid alongside the JSON
     --grid <16|24>   Decode notes on a 16th (16) or 16th-triplet (24) grid at --bpm,
                      for grid-locked material such as Vocaloid songs (phase is estimated)
+    --salience       With --grid: add harmonic-salience pitch evidence, which follows
+                     the lead where other voices sing (ADR-0016)
+    --spectral-cue   With --grid: split held pitches at syllable changes found by a
+                     spectral model (ADR-0016; needs the `spectral` build feature)
     -h, --help       Print this usage
     -V, --version    Print version
 
@@ -71,6 +75,8 @@ struct TranscribeArgs {
     bpm: f64,
     midi: Option<String>,
     grid: Option<u32>,
+    salience: bool,
+    spectral_cue: bool,
 }
 
 /// The `transcribe` subcommand: parse args, decode the stem, run the pipeline,
@@ -79,10 +85,7 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
     let parsed = parse_transcribe_args(args)?;
 
     let (samples, sample_rate) = load_wav_mono(&parsed.stem)?;
-    let transcriber = Transcriber {
-        grid: parsed.grid.map(|division| GridMode { division, ..GridMode::sixteenths() }),
-        ..Transcriber::default()
-    };
+    let transcriber = Transcriber { grid: parsed.grid.map(|division| grid_mode(division, &parsed)), ..Transcriber::default() };
     let annotation = transcriber.transcribe(
         &PYin::default(),
         &samples,
@@ -108,6 +111,18 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Grid mode with the requested evidence (ADR-0015, ADR-0016).
+fn grid_mode(division: u32, args: &TranscribeArgs) -> GridMode {
+    let mut mode = GridMode { division, ..GridMode::sixteenths() };
+    if args.salience {
+        mode.decoder.candidates = Some(CandidateEvidence::default());
+    }
+    if args.spectral_cue {
+        mode.decoder.cue_model = CueModel::Spectral(SpectralCue::default());
+    }
+    mode
+}
+
 /// Hand-rolled parse of `<STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]`. Accepts both
 /// `--flag value` and `--flag=value` forms; the stem is the lone positional.
 fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
@@ -115,6 +130,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let mut bpm: Option<f64> = None;
     let mut midi: Option<String> = None;
     let mut grid: Option<u32> = None;
+    let (mut salience, mut spectral_cue) = (false, false);
 
     let mut i = 0;
     while i < args.len() {
@@ -139,6 +155,13 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
             }
             grid = Some(value);
             i = next;
+        } else if arg == "--salience" {
+            salience = true;
+        } else if arg == "--spectral-cue" {
+            if !cfg!(feature = "spectral") {
+                return Err("--spectral-cue needs a build with the `spectral` feature (cargo build -p sona-cli --features spectral)".into());
+            }
+            spectral_cue = true;
         } else if let Some(rest) = arg.strip_prefix("--midi") {
             let (value, next) = flag_value(args, i, rest, "--midi")?;
             i = next;
@@ -153,9 +176,12 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
         i += 1;
     }
 
-    let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]")?;
+    let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--salience] [--spectral-cue]]")?;
     let bpm = bpm.ok_or("transcribe needs --bpm <BPM>")?;
-    Ok(TranscribeArgs { stem, bpm, midi, grid })
+    if (salience || spectral_cue) && grid.is_none() {
+        return Err("--salience and --spectral-cue refine grid mode; add --grid 16 or --grid 24".into());
+    }
+    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue })
 }
 
 /// Resolve a flag's value at index `i`, where `rest` is whatever followed the

@@ -32,8 +32,12 @@ jobs:
       # the exhaustive grid path test, and the quantizer cases shared with grid.ts.
       - name: test
         run: cargo test --workspace --release
-      - name: test spectral-flux onsets (ADR-0013 feature)
-        run: cargo test -p sona-core --features spectral --release
+      # The spectral feature: spectral-flux onsets (ADR-0013) and the spectral
+      # re-articulation cue (ADR-0016), through the core, the harness and the CLI.
+      - name: clippy with the spectral feature
+        run: cargo clippy --workspace --all-targets --features sona-eval/spectral,sona-cli/spectral -- -D warnings
+      - name: test with the spectral feature
+        run: cargo test --workspace --release --features sona-eval/spectral,sona-cli/spectral
 
   web:
     runs-on: ubuntu-latest

@@ -127,7 +127,27 @@ Pifuyuu's lyrics are CV kana, one mora per note, with `R` for rests. All 5,336 d
 
 The vowel evidence is real. What it needs is **anchoring**: lyric lines matched to sung phrases, re-anchored at every rest, before vowels can place boundaries. That is the next lyrics step, if it is pursued. It also needs no vowel model trained on the UST.
 
+## Swarm results (2026-11-21): four hypotheses in parallel from `c1d81b5`
+
+Each worker ran on its own branch and in its own worktree, scored with the same `sona-eval-ust-dev` command on the dev split only (the ledger blocks holdout reads). The selection rule: beat the lead-stem baseline (0.518 / 0.285 / 76.0% cells) by more than 0.01 without hurting Vocadito. The user chose **cell accuracy** as the target.
+
+| worker | idea | lead COnP / COnPOff / cells | verdict |
+|---|---|---|---|
+| W1 | re-tune `sigma` and `voiced_in_rest` for lead stems | 0.572 / 0.319 / 75.3% (sung 71.2 → 67.8%) | **not merged**: note F1 rises but cell accuracy falls (16% fewer notes) |
+| W2 | lyrics anchored per phrase | see below | |
+| W3 | harmonic-salience pitch evidence | 0.555 / 0.308 / **80.7%** | **merged** (ADR-0016) |
+| W4 | spectral re-articulation cue (leave-one-song-out) | 0.553 / 0.333 / 76.0% | **merged** (ADR-0016) |
+| W3 + W4 (my measurement on the merge) | | **0.596 / 0.369 / 80.7%** | vocals: 0.611 / 0.388 / 79.5% |
+
+What each worker learned:
+- **W1:** most of its single-knob wins came from flipping one song's grid phase (telescope-nevermore, off by half a cell). Two knobs survived checks at both the UST and the estimated phase.
+- **W3:** its key oracle result is that the top salience candidate is the lead in 63% of polyphonic frames, against 32% for pYIN. Following weaker candidates hurt.
+- **W4:** voicing and energy add nothing once spectral flux and cepstral change are in the model, and metrical position is uninformative (AUC 0.50).
+- **Telescope-nevermore's lead-stem phase** is still half a cell off under every configuration except W1's. Robust phase estimation is open work.
+
 ## Next
+
+0. Confirm ADR-0016 (salience + spectral cue) on a fresh holdout, then make them grid-mode defaults.
 
 1. Run `scripts/separate-lead.sh`, then `sona-eval-ust-dev --stem lead --cfg grid:grid=est` to measure the polyphony fix.
 2. Lyrics-aware decoding: an optional mora sequence per phrase fixes the note count, which removes the re-articulation cap. This is a new input, so it needs a product decision and an ADR.
