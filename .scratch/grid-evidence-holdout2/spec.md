@@ -1,6 +1,6 @@
 # Spec: confirm ADR-0016 on the fresh holdout (holdout2)
 
-Status: pre-registered (holdout2 not yet read)
+Status: done — holdout2 read once (0ebadc3); all four criteria pass; both features are now grid-mode defaults
 
 ## Question
 
@@ -45,3 +45,26 @@ difference under about 2 points of cell accuracy is not distinguishable.
 - teni-suru-bug: drift +69 ms, so a single BPM doesn't hold.
 
 Both stay in the manifest, flagged, and are excluded from scoring. The next two uploads in channel order were backfilled (dreamcore, mc-tokyo); both aligned. **10 aligned songs are scored**, as the rule assumes. No holdout2 score had been computed when the backfill was made.
+
+## Result (holdout2, 10 aligned songs, read once at 0ebadc3)
+
+Vocal stems (primary), quantized, all notes:
+
+| | plain grid mode | + salience + spectral cue |
+|---|---|---|
+| cell accuracy, all | 52.8% | **70.0%** |
+| note COnP F1 | 0.330 | **0.514** |
+| COnPOff F1 | 0.206 | 0.335 |
+
+1. Cell accuracy +17.2 points, against a bar of +3. ✔
+2. COnP +0.184, against a bar of +0.05. ✔
+3. 95% song-bootstrap interval of the cell difference: [+12.0, +22.3] points. ✔
+4. Songs losing more than 2 points: none; every song improves. ✔
+
+**Secondary:** lead stems with both features score 69.5% against 70.0% on vocal stems, so they miss the +1 point bar. The extra UVR step isn't recommended.
+
+The lead-stem read is the second ledger entry (`--reread`, same sitting, as pre-registered).
+
+**Verdict:** salience and the spectral cue become grid mode's defaults. The default note-HMM path is unchanged.
+
+**Absolute level against dev:** 70.0% cells against dev's 79.5%, and 77.8% against 86.8% in monophonic regions. holdout2 is harder: cinema-mitaina scores 38% cells, from a 0.07 COnP baseline. That is worth a data check (key, alignment) before it is read as decoder weakness.

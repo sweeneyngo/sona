@@ -5,7 +5,7 @@ Turn a single isolated vocal stem — ripped from a finished mix — into a clea
 
 sona splits the problem in two: a headless Rust **perception** core reads the audio and emits raw note events, per-note confidence, an f0 contour, and an energy envelope as a single JSON annotation; a web **interpretation** surface renders that JSON as a piano-roll, plays the stem against a synthesized version, snaps notes to a live grid and key, and exports the corrected MIDI. The core stays invariant to musical settings, so the UI can re-grid and re-audition freely without re-running any DSP.
 
-The pipeline is pure Rust with no ML runtime, no FFT, and no C dependency on the default path: hand-rolled pYIN pitch tracking, energy-novelty onset detection, a Tony-style note-HMM (Viterbi) for segmentation, and a weakest-link confidence score that tells you *where to listen* instead of asking you to re-check the whole song. For grid-locked songs, an opt-in **grid mode** decodes notes per grid cell instead of per frame (see *In-domain* below).
+The pipeline is pure Rust with no ML runtime and no C dependency, and no FFT on the default (note-HMM) path: hand-rolled pYIN pitch tracking, energy-novelty onset detection, a Tony-style note-HMM (Viterbi) for segmentation, and a weakest-link confidence score that tells you *where to listen* instead of asking you to re-check the whole song. For grid-locked songs, an opt-in **grid mode** decodes notes per grid cell instead of per frame (see *In-domain* below).
 
 Accuracy is measured, not eyeballed. A separate `sona-eval` crate scores the pipeline against labeled vocal data (the Vocadito corpus + committed golden fixtures) with per-stage, `mir_eval`-style metrics. Replacing the original heuristic segmenter with the note-HMM was gated on these numbers:
 
@@ -28,19 +28,19 @@ Vocadito is general singing. sona's target is grid-locked Vocaloid songs, so it 
 
 1. **Decode on the grid.** Most frame-level misses come from consonants unvoicing a note's start, from pitch glides, and from the 100 ms prune floor. Grid mode decodes one state per grid cell instead (`--grid`, [ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) and estimates the grid phase from the stem. It was confirmed on the holdout, read once against a pre-registered rule: COnP F1 0.340 → **0.455**, COnPOff F1 0.158 → **0.303**, with no song regressing.
 2. **Follow the lead through other voices.** Two thirds of a UST's notes sit where harmony or doubling also sings, and two voices break pYIN.
-   - Harmonic-salience pitch evidence (`--salience`) finds the lead's f0 in 63% of those frames, against pYIN's 32%.
+   - Harmonic-salience pitch evidence (on by default in grid mode) finds the lead's f0 in 63% of those frames, against pYIN's 32%.
    - A lead-vocal stem from a UVR karaoke model helps too, and the two combine.
-3. **Split held pitches at syllable changes.** A spectral model (`--spectral-cue`) separates a new syllable on a held pitch from a sustained note far better than voicing or energy (AUC 0.80 against 0.69).
+3. **Split held pitches at syllable changes.** A spectral model (also on by default) separates a new syllable on a held pitch from a sustained note far better than voicing or energy (AUC 0.80 against 0.69).
 
-Items 2 and 3 ([ADR-0016](docs/adr/0016-grid-evidence-salience-and-spectral-cue.md)) are dev-split results, found by a 4-worker parallel search. They stay opt-in until a fresh holdout confirms them.
+Items 2 and 3 ([ADR-0016](docs/adr/0016-grid-evidence-salience-and-spectral-cue.md)) were found by a 4-worker parallel search on the dev songs. A **fresh holdout** of 10 songs nothing was tuned on confirmed them: cell accuracy 52.8% → **70.0%** and note F1 0.330 → 0.514, with every song improving. Both are now grid mode's defaults. The holdout also showed that lead-vocal stems add nothing once salience is on, so a plain demucs vocal stem is enough.
 
 | dev split (9 songs), quantized, all notes | COnP F1 | COnPOff F1 | grid cells matching the UST |
 |---|---|---|---|
 | note-HMM, vocal stem | 0.341 | 0.133 | 53.3% |
 | grid mode, vocal stem | 0.474 | 0.256 | 67.0% |
 | grid mode, lead-vocal stem | 0.518 | 0.285 | 76.0% |
-| grid mode + `--salience --spectral-cue`, vocal stem | 0.611 | 0.388 | 79.5% |
-| **grid mode + `--salience --spectral-cue`, lead-vocal stem** | **0.596** | **0.369** | **80.7%** |
+| **grid mode (with salience + spectral cue, now the default), vocal stem** | **0.611** | **0.388** | **79.5%** |
+| grid mode (with salience + spectral cue), lead-vocal stem | 0.596 | 0.369 | 80.7% |
 
 **Where the rest goes.** With perfect note boundaries, sona's pitch contour would score 0.91 monophonic COnP F1, so the pitch information is there. What's left:
 - **Same-pitch repeated syllables:** no acoustic cue tried separates them well.
@@ -79,7 +79,7 @@ cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 198 --grid 16 > annot
 ```
 
 ```
-Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--salience] [--spectral-cue]]
+Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue]]
 
 Transcribes an isolated mono vocal stem to an annotation JSON (stdout).
 
@@ -92,19 +92,17 @@ Options:
                     snapped MIDI is exported from the web review surface, not here.
   --grid <16|24>    Decode notes per grid cell at --bpm (ADR-0015) instead of frame by
                     frame; the phase is estimated. Needs an exact, single tempo.
-  --salience        With --grid: harmonic-salience pitch evidence, so the lead is
-                    followed where other voices sing (ADR-0016).
-  --spectral-cue    With --grid: split held pitches at syllable changes (ADR-0016;
-                    build with --features spectral).
+  --no-salience     With --grid: turn off harmonic-salience pitch evidence, which
+                    follows the lead where other voices sing (on by default, ADR-0016).
+  --no-spectral-cue With --grid: turn off the spectral cue that splits held pitches
+                    at syllable changes (on by default, ADR-0016).
 ```
 
-`--grid` is the mode to use for UST/Vocaloid-style material. Without it, sona stays on the grid-free perception path. For the closest match to a UST so far, build with the spectral feature and add both grid refinements:
+`--grid` is the mode to use for UST/Vocaloid-style material. Without it, sona stays on the grid-free perception path. Grid mode includes harmonic-salience pitch evidence and the spectral re-articulation cue by default (`--no-salience` and `--no-spectral-cue` turn them off). Grid cells matching the UST:
+- about 80% on the dev songs;
+- 70% on a fresh holdout, against 53% for plain grid mode.
 
-```bash
-cargo run --release -p sona-cli --features spectral -- transcribe stem.wav --bpm 198 --grid 16 --salience --spectral-cue
-```
-
-On the corpus's dev songs, about 80% of grid cells then match the UST, up from 67% for plain grid mode on a vocal stem. A **lead-vocal stem** (UVR's karaoke model, e.g. `UVR_MDXNET_KARA_2`, run on your vocal stem) adds a little more.
+A plain demucs vocal stem is enough: on the holdout, a separate lead-vocal stem added nothing.
 
 The annotation JSON is the core↔UI contract — raw note events in *seconds*, a confidence scalar plus four sub-scores per note, and display aids:
 

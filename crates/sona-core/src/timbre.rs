@@ -39,6 +39,15 @@ impl TimbreFrames {
     /// shorter than one frame.
     #[cfg(feature = "spectral")]
     pub fn from_samples(samples: &[f32], sample_rate: u32, frame_length: usize, hop: usize) -> Self {
+        let mut out = Self::raw_from_samples(samples, sample_rate, frame_length, hop);
+        normalise_by_median(&mut out.flux);
+        normalise_by_median(&mut out.flux_lo);
+        out
+    }
+
+    /// [`from_samples`](Self::from_samples) before the flux is normalised.
+    #[cfg(feature = "spectral")]
+    fn raw_from_samples(samples: &[f32], sample_rate: u32, frame_length: usize, hop: usize) -> Self {
         use realfft::RealFftPlanner;
         let (n, hop) = (frame_length.max(2), hop.max(1));
         if samples.len() < n || sample_rate == 0 {
@@ -92,8 +101,6 @@ impl TimbreFrames {
             prev = Some(log_mag);
             start += hop;
         }
-        normalise_by_median(&mut out.flux);
-        normalise_by_median(&mut out.flux_lo);
         out
     }
 }
@@ -101,12 +108,28 @@ impl TimbreFrames {
 #[cfg(feature = "spectral")]
 /// Divide by the median of the non-zero values: digitally silent frames have
 /// zero flux and would otherwise drag the median to zero.
+///
+/// The divisor is floored at 1% of the 99th percentile. On a clean signal
+/// (synthetic tones, digital silence) a steady note's flux is rounding noise, so
+/// the median is too, and ordinary flux would read as a huge burst. Real stems'
+/// medians sit far above the floor.
 fn normalise_by_median(v: &mut [f32]) {
-    let mut s: Vec<f32> = v.iter().copied().filter(|&x| x > 0.0).collect();
-    s.sort_by(f32::total_cmp);
-    let d = s.get(s.len() / 2).copied().unwrap_or(1.0);
+    let d = flux_divisor(v);
     v.iter_mut().for_each(|x| *x /= d);
 }
+
+#[cfg(feature = "spectral")]
+fn flux_divisor(v: &[f32]) -> f32 {
+    let mut s: Vec<f32> = v.iter().copied().filter(|&x| x > 0.0).collect();
+    if s.is_empty() {
+        return 1.0;
+    }
+    s.sort_by(f32::total_cmp);
+    let median = s[s.len() / 2];
+    let p99 = s[((s.len() - 1) as f64 * 0.99).round() as usize];
+    median.max(0.01 * p99)
+}
+
 
 #[cfg(all(test, feature = "spectral"))]
 mod tests {

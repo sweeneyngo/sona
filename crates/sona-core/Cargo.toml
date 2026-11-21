@@ -12,12 +12,13 @@ serde.workspace = true
 # CREPE (ONNX via ort) is behind the `crepe` feature — the pYIN default backend
 # needs no ONNX runtime. See ADR-0001 and ticket 11.
 ort = { workspace = true, optional = true }
-# Spectral-flux onsets (ADR-0013) behind the `spectral` feature; the default
-# energy-rise detector needs no FFT.
+# `spectral` (on by default since holdout2 confirmed ADR-0016): the pure-Rust
+# FFT behind grid mode's spectral re-articulation cue and the optional
+# spectral-flux onsets (ADR-0013). The note-HMM default path doesn't use it.
 realfft = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["spectral"]
 crepe = ["dep:ort"]
 spectral = ["dep:realfft"]
 

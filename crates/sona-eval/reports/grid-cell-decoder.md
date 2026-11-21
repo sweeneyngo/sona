@@ -145,9 +145,26 @@ What each worker learned:
 - **W4:** voicing and energy add nothing once spectral flux and cepstral change are in the model, and metrical position is uninformative (AUC 0.50).
 - **Telescope-nevermore's lead-stem phase** is still half a cell off under every configuration except W1's. Robust phase estimation is open work.
 
+## Fresh holdout (holdout2) confirms ADR-0016 (2026-11-21)
+
+10 songs nothing was tuned on (the next uploads in channel order; 2 alignment failures were backfilled before the read), read once against the rule in `.scratch/grid-evidence-holdout2/spec.md`:
+
+| holdout2, vocal stems, quantized, all notes | plain grid mode | + salience + spectral cue |
+|---|---|---|
+| cell accuracy, all / sung / mono | 52.8% / 36.1% / 72.3% | **70.0% / 62.2% / 77.8%** |
+| COnP F1 / COnPOff F1 | 0.330 / 0.206 | **0.514 / 0.335** |
+
+- **Cell gain:** +17.2 points, 95% [+12.0, +22.3], and every song improves.
+- **Lead stems:** 69.5%, so they add nothing once salience is on.
+- **Both features are now grid mode's defaults.**
+- **Absolute level:** below dev (70% against 80%). holdout2 is more polyphonic, and cinema-mitaina (38%) needs a data check.
+
 ## Next
 
-0. Confirm ADR-0016 (salience + spectral cue) on a fresh holdout, then make them grid-mode defaults.
+0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy:
+   - break down the remaining wrong cells on dev;
+   - fix the two known limitations (salience lead-in after silence; spectral cue on clean tones);
+   - phase robustness (telescope-nevermore).
 
 1. Run `scripts/separate-lead.sh`, then `sona-eval-ust-dev --stem lead --cfg grid:grid=est` to measure the polyphony fix.
 2. Lyrics-aware decoding: an optional mora sequence per phrase fixes the note count, which removes the re-articulation cap. This is a new input, so it needs a product decision and an ADR.

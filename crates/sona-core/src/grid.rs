@@ -98,7 +98,7 @@ pub struct GridDecoder {
     /// [`HarmonicSalience`](crate::pitch::HarmonicSalience)) alongside the
     /// contour. Where two voices sing, pYIN often unvoices the frame or picks
     /// the other voice; harmonic-sum salience still finds the lead's f0, and its
-    /// strength argues against a rest. `None` (the default) uses the contour
+    /// strength argues against a rest. On by default (ADR-0016); `None` uses the contour
     /// alone. [`Transcriber`](crate::Transcriber) computes the candidates when
     /// this is set; [`segment_with_candidates`](Self::segment_with_candidates)
     /// takes them directly.
@@ -241,8 +241,11 @@ impl Default for GridDecoder {
             fill_gap_cells: 1,
             phase_candidates: 24,
             drop_window_s: 0.04,
-            candidates: None,
-            cue_model: CueModel::VoicingEnergy,
+            // Confirmed on holdout2 (ADR-0016): +17 points of cell accuracy on
+            // 10 untuned songs. Without candidates or timbre frames to read,
+            // each falls back to the plain contour / voicing-energy cue.
+            candidates: Some(CandidateEvidence::default()),
+            cue_model: CueModel::Spectral(SpectralCue::default()),
         }
     }
 }
@@ -891,7 +894,8 @@ mod tests {
         let (c, e) = held_note();
         let tf = timbre(1.0, &[0.5]);
         let one = vec![(0.1, 0.9, 64)];
-        assert_eq!(spans(&GridDecoder::default().segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf))), one);
+        let voicing_energy = GridDecoder { cue_model: CueModel::VoicingEnergy, ..GridDecoder::default() };
+        assert_eq!(spans(&voicing_energy.segment_with_timbre(&grid(Some(0.0)), &[], &c, &e, Some(&tf))), one);
         assert_eq!(spans(&spectral().segment(&grid(Some(0.0)), &[], &c, &e)), one);
     }
 

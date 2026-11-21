@@ -185,11 +185,11 @@ fn grid_flag_rejects_an_unsupported_division() {
 }
 
 #[test]
-fn salience_refines_grid_mode_and_keeps_notes_on_the_grid() {
+fn grid_mode_with_refinements_off_still_decodes_the_melody() {
     let wav = tmp("two_note_salience.wav");
     write_wav(&wav, &two_note_stem());
     let out = sona()
-        .args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "16", "--salience"])
+        .args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "16", "--no-salience", "--no-spectral-cue"])
         .output()
         .expect("run sona");
     assert!(out.status.success(), "exit failure: {}", String::from_utf8_lossy(&out.stderr));

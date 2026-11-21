@@ -19,7 +19,7 @@ serde_json.workspace = true
 hound.workspace = true
 
 [features]
-default = []
+default = ["spectral"]
 # Forward the CREPE backend feature down to the core.
 crepe = ["sona-core/crepe"]
 # Spectral features (pure-Rust FFT) for `--spectral-cue` (ADR-0016).

@@ -1,6 +1,6 @@
-# Grid mode evidence: harmonic salience and a spectral re-articulation cue (opt-in)
+# Grid mode evidence: harmonic salience and a spectral re-articulation cue
 
-**Status: Accepted as opt-in.** Both features are behind flags until a fresh holdout confirms them. The holdout ADR-0015 read is spent (`crates/sona-eval/corpus/holdout-reads.jsonl`).
+**Status: Accepted, and grid mode's default since 2026-11-21.** A fresh holdout (holdout2: 10 songs nothing was tuned on, rule pre-registered in `.scratch/grid-evidence-holdout2/spec.md`) confirmed both features. On vocal stems, cell accuracy rose 52.8% → 70.0% (+17.2 points, 95% [+12.0, +22.3]) and COnP F1 0.330 → 0.514, with every song improving.
 
 ## Context
 
@@ -29,7 +29,7 @@ Two opt-in evidence tracks for `GridDecoder`, combined through `GridDecoder::seg
    - **Weights:** fit on the dev songs' same-pitch lines. Under nested leave-one-song-out, AUC per song rose 0.69 → 0.80 and precision at the operating point 0.23 → 0.39.
    - **Scope:** it only splits held notes. It never changes the decode cost, the phase or a cell's pitch, so cell accuracy is unaffected by it.
 
-Exposed as `sona transcribe … --grid 16 --salience --spectral-cue`. The second flag needs `--features spectral`, and the CLI errors without it rather than silently falling back to the old cue.
+Both are on in `GridDecoder::default()`. `sona transcribe … --grid 16` uses them, and `--no-salience` / `--no-spectral-cue` turn them off. `spectral` is now a default feature of sona-core, sona-cli and sona-eval: a pure-Rust FFT that the note-HMM path doesn't use. `cargo check -p sona-core --no-default-features` stays in CI so the FFT-free core keeps building.
 
 ## Evidence (dev, quantized, all notes, `grid=est`; measured on the merged code)
 
@@ -54,4 +54,9 @@ The two tracks touch different parts of the decode (cell pitch versus held-note 
 - **Cost:** salience costs about one pYIN pass (≈ 22 CPU-seconds per 4-minute song).
 - **Default output is unchanged.** `GridDecoder::default()` and the note-HMM path are byte-identical; both features are `None` / `VoicingEnergy` by default.
 - **Model check still applies.** The TLA+ model (`verification/grid-notes`) covers `notes_from_path` and `fill_gaps`, which this change leaves untouched.
-- **Next:** a fresh holdout. If it confirms, make both the grid-mode default.
+- **Done:** the holdout2 confirmation, and making both the default.
+- **Known limitations** (found when the defaults were flipped, on synthetic test signals; both are already included in the confirmed holdout2 numbers):
+  1. **After digital silence, salience can open a note one cell early.** Its frame starts its window as soon as a note enters it, before pYIN's periodicity settles.
+  2. **On perfectly clean synthetic tones, the spectral cue can split every cell.** The log-magnitude spectrum of near-silent sidelobe bins swings from frame to frame. Real stems' noise floor prevents it: the flux normaliser's median sits at least 22× above its floor on every corpus stem.
+  - Fixing either changes behaviour after the holdout read, so each needs dev measurement and a future holdout.
+  - A floor was added to the flux normaliser (1% of the 99th percentile). It never binds on a corpus stem, so no result changed.

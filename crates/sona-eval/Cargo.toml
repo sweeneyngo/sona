@@ -7,8 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-# Forwards to sona-core's spectral-flux onsets (ADR-0013) so the onset-compare
-# gate can build the spectral detector. Off by default.
+# Forwards to sona-core's spectral code: grid mode's spectral re-articulation
+# cue (ADR-0016) and the spectral-flux onsets (ADR-0013). On by default.
+default = ["spectral"]
 spectral = ["sona-core/spectral"]
 
 [dependencies]

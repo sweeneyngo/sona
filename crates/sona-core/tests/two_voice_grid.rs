@@ -4,7 +4,7 @@
 //! harmonic-sum salience supplies the lead's pitch and the decoded line follows
 //! the lead.
 
-use sona_core::{CandidateEvidence, GridMode, PYin, Producer, Transcriber};
+use sona_core::{CandidateEvidence, CueModel, GridMode, PYin, Producer, Transcriber};
 use std::f32::consts::PI;
 
 const SR: u32 = 44_100;
@@ -44,6 +44,9 @@ fn decode(audio: &[f32], candidates: Option<CandidateEvidence>) -> Vec<(i64, i64
     let mut mode = GridMode::sixteenths();
     mode.anchor_s = Some(0.0);
     mode.decoder.candidates = candidates;
+    // These tests are about salience; the spectral cue misreads perfectly clean
+    // synthetic tones (a known limitation, ADR-0016), so use the voicing cue.
+    mode.decoder.cue_model = CueModel::VoicingEnergy;
     let a = Transcriber { grid: Some(mode), ..Transcriber::default() }.transcribe(&PYin::default(), audio, SR, BPM, Producer::Pyin);
     a.notes.iter().map(|n| ((n.onset_s / 0.1).round() as i64, (n.offset_s / 0.1).round() as i64, n.midi_pitch)).collect()
 }
@@ -74,6 +77,7 @@ fn candidates_leave_a_solo_lead_as_the_contour_decodes_it() {
 fn candidates_leave_silence_silent() {
     let mut mode = GridMode::sixteenths();
     mode.decoder.candidates = Some(CandidateEvidence::default());
+    mode.decoder.cue_model = CueModel::VoicingEnergy;
     let a = Transcriber { grid: Some(mode), ..Transcriber::default() }.transcribe(&PYin::default(), &vec![0.0; SR as usize], SR, BPM, Producer::Pyin);
     assert!(a.notes.is_empty(), "{:?}", a.notes);
 }

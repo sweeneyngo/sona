@@ -197,8 +197,12 @@ mod tests {
                 .notes;
             notes.iter().map(|n| ((n.onset_s * 10.0).round() as i32, (n.offset_s * 10.0).round() as i32, n.midi_pitch)).collect::<Vec<_>>()
         };
-        let spectral = GridDecoder { cue_model: CueModel::Spectral(SpectralCue::default()), ..GridDecoder::default() };
+        // Salience off in both runs, so the test isolates the cue: after silence,
+        // salience's window can open a note one cell early (a known limitation,
+        // ADR-0016), which isn't what this test is about.
+        let base = GridDecoder { candidates: None, ..GridDecoder::default() };
+        let spectral = GridDecoder { cue_model: CueModel::Spectral(SpectralCue::default()), ..base };
         assert_eq!(transcribe(spectral), vec![(2, 6, 57), (6, 9, 57)]);
-        assert_eq!(transcribe(GridDecoder::default()), vec![(2, 9, 57)]);
+        assert_eq!(transcribe(GridDecoder { cue_model: CueModel::VoicingEnergy, ..base }), vec![(2, 9, 57)]);
     }
 }
