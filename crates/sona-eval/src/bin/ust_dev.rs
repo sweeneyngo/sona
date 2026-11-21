@@ -3,7 +3,7 @@
 //! with Vocadito as a no-regression guard.
 //!
 //!     cargo run --release -p sona-eval --bin sona-eval-ust-dev -- \
-//!         --cfg base: --cfg floor50:min_note_s=0.05 [--vocadito] [--diag]
+//!         --cfg base: --cfg floor50:min_note_s=0.05 [--vocadito] [--diag] [--stem lead]
 //!
 //! pYIN is the cost, and it does not depend on any segmentation knob, so each
 //! stem's f0 contour is cached under `target/ust-dev-cache/` (keyed by the
@@ -203,17 +203,23 @@ struct Counts {
     n_est: usize,
     conp: usize,
     conpoff: usize,
+    /// Cell accuracy (right, total): [all, all-mono, sung, sung-mono]; quant-all view only.
+    cells: [(usize, usize); 4],
 }
 
 impl Counts {
     fn of(refs: &[RefNote], est: &[EstNote], p: &NoteParams) -> Self {
-        Counts { n_ref: refs.len(), n_est: est.len(), conp: match_notes(refs, est, p, false).len(), conpoff: match_notes(refs, est, p, true).len() }
+        Counts { n_ref: refs.len(), n_est: est.len(), conp: match_notes(refs, est, p, false).len(), conpoff: match_notes(refs, est, p, true).len(), cells: [(0, 0); 4] }
     }
     fn add(&mut self, o: Counts) {
         self.n_ref += o.n_ref;
         self.n_est += o.n_est;
         self.conp += o.conp;
         self.conpoff += o.conpoff;
+        for i in 0..4 {
+            self.cells[i].0 += o.cells[i].0;
+            self.cells[i].1 += o.cells[i].1;
+        }
     }
     fn conp(&self) -> Prf1 {
         Prf1::from_counts(self.conp, self.n_ref, self.n_est)
@@ -221,6 +227,44 @@ impl Counts {
     fn conpoff(&self) -> Prf1 {
         Prf1::from_counts(self.conpoff, self.n_ref, self.n_est)
     }
+}
+
+/// Cell accuracy against the UST, on the UST-anchored grid: at each cell's centre
+/// between the first and last reference note, does the exported line have the
+/// UST's pitch (or a rest where the UST rests)? Returns `[all, all-mono, sung,
+/// sung-mono]` as (right, total).
+fn cell_accuracy(refs: &[RefNote], est: &[EstNote], poly: &[(f64, f64)], spacing: f64, anchor: f64) -> [(usize, usize); 4] {
+    let mut out = [(0, 0); 4];
+    let (Some(first), Some(last)) = (refs.iter().map(|r| r.onset_s).reduce(f64::min), refs.iter().map(|r| r.offset_s).reduce(f64::max)) else {
+        return out;
+    };
+    fn at(v: impl Iterator<Item = (f64, f64, u8)>, t: f64) -> Option<u8> {
+        v.filter(|n| n.0 <= t && t < n.1).map(|n| n.2).next()
+    }
+    let mut k = ((first - anchor) / spacing).round() as i64;
+    while anchor + (k as f64 + 0.5) * spacing < last {
+        let t = anchor + (k as f64 + 0.5) * spacing;
+        k += 1;
+        let r = at(refs.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch)), t);
+        let e = at(est.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch)), t);
+        let ok = (r == e) as usize;
+        let mono = !overlaps_any(poly, t - spacing / 2.0, t + spacing / 2.0);
+        let mut add = |i: usize| {
+            out[i].0 += ok;
+            out[i].1 += 1;
+        };
+        add(0);
+        if mono {
+            add(1);
+        }
+        if r.is_some() {
+            add(2);
+            if mono {
+                add(3);
+            }
+        }
+    }
+    out
 }
 
 /// [raw-all, quant-all, raw-mono, quant-mono] for a UST song; [raw] for Vocadito.
@@ -236,7 +280,7 @@ fn score_item(t: &Cfg, it: &Item, p: &NoteParams) -> (Vec<Counts>, Annotation) {
     (
         vec![
             Counts::of(&it.refs, &raw, p),
-            Counts::of(&it.refs, &quant, p),
+            Counts { cells: cell_accuracy(&it.refs, &quant, &it.poly, g.opts.spacing, g.opts.anchor), ..Counts::of(&it.refs, &quant, p) },
             Counts::of(&mono_refs, &mono(&raw), p),
             Counts::of(&mono_refs, &mono(&quant), p),
         ],
@@ -262,7 +306,10 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
     slots.into_iter().map(|r| r.expect("processed")).collect()
 }
 
-fn load_ust_items(split: &str, pyin: &PYin) -> Result<Vec<Item>, EvalError> {
+/// `stem`: which file per song to transcribe — `vocals` (demucs) or `lead`
+/// (`scripts/separate-lead.sh`, lead vocal only).
+fn load_ust_items(split: &str, pyin: &PYin, stem: &str) -> Result<Vec<Item>, EvalError> {
+    let file = format!("{stem}.wav");
     let manifest = Manifest::load(&manifest_path())?;
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let songs: Vec<_> = manifest
@@ -270,15 +317,16 @@ fn load_ust_items(split: &str, pyin: &PYin) -> Result<Vec<Item>, EvalError> {
         .iter()
         .filter(|s| s.split.as_deref() == Some(split) && s.stratum == "vocaloid-original")
         .filter(|s| s.alignment_status.as_deref().is_some_and(|a| a.starts_with("aligned")) && s.alignment_offset_s.is_some())
-        .filter(|s| stems.join(&s.id).join("vocals.wav").is_file())
+        .filter(|s| stems.join(&s.id).join(&file).is_file())
         .collect();
     let items: Vec<Result<Item, EvalError>> = parallel_map(&songs, |song| {
         let offset = song.alignment_offset_s.expect("filtered");
         let usts = SongUsts::load(song, &cache)?;
         let bpm = song.bpm_from_ust.unwrap_or(usts.lead[0].tempo);
         let spacing = grid_spacing_seconds(bpm, song.grid_division.unwrap_or(16) as f64);
-        let (samples, sr) = wav::read_mono(&stems.join(&song.id).join("vocals.wav"))?;
-        let contour = contour_cached(&song.id, &samples, sr, pyin)?;
+        let (samples, sr) = wav::read_mono(&stems.join(&song.id).join(&file))?;
+        let key = if stem == "vocals" { song.id.clone() } else { format!("{}.{stem}", song.id) };
+        let contour = contour_cached(&key, &samples, sr, pyin)?;
         Ok(Item {
             id: song.id.clone(),
             samples,
@@ -322,6 +370,8 @@ fn run() -> Result<(), String> {
     let (mut with_voc, mut diag, mut per_song) = (false, false, false);
     let mut dump: Option<PathBuf> = None;
     let mut split = "dev".to_string();
+    let mut stem = "vocals".to_string();
+    let mut pyin = PYin::default();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -330,6 +380,24 @@ fn run() -> Result<(), String> {
                 cfgs.push(parse_cfg(args.get(i).ok_or("--cfg needs a value")?)?);
             }
             "--vocadito" => with_voc = true,
+            "--pyin" => {
+                // Tracker knobs, e.g. --pyin voiced_threshold=0.2 (changes the contour cache key).
+                i += 1;
+                let kv = args.get(i).ok_or("--pyin needs key=value")?;
+                let (k, v) = kv.split_once('=').ok_or("--pyin needs key=value")?;
+                let x: f64 = v.parse().map_err(|e| format!("--pyin {kv}: {e}"))?;
+                match k {
+                    "voiced_threshold" => pyin.voiced_threshold = x as f32,
+                    "median_window" => pyin.median_window = x as usize,
+                    "beta_b" => pyin.beta_b = x as f32,
+                    "fmin" => pyin.fmin = x as f32,
+                    _ => return Err(format!("unknown pyin knob {k}")),
+                }
+            }
+            "--stem" => {
+                i += 1;
+                stem = args.get(i).ok_or("--stem needs vocals|lead")?.clone();
+            }
             "--diag" => diag = true,
             "--per-song" => per_song = true,
             "--dump" => {
@@ -345,11 +413,13 @@ fn run() -> Result<(), String> {
     if cfgs.is_empty() {
         cfgs.push(parse_cfg("base:")?);
     }
-    let pyin = PYin::default();
     let params = NoteParams::default();
-    let items = load_ust_items(&split, &pyin).map_err(|e| e.to_string())?;
+    let items = load_ust_items(&split, &pyin, &stem).map_err(|e| e.to_string())?;
+    if items.is_empty() {
+        return Err(format!("no {split} songs have a {stem}.wav stem (for lead, run scripts/separate-lead.sh)"));
+    }
     let voc = if with_voc { load_vocadito(&pyin).map_err(|e| e.to_string())? } else { Vec::new() };
-    eprintln!("{} {split} songs{}", items.len(), if with_voc { format!(" + {} Vocadito stems", voc.len()) } else { String::new() });
+    eprintln!("{} {split} songs ({stem} stems){}", items.len(), if with_voc { format!(" + {} Vocadito stems", voc.len()) } else { String::new() });
 
     println!(
         "{:<22} | {:^31} | {:^19} | {:^13} | {:^13}",
@@ -388,6 +458,12 @@ fn run() -> Result<(), String> {
             tot[0].conpoff().f1,
             tot[3].conp().f1,
             tot[3].conpoff().f1,
+        );
+        let c = tot[1].cells;
+        let pc = |x: (usize, usize)| 100.0 * x.0 as f64 / x.1.max(1) as f64;
+        println!(
+            "{:<22}   cell accuracy (quantized, vs UST): all {:.1}% · mono {:.1}% · sung cells {:.1}% · sung mono {:.1}%",
+            "", pc(c[0]), pc(c[1]), pc(c[2]), pc(c[3])
         );
         if per_song {
             for (it, (v, _)) in items.iter().zip(&scored) {
