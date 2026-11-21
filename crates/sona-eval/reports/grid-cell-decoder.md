@@ -80,8 +80,40 @@ On three songs the quantized COnPOff is below raw: kinsei 0.41 → 0.37, fukagya
 - **One-cell blips in reference rests** (breaths, bleed, ad-libs) make up most of the remaining false positives.
 - **Harmony and doubled voices** cover two-thirds of the reference notes, which sit in polyphonic regions; the monophonic recall of 0.61 against all-notes 0.46 is the gap.
 
+## How far from "85–100% of the UST"? Ceilings on dev
+
+`sona-eval-ust-dev` now also prints **cell accuracy**: at each grid cell, does the exported line have the UST's pitch, or a rest where the UST rests?
+
+| dev, quantized | note-HMM | grid mode |
+|---|---|---|
+| cell accuracy, all cells | 53.3% | **67.0%** |
+| cell accuracy, monophonic regions | 78.6% | **86.7%** |
+| cell accuracy, sung cells | 38.7% | 59.9% |
+| cell accuracy, sung cells, monophonic | 61.4% | **82.5%** |
+
+Where only the lead sings, grid mode is already at about 85% per cell. Oracles show what these stems allow on monophonic note COnP F1:
+
+| oracle (monophonic COnP F1) | score |
+|---|---|
+| grid mode today | 0.589 |
+| UST boundaries, pitch from sona's contour | **0.909** |
+| UST notes with same-pitch repeats merged (no re-articulation detection) | 0.839 |
+| … and pitch from the contour | 0.775 |
+
+The pitch evidence is there (0.91 with perfect boundaries). Two things stand between today and 85%+:
+
+1. **Polyphony in the stem.** Two thirds of the UST's notes sit where other voices also sing. There, only 49% of lead cells come out right: 28% decode as a rest because pYIN loses voicing under two voices, 18% take a harmony pitch, and 5% are octave errors. This is an input problem. `scripts/separate-lead.sh` makes a lead-only stem with a UVR karaoke model, and `--stem lead` scores it. It hasn't been run yet; it is maintainer-run.
+2. **Same-pitch re-articulation.** 22% of monophonic UST notes repeat the previous pitch (a new syllable on a held pitch). Without detecting them, note F1 is capped near 0.78. No acoustic cue tried separates them well (AUC 0.69–0.73). The UST places one note per syllable (mora), so **the lyrics** would solve this directly: the number of morae in a phrase is its number of notes.
+
+Tried on dev and rejected (the gains were within the song-bootstrap noise or negative):
+- A note-duration (semi-Markov) prior learned from the dev USTs: COnP 0.464 against 0.465.
+- A lower pYIN voicing threshold (0.3): +0.01 on all notes, −0.01 monophonic.
+- Re-tuning the rest cost around that threshold.
+
 ## Next
 
-1. BPM and division estimation, so grid mode needs only the stem. The corpus already has golden labels for both.
-2. ~~Fix the review surface's escape-hatch overlap~~ — done: `resolveOverlaps` (`web/lib/grid.ts`), model-checked in `verification/grid-notes`.
-3. A stronger same-pitch re-articulation cue (e.g. a phoneme-level onset model), the largest remaining fixable error.
+1. Run `scripts/separate-lead.sh`, then `sona-eval-ust-dev --stem lead --cfg grid:grid=est` to measure the polyphony fix.
+2. Lyrics-aware decoding: an optional mora sequence per phrase fixes the note count, which removes the re-articulation cap. This is a new input, so it needs a product decision and an ADR.
+3. BPM and division estimation, so grid mode needs only the stem. The corpus already has golden labels for both.
+4. A fresh holdout: the current one is spent. Newer or older Pifuyuu uploads, fetched with the maintainer-run scripts.
+5. ~~Fix the review surface's escape-hatch overlap~~. Done: `resolveOverlaps` (`web/lib/grid.ts`), model-checked in `verification/grid-notes`.
