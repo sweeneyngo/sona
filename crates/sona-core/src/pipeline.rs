@@ -18,7 +18,8 @@
 
 use crate::annotation::{Annotation, Producer, SCHEMA_VERSION};
 use crate::confidence::ConfidenceScorer;
-use crate::grid::{GridMode, GridSpec};
+use crate::grid::{CueModel, GridMode, GridSpec};
+use crate::timbre::TimbreFrames;
 use crate::onset::OnsetDetector;
 use crate::pitch::PitchTracker;
 use crate::segment::Segmenter;
@@ -62,12 +63,16 @@ impl Transcriber {
         let f0_contour = tracker.track(samples, sample_rate);
         let onset_result = self.onset.detect(samples, sample_rate);
         let segments = match &self.grid {
-            Some(g) => g.decoder.segment(
-                &GridSpec { bpm, division: g.division, anchor_s: g.anchor_s },
-                &onset_result.onsets,
-                &f0_contour,
-                &onset_result.energy_envelope,
-            ),
+            Some(g) => {
+                let timbre = Self::timbre_for(g, samples, sample_rate, &self.onset);
+                g.decoder.segment_with_timbre(
+                    &GridSpec { bpm, division: g.division, anchor_s: g.anchor_s },
+                    &onset_result.onsets,
+                    &f0_contour,
+                    &onset_result.energy_envelope,
+                    timbre.as_ref(),
+                )
+            }
             None => self.segmenter.segment(
                 &onset_result.onsets,
                 &f0_contour,
@@ -87,6 +92,22 @@ impl Transcriber {
             notes,
             f0_contour,
             energy_envelope: onset_result.energy_envelope,
+        }
+    }
+
+    /// The timbre frames a [`CueModel::Spectral`] decoder reads, on the energy
+    /// envelope's frame grid. `None` for other cue models, and always without
+    /// the `spectral` feature (the decoder then uses the voicing/energy cue).
+    fn timbre_for(g: &GridMode, samples: &[f32], sample_rate: u32, onset: &OnsetDetector) -> Option<TimbreFrames> {
+        if !matches!(g.decoder.cue_model, CueModel::Spectral(_)) {
+            return None;
+        }
+        #[cfg(feature = "spectral")]
+        return Some(TimbreFrames::from_samples(samples, sample_rate, onset.frame_length, onset.hop_length));
+        #[cfg(not(feature = "spectral"))]
+        {
+            let _ = (samples, sample_rate, onset);
+            None
         }
     }
 }
@@ -124,5 +145,39 @@ mod tests {
             Producer::Pyin,
         );
         assert!((ann.duration_s - 1.0).abs() < 1e-9);
+    }
+
+    /// One held pitch whose vowel changes at 0.6 s (same loudness, no voicing
+    /// gap), over a faint noise floor: the spectral cue hears two syllables, the
+    /// voicing/energy cue one note.
+    #[cfg(feature = "spectral")]
+    #[test]
+    fn the_spectral_cue_splits_a_held_pitch_at_a_vowel_change() {
+        use crate::grid::{CueModel, GridDecoder, SpectralCue};
+        let sr = 44_100u32;
+        let mut seed = 0x2545_f491u32;
+        let audio: Vec<f32> = (0..sr as usize)
+            .map(|i| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = 1e-3 * (seed as f32 / u32::MAX as f32 - 0.5);
+                let t = i as f32 / sr as f32;
+                // Harmonic weights of two "vowels" at 220 Hz with equal RMS.
+                let w: [f32; 4] = if t < 0.6 { [1.0, 0.1, 0.05, 0.02] } else { [0.45, 0.7, 0.45, 0.3] };
+                let norm = w.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let voiced = (0.2..0.9).contains(&t);
+                let tone: f32 = w.iter().enumerate().map(|(h, a)| a * (std::f32::consts::TAU * 220.0 * (h + 1) as f32 * t).sin()).sum();
+                noise + if voiced { 0.3 * tone / norm } else { 0.0 }
+            })
+            .collect();
+        let transcribe = |decoder: GridDecoder| {
+            let grid = GridMode { division: 16, anchor_s: Some(0.0), decoder };
+            let notes = Transcriber { grid: Some(grid), ..Transcriber::default() }
+                .transcribe(&crate::PYin::default(), &audio, sr, 150.0, Producer::Pyin)
+                .notes;
+            notes.iter().map(|n| ((n.onset_s * 10.0).round() as i32, (n.offset_s * 10.0).round() as i32, n.midi_pitch)).collect::<Vec<_>>()
+        };
+        let spectral = GridDecoder { cue_model: CueModel::Spectral(SpectralCue::default()), ..GridDecoder::default() };
+        assert_eq!(transcribe(spectral), vec![(2, 6, 57), (6, 9, 57)]);
+        assert_eq!(transcribe(GridDecoder::default()), vec![(2, 9, 57)]);
     }
 }
