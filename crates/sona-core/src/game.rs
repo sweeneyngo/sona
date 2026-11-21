@@ -260,6 +260,103 @@ pub fn quiet_cuts(samples: &[f32], sample_rate: u32, chunk_s: f64) -> Vec<usize>
     cuts
 }
 
+/// The subharmonic octave check. GAME sometimes tracks high voices an octave
+/// low: in three of 28 corpus songs about 60% of its notes sat exactly 12
+/// semitones under the UST. A note placed an octave low has almost no energy at
+/// its odd harmonics (1, 3, 5 × f), because the true fundamental is 2f.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OctaveRule {
+    /// A song whose median odd/even log ratio is below this is octave-low throughout…
+    pub song_threshold: f32,
+    /// …and there a note moves up when its own ratio is below this.
+    pub note_threshold_low_song: f32,
+    /// Elsewhere only a note this clearly subharmonic moves up.
+    pub note_threshold: f32,
+}
+
+impl Default for OctaveRule {
+    fn default() -> Self {
+        Self { song_threshold: -0.25, note_threshold_low_song: 0.0, note_threshold: -1.5 }
+    }
+}
+
+const OCT_NFFT: usize = 4096;
+const OCT_HOP: usize = 441;
+
+/// Per voiced note, the log ratio of odd-harmonic to even-harmonic energy
+/// (`0.0` for unvoiced notes and notes shorter than one analysis frame).
+pub fn harmonic_ratios(notes: &[GameNote], samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    use realfft::RealFftPlanner;
+    let sr = sample_rate as f64;
+    let fft = RealFftPlanner::<f32>::new().plan_fft_forward(OCT_NFFT);
+    let window: Vec<f32> = (0..OCT_NFFT).map(|i| (0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / (OCT_NFFT - 1) as f64).cos()) as f32).collect();
+    let frames = if samples.len() >= OCT_NFFT { 1 + (samples.len() - OCT_NFFT) / OCT_HOP } else { 0 };
+    let (mut input, mut spectrum) = (fft.make_input_vec(), fft.make_output_vec());
+    let mut mags = vec![0f32; OCT_NFFT / 2 + 1];
+    notes
+        .iter()
+        .map(|n| {
+            if !n.voiced {
+                return 0.0;
+            }
+            let a = (n.onset_s * sr / OCT_HOP as f64) as usize;
+            let b = ((n.offset_s * sr / OCT_HOP as f64) as usize).max(a + 1).min(frames);
+            if a >= b {
+                return 0.0;
+            }
+            let f0 = 440.0 * 2f64.powf((n.midi as f64 - 69.0) / 12.0);
+            let mut sums = [0f64; 7];
+            for fr in a..b {
+                let s = &samples[fr * OCT_HOP..fr * OCT_HOP + OCT_NFFT];
+                for ((x, &v), &w) in input.iter_mut().zip(s).zip(&window) {
+                    *x = v * w;
+                }
+                if fft.process(&mut input, &mut spectrum).is_err() {
+                    return 0.0;
+                }
+                for (m, c) in mags.iter_mut().zip(&spectrum) {
+                    *m = c.norm();
+                }
+                for (k, sum) in sums.iter_mut().enumerate().skip(1) {
+                    let f = k as f64 * f0;
+                    if f * 1.03 >= sr / 2.0 {
+                        continue;
+                    }
+                    let lo = (f * 0.97 * OCT_NFFT as f64 / sr) as usize;
+                    let hi = ((f * 1.03 * OCT_NFFT as f64 / sr).ceil() as usize + 1).min(mags.len());
+                    *sum += mags[lo..hi].iter().copied().fold(0f32, f32::max) as f64;
+                }
+            }
+            let count = (b - a) as f64;
+            let odd = (sums[1] + sums[3] + sums[5]) / count;
+            let even = (sums[2] + sums[4] + sums[6]) / count;
+            ((odd + 1e-6) / (even + 1e-6)).ln() as f32
+        })
+        .collect()
+}
+
+/// Apply [`OctaveRule`] in place: raise subharmonic notes by an octave. Returns
+/// how many notes moved.
+pub fn correct_octaves(notes: &mut [GameNote], samples: &[f32], sample_rate: u32, rule: OctaveRule) -> usize {
+    let ratios = harmonic_ratios(notes, samples, sample_rate);
+    let mut voiced: Vec<f32> = notes.iter().zip(&ratios).filter(|(n, _)| n.voiced).map(|(_, &r)| r).collect();
+    if voiced.is_empty() {
+        return 0;
+    }
+    voiced.sort_by(f32::total_cmp);
+    let mid = voiced.len() / 2;
+    let median = if voiced.len() % 2 == 0 { (voiced[mid - 1] + voiced[mid]) / 2.0 } else { voiced[mid] };
+    let threshold = if median < rule.song_threshold { rule.note_threshold_low_song } else { rule.note_threshold };
+    let mut moved = 0;
+    for (n, &r) in notes.iter_mut().zip(&ratios) {
+        if n.voiced && r < threshold {
+            n.midi += 12.0;
+            moved += 1;
+        }
+    }
+    moved
+}
+
 /// Snap GAME's notes to a grid of `spacing_s` seconds: remove the stem's tuning
 /// offset, estimate the phase from the voiced onsets (circular mean), snap each
 /// voiced note's onset and offset to the nearest line (at least one cell), and
@@ -369,6 +466,29 @@ mod tests {
             assert!(w[0].offset_s <= w[1].onset_s + 1e-9, "{segs:?}");
         }
         assert_eq!(segs.len(), 2, "no note is dropped: {segs:?}");
+    }
+
+    fn tone(f: f64, harmonics: &[usize], secs: f64) -> Vec<f32> {
+        let sr = 44_100.0;
+        (0..(secs * sr) as usize)
+            .map(|i| harmonics.iter().map(|&k| (std::f64::consts::TAU * k as f64 * f * i as f64 / sr).sin() / k as f64).sum::<f64>() as f32 * 0.2)
+            .collect()
+    }
+
+    #[test]
+    fn a_note_placed_an_octave_low_is_raised_and_a_true_one_is_not() {
+        // Sung at 440 Hz with all its harmonics. GAME says 220 Hz (A3) or 440 Hz (A4).
+        let y = tone(440.0, &[1, 2, 3, 4, 5, 6, 7], 1.0);
+        let low = [note(0.1, 0.9, 57.0, true)];
+        let right = [note(0.1, 0.9, 69.0, true)];
+        assert!(harmonic_ratios(&low, &y, 44_100)[0] < -1.5, "odd harmonics of 220 Hz are empty");
+        assert!(harmonic_ratios(&right, &y, 44_100)[0] > 0.0, "a true fundamental has odd harmonics");
+        let mut n = low;
+        assert_eq!(correct_octaves(&mut n, &y, 44_100, OctaveRule::default()), 1);
+        assert_eq!(n[0].midi, 69.0);
+        let mut n = right;
+        assert_eq!(correct_octaves(&mut n, &y, 44_100, OctaveRule::default()), 0);
+        assert_eq!(n[0].midi, 69.0);
     }
 
     #[test]

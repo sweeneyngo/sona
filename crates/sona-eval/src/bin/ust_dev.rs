@@ -135,6 +135,8 @@ struct Cfg {
     cell: GridDecoder,
     /// GAME note extraction at this presence threshold, snapped to the song's grid.
     game: Option<f32>,
+    /// Apply GAME's subharmonic octave rule (`oct=1`).
+    game_oct: bool,
 }
 
 fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
@@ -143,6 +145,10 @@ fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
     match key {
         "game" => {
             cfg.game = Some(f()? as f32);
+            return Ok(());
+        }
+        "oct" => {
+            cfg.game_oct = f()? != 0.0;
             return Ok(());
         }
         "grid" => {
@@ -243,7 +249,7 @@ fn apply_t(t: &mut Transcriber, key: &str, val: &str) -> Result<(), String> {
 
 fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
     let (name, rest) = spec.split_once(':').unwrap_or((spec, ""));
-    let mut cfg = Cfg { t: Transcriber::default(), grid: GridChoice::Off, cell: GridDecoder::default(), game: None };
+    let mut cfg = Cfg { t: Transcriber::default(), grid: GridChoice::Off, cell: GridDecoder::default(), game: None, game_oct: false };
     for kv in rest.split(',').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').ok_or_else(|| format!("bad knob {kv}"))?;
         apply(&mut cfg, k, v)?;
@@ -255,13 +261,15 @@ fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
 }
 
 #[cfg(feature = "game")]
-fn game_segments(it: &Item, pthr: f32, spacing: f64) -> Vec<sona_core::NoteSegment> {
-    use sona_core::game::{snap_to_grid, GameModel, GameNote, GameParams};
+fn game_segments(it: &Item, pthr: f32, oct: bool, spacing: f64) -> Vec<sona_core::NoteSegment> {
+    use sona_core::game::{correct_octaves, snap_to_grid, GameModel, GameNote, GameParams, OctaveRule};
     static MODEL: std::sync::OnceLock<GameModel> = std::sync::OnceLock::new();
     let dir = std::env::var("SONA_GAME_DIR").expect("game=… needs SONA_GAME_DIR (a GAME ONNX release folder)");
     let tag = std::path::Path::new(&dir).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let path = cache_dir().join(format!("{}.game-{tag}-p{pthr}.json", it.id));
-    let notes: Vec<GameNote> = match std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Vec<(f64, f64, f32, bool)>>(&t).ok()) {
+    // The stem is part of the key: a cheap fingerprint of the audio itself.
+    let print = it.samples.iter().step_by(997).fold(it.samples.len() as u64, |h, x| h.rotate_left(5) ^ u64::from(x.to_bits()));
+    let path = cache_dir().join(format!("{}.game-{tag}-p{pthr}-{print:016x}.json", it.id));
+    let mut notes: Vec<GameNote> = match std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Vec<(f64, f64, f32, bool)>>(&t).ok()) {
         Some(v) => v.into_iter().map(|(a, b, m, v)| GameNote { onset_s: a, offset_s: b, midi: m, voiced: v }).collect(),
         None => {
             let threads = std::env::var("SONA_GAME_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8);
@@ -275,11 +283,14 @@ fn game_segments(it: &Item, pthr: f32, spacing: f64) -> Vec<sona_core::NoteSegme
             notes
         }
     };
+    if oct {
+        correct_octaves(&mut notes, &it.samples, it.sr, OctaveRule::default());
+    }
     snap_to_grid(&notes, spacing)
 }
 
 #[cfg(not(feature = "game"))]
-fn game_segments(_: &Item, _: f32, _: f64) -> Vec<sona_core::NoteSegment> {
+fn game_segments(_: &Item, _: f32, _: bool, _: f64) -> Vec<sona_core::NoteSegment> {
     panic!("game=… configs need `--features game`");
 }
 
@@ -287,7 +298,7 @@ fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
     let t = &cfg.t;
     let onset = t.onset.detect(&it.samples, it.sr);
     let segs = match (&it.grid, cfg.grid, cfg.game) {
-        (Some(g), _, Some(pthr)) => game_segments(it, pthr, g.opts.spacing),
+        (Some(g), _, Some(pthr)) => game_segments(it, pthr, cfg.game_oct, g.opts.spacing),
         (Some(g), GridChoice::Estimated | GridChoice::UstAnchor, None) => {
             let anchor = (cfg.grid == GridChoice::UstAnchor).then_some(g.opts.anchor);
             let grid = GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor };
