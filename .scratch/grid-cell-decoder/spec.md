@@ -1,6 +1,6 @@
 # Spec: grid-conditioned cell decoding (ADR-0015)
 
-Status: in progress (holdout not yet read)
+Status: done — holdout read once, all four criteria pass. See crates/sona-eval/reports/grid-cell-decoder.md
 
 ## Goal
 
@@ -45,3 +45,12 @@ songs. If 1 or 3 fails, do not recommend it; report dev as overfit.
 
 The noise floor is song resampling (sona is deterministic). Parameters are
 frozen at the dev optimum in `GridDecoder::default()` as of this commit.
+
+## Result (holdout, read once after commit b5391bb)
+
+1. COnP F1 0.340 → 0.455 (+0.114 ≥ 0.05) ✔
+2. COnPOff F1 0.158 → 0.303 (+0.145 ≥ 0.05) ✔
+3. 95% song-bootstrap interval of the COnP difference [+0.064, +0.167] excludes 0 ✔
+4. Songs regressing > 0.03 COnP F1: none ✔
+
+Vocadito unchanged (0.646 / 0.508). Verdict: ship grid mode as the recommended opt-in.

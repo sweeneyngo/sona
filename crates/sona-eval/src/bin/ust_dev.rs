@@ -75,7 +75,7 @@ fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec
     }
     eprintln!("  tracking pitch for {id} (cached after this run)…");
     let c = pyin.track(samples, sr);
-    std::fs::create_dir_all(cache_dir()).map_err(|e| EvalError::io(&cache_dir(), e))?;
+    std::fs::create_dir_all(cache_dir()).map_err(|e| EvalError::io(cache_dir(), e))?;
     let text = serde_json::to_string(&c).map_err(|e| EvalError::parse(&path, e.to_string()))?;
     std::fs::write(&path, text).map_err(|e| EvalError::io(&path, e))?;
     Ok(c)
@@ -397,8 +397,8 @@ fn run() -> Result<(), String> {
             for (it, (v, _)) in items.iter().zip(&scored) {
                 let c = v[1].conp();
                 println!(
-                    "    {:<30} n={:<4} est={:<4} P {:.2} R {:.2} F1 {:.2} | COnPOff {:.2}",
-                    it.id, v[1].n_ref, v[1].n_est, c.precision, c.recall, c.f1, v[1].conpoff().f1
+                    "    {:<30} n={:<4} est={:<4} P {:.2} R {:.2} F1 {:.2} | COnPOff {:.2} | conp={} conpoff={}",
+                    it.id, v[1].n_ref, v[1].n_est, c.precision, c.recall, c.f1, v[1].conpoff().f1, v[1].conp, v[1].conpoff
                 );
             }
         }

@@ -25,7 +25,7 @@ cargo test -p sona-core every_short_path    # the same rules on the real Rust re
 and `quantizeNote` in `web/lib/grid.ts` (= `quantize_note` in
 `crates/sona-eval/src/quantize.rs`).
 
-**Last confirmed at:** the commit that adds this file. Bump it when you re-confirm after changing a covered function.
+**Last confirmed at:** `b5391bb` (re-run after it; `notes_from_path` and `fill_gaps` unchanged since). Bump it when you re-confirm after changing a covered function.
 
 **Known finding.** If the user drags the review grid ≥ ¼ cell off the decoded
 phase, `quantizeNote`'s escape hatch can leave one note unsnapped next to a

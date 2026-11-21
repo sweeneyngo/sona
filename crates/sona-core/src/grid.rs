@@ -176,7 +176,7 @@ impl GridDecoder {
             None => self.best_phase(&fr, sp),
         };
         let notes = self.fill_gaps(notes, sp);
-        self.to_segments(&notes, &fr, onsets, envelope)
+        self.segments_of(&notes, &fr, onsets, envelope)
     }
 
     /// Estimated grid phase (seconds within one cell) for a stem — exposed so a
@@ -389,7 +389,7 @@ impl GridDecoder {
         fill_gaps(notes, sp, self.fill_gap_cells)
     }
 
-    fn to_segments(&self, notes: &[CellNote], fr: &Frames, onsets: &[Onset], envelope: &[EnergyFrame]) -> Vec<NoteSegment> {
+    fn segments_of(&self, notes: &[CellNote], fr: &Frames, onsets: &[Onset], envelope: &[EnergyFrame]) -> Vec<NoteSegment> {
         let end = *fr.time.last().expect("non-empty");
         let born: Vec<Option<f32>> = notes
             .iter()

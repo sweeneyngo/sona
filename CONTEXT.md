@@ -46,5 +46,9 @@ The onset and offset of a single note. Offsets are the hardest sub-problem, made
 A single fixed BPM, user-supplied, for v1. Beat-by-beat / tempo-change tracking is deliberately deferred — Vocaloid material is single-tempo and grid-locked.
 _Avoid_: beat tracking, tempogram (out of v1 scope)
 
+**Grid mode**:
+An opt-in producer ([ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) for grid-locked material. Given the BPM and a division (16 or 24 cells per whole note), the core decodes notes per grid cell, not per frame, and estimates the phase itself. Its notes already sit on grid lines, so the UI's auto-anchored snap leaves them unchanged. It is the one place the core is *not* invariant to musical settings, deliberately and only when asked. The default path stays grid-free.
+_Avoid_: "quantized output" for grid mode (nothing is snapped after the fact; the grid is the decode's state space)
+
 **Grid anchor (phase)**:
 Where the quantization grid sits in time — distinct from BPM, which only sets grid *spacing*. Auto-derived by assuming the first detected onset lands on a grid line; overridable by dragging the grid offset in the review surface (needed for pickup notes / leading silence). Getting phase wrong makes hard-snap quantization actively harmful.

@@ -1,5 +1,7 @@
 # In-domain gate: sona vs. UST on its target material (UST corpus gate, ticket 06)
 
+> **Follow-up:** the recall gap found here is addressed by the opt-in grid-conditioned cell decoder. See [`grid-cell-decoder.md`](grid-cell-decoder.md) and ADR-0015.
+
 Run: `cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --vocadito` (about 2 min; songs are transcribed in parallel)
 
 Corpus: 19 of the manifest's 20 songs. 18 are `vocaloid-original` (**the gate**) and 1 is `human-sung` (watched only). plus-space was excluded in 05 because its alignment was flagged. The baseline is Vocadito (40 stems), recomputed with the same code.

@@ -47,10 +47,13 @@ cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 128
 
 # also write a raw, unquantized MIDI, capturing the JSON
 cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 128 --midi out.mid > annotation.json
+
+# grid-locked material (Vocaloid): decode notes on a 16th grid (24 = 16th-triplets)
+cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 198 --grid 16 > annotation.json
 ```
 
 ```
-Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>]
+Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]
 
 Transcribes an isolated mono vocal stem to an annotation JSON (stdout).
 
@@ -61,7 +64,11 @@ Options:
   --bpm <BPM>       Tempo, required (finite, > 0). Carried into the JSON as a UI grid seed only.
   --midi <PATH>     Also write a raw, unquantized MIDI file. The authoritative,
                     snapped MIDI is exported from the web review surface, not here.
+  --grid <16|24>    Decode notes per grid cell at --bpm (ADR-0015) instead of frame by
+                    frame; the phase is estimated. Needs an exact, single tempo.
 ```
+
+`--grid` is the mode to use for UST/Vocaloid-style material. On the in-domain UST corpus it nearly doubles note recall and lifts COnPOff F1 from 0.14 to 0.28 ([report](crates/sona-eval/reports/grid-cell-decoder.md)). Without it, sona stays on the grid-free perception path.
 
 The annotation JSON is the core↔UI contract — raw note events in *seconds*, a confidence scalar plus four sub-scores per note, and display aids:
 

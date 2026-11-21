@@ -296,7 +296,7 @@ fn run(with_vocadito: bool, grid_mode: bool) -> Result<(), EvalError> {
 
     print_songs(&results);
     for stratum in ["vocaloid-original", "human-sung"] {
-        print_stratum(stratum, &results);
+        print_stratum(stratum, &results, grid_mode);
     }
     if !dropped.is_empty() {
         println!("\nNot scored (excluded by 05, never silently):");
@@ -348,7 +348,7 @@ fn print_songs(results: &[SongResult]) {
     }
 }
 
-fn print_stratum(stratum: &str, results: &[SongResult]) {
+fn print_stratum(stratum: &str, results: &[SongResult], grid_mode: bool) {
     let rs: Vec<&SongResult> = results.iter().filter(|r| r.stratum == stratum).collect();
     if rs.is_empty() {
         return;
@@ -429,6 +429,10 @@ fn print_stratum(stratum: &str, results: &[SongResult]) {
     }
     let notes: usize = rs.iter().map(|r| r.views[0].counts.n_ref).sum();
     let below: f64 = rs.iter().map(|r| r.below_prune * r.views[0].counts.n_ref as f64).sum();
+    if grid_mode {
+        println!("\n{notes} reference notes; the cell decoder has no prune floor (a note is ≥ 1 cell), so the <100 / ceil columns describe the note-HMM only");
+        return;
+    }
     println!(
         "\n{notes} reference notes; {:.1}% are shorter than the {:.0} ms prune floor (a recall ceiling of {:.1}%)",
         100.0 * below / notes.max(1) as f64,
