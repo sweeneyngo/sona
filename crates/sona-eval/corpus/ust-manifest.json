@@ -1,5 +1,5 @@
 {
-  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl.",
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl. Split 'holdout3' (added 2026-11-21): a fresh holdout of the next uploads in channel order before holdout2's oldest (2026-08-14 → 09-29), same skip-and-backfill rules (vocaloid-original only; original resolvable and within 1 s of the cover; one integer tempo across lead and other-voice files, grid 16 or 24), plus one: an upload whose UST is not in ust_share_url (Pifuyuu posted it only on BowlRoll) is skipped, because the fetch script reads only that share. 10 songs, all aligned (05), no backfill needed; unread when added.",
   "channel": "https://www.youtube.com/@pifuyuu",
   "selected_on": "2026-11-20",
   "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
@@ -1043,6 +1043,328 @@
       },
       "split": "holdout2",
       "notes": "backfill: kieru-mama and teni-suru-bug failed alignment (05), added before holdout2 was read"
+    },
+    {
+      "id": "anata-ni-okuru-ikkyoku",
+      "expected_title": "あなたに贈る一曲",
+      "ust_zip": "あなたに贈る一曲.zip",
+      "ust_zip_sha256": "89eeb5d7103ff7acb7b838bd2638e1ace88c3f11ade353d67a61030d353779e2",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=vlrPiNCda20",
+      "original_title": "あなたに贈る一曲　/  feat. 初音ミク",
+      "original_duration_s": 224.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=RKQN15TNeU0",
+      "upload_date": "2026-09-29",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits '歌：初音ミク (VOCALOID)'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 144.0,
+      "grid_division": 24,
+      "alignment_offset_s": -6.728,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "anata-ni-okuru-ikkyoku/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "diurnal",
+      "expected_title": "diurnal",
+      "ust_zip": "diurnal.zip",
+      "ust_zip_sha256": "9ec3f5b91422cbb0ae852e0d3237e52baa28fba269d0da01bdc407fd9de12e28",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=q_O0ONAhPTc",
+      "original_title": "diurnal / 花隈千冬",
+      "original_duration_s": 197.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=bN99xkuBEi4",
+      "upload_date": "2026-09-27",
+      "stratum": "vocaloid-original",
+      "voice": "花隈千冬 (Synthesizer V)",
+      "stratum_evidence": "original's title credits 花隈千冬; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 160.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.999,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "diurnal/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "fakegreen",
+      "expected_title": "fakegreen",
+      "ust_zip": "fakegreen.zip",
+      "ust_zip_sha256": "a0ec9cd80fe11c30696a6ab9cbf8ccf3fda7d59c2958a6161df2f3288c52d3a2",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=b5Ftfzqd2Y8",
+      "original_title": "fakegreen - 初音ミク (Hatsune Miku)",
+      "original_duration_s": 208.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=Buqew6z6GKM",
+      "upload_date": "2026-09-12",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits 'vocal Hatsune Miku'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 159.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.096,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "fakegreen/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "zero-zero",
+      "expected_title": "0:00",
+      "ust_zip": "0_00.zip",
+      "ust_zip_sha256": "b929cdbe4dc4a2fc19ef6c9ff278e0e5934fbaadbb4de175d9ae9faaa5a849db",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=aCU6SIsE_cc",
+      "original_title": "0:00 / 香椎モイミ feat. 初音ミク",
+      "original_duration_s": 197.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=uoxMxgS_Izg",
+      "upload_date": "2026-09-11",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 120.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.153,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "zero-zero/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "gallows-bell-reunion",
+      "expected_title": "GALLOWS BELL [reunion]",
+      "ust_zip": "GALLOWS BELL [reunion].zip",
+      "ust_zip_sha256": "74d676886fe26cd31097ffe8613d95baf99867fe967648199f9f3631d4b625e6",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=Qt7tSYrsTCA",
+      "original_title": "GALLOWS BELL [reunion] / buzzG feat.初音ミク",
+      "original_duration_s": 225.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=cXIADmIclGk",
+      "upload_date": "2026-09-08",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; the linked original is the [reunion] version the cover is titled after; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 145.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.699,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "gallows-bell-reunion/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "ironication",
+      "expected_title": "アイロニケーション",
+      "ust_zip": "アイロニケーション.zip",
+      "ust_zip_sha256": "14ddf16f34ca4af83609cc1b8095eb427a77d209ece40d2594e8f09d45bbb7fc",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=Uvz3wDKZWQc",
+      "original_title": "アイロニケーション / 初音ミク",
+      "original_duration_s": 251.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=kSclJLs-IOo",
+      "upload_date": "2026-08-28",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 170.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.734,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "ironication/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "mushiranaide",
+      "expected_title": "毟らないで",
+      "ust_zip": "毟らないで.zip",
+      "ust_zip_sha256": "dec85633587e70530cc0c5a36cd06d31243eb622273271210588cd6bbe4faaaf",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=p2N4KEX-_s8",
+      "original_title": "毟らないで",
+      "original_duration_s": 165.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=arpfDla8tXY",
+      "upload_date": "2026-08-28",
+      "stratum": "vocaloid-original",
+      "voice": "花隈千冬 (Synthesizer V)",
+      "stratum_evidence": "credits 'Vocal : 花隈千冬'; tagged #synthesizerv; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 161.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.055,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "mushiranaide/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "maru-shite-kudasai",
+      "expected_title": "○してください",
+      "ust_zip": "○してください.zip",
+      "ust_zip_sha256": "7378aec1cb080fc0f99a6a37866fc7f301713607227b5accaba7d3709204cdb7",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=YIAUlDQvQVg",
+      "original_title": "○してください / 初音ミク",
+      "original_duration_s": 90.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=CrF6ZWcWG0I",
+      "upload_date": "2026-08-27",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 196.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.977,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "maru-shite-kudasai/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "denpa",
+      "expected_title": "DENPA",
+      "ust_zip": "DENPA.zip",
+      "ust_zip_sha256": "a36c438bc23c368d6533b02b4600ebc38f6405e810bed1746597c60395993cf0",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=fVa3vuiF8yI",
+      "original_title": "DENPA - 音街ウナ",
+      "original_duration_s": 154.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=G2Pg3ElE0vY",
+      "upload_date": "2026-08-19",
+      "stratum": "vocaloid-original",
+      "voice": "音街ウナ (Synthesizer V)",
+      "stratum_evidence": "original's title credits 音街ウナ; tagged #synthesizerv; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 125.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.777,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "denpa/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
+    },
+    {
+      "id": "d-prostrate",
+      "expected_title": "D-prostrate",
+      "ust_zip": "D-prostrate.zip",
+      "ust_zip_sha256": "7d7d08c2ecd8f4c02af669636ca9376098341f0e6ebd79bc7d8cc4aff9cb7ac2",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "scream1.ust",
+        "scream2.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm12743675",
+      "original_title": "【GUMI】 D-prostrate 【オリジナル】",
+      "original_duration_s": 190.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=BSLGOIoPuqs",
+      "upload_date": "2026-08-14",
+      "stratum": "vocaloid-original",
+      "voice": "GUMI (VOCALOID)",
+      "stratum_evidence": "original's title credits GUMI; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 200.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.858,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "d-prostrate/vocals.wav"
+      },
+      "split": "holdout3",
+      "notes": null
     }
   ],
   "excluded": [
@@ -1055,6 +1377,86 @@
       "title": "虚飾",
       "cover_video_url": "https://www.youtube.com/watch?v=CT_ITC9QGQY",
       "reason": "no resolvable original: the linked original (quMByzKHLbU) is a private video (checked 2026-11-21)"
+    },
+    {
+      "title": "トロイア",
+      "cover_video_url": "https://www.youtube.com/watch?v=SBe48lQu2Qg",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "ヴェリタスの天秤",
+      "cover_video_url": "https://www.youtube.com/watch?v=-n4OO487rcA",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "アフターグロウ",
+      "cover_video_url": "https://www.youtube.com/watch?v=S_sHRw3HC6o",
+      "reason": "human-sung: the original (Z-iwk3LHFdI) is a VocaDuo 2026 entry, buzzG with the human singer 宙月ティラ ('Vocal : 宙月ティラ'); holdout splits take vocaloid-original songs only"
+    },
+    {
+      "title": "偶像",
+      "cover_video_url": "https://www.youtube.com/watch?v=-S8xWKXFZic",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "舟を漕いで",
+      "cover_video_url": "https://www.youtube.com/watch?v=Adsk47dEmk8",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "昔話に花は咲かない",
+      "cover_video_url": "https://www.youtube.com/watch?v=aSQr3abBy1g",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "無音放送",
+      "cover_video_url": "https://www.youtube.com/watch?v=lSNPDjkUwmo",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll; also the cover (130 s) is 6 s longer than the original (124 s)"
+    },
+    {
+      "title": "SE7EN",
+      "cover_video_url": "https://www.youtube.com/watch?v=XBYirSBXwEU",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "夜更かししちゃった",
+      "cover_video_url": "https://www.youtube.com/watch?v=LjmkkWs6DWs",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "Unknown Glory",
+      "cover_video_url": "https://www.youtube.com/watch?v=OuFdsGbFayo",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "干渉縞にて、君を待つ",
+      "cover_video_url": "https://www.youtube.com/watch?v=tJQatfFWCSE",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "ラズベリーポイズン",
+      "cover_video_url": "https://www.youtube.com/watch?v=qWnLW-bVR9o",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "怨むよ、レイトサマー",
+      "cover_video_url": "https://www.youtube.com/watch?v=W6i5oG9P0UY",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "私の全部を忘れて欲しかった",
+      "cover_video_url": "https://www.youtube.com/watch?v=1Bmei6KZc8Y",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "さよなら",
+      "cover_video_url": "https://www.youtube.com/watch?v=Fv3neu-ME8U",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "二重らせん",
+      "cover_video_url": "https://www.youtube.com/watch?v=NGyzaP2IBuw",
+      "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
     }
   ]
 }

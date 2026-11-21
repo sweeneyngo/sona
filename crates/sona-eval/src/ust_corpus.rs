@@ -243,7 +243,7 @@ mod tests {
         let path = manifest_path();
         let m = Manifest::load(&path).expect("committed manifest");
         // No silent truncation: each split keeps its songs (holdout2 has 10 aligned
-        // songs plus the 2 it flagged and backfilled).
+        // songs plus the 2 it flagged and backfilled; holdout3 needed no backfill).
         let count = |split: &str, aligned_only: bool| {
             m.songs
                 .iter()
@@ -251,9 +251,16 @@ mod tests {
                 .filter(|s| !aligned_only || s.alignment_status.as_deref().is_some_and(|a| a.starts_with("aligned")))
                 .count()
         };
-        assert_eq!((count("dev", false), count("holdout", false), count("holdout2", false)), (10, 10, 12));
+        assert_eq!(
+            (count("dev", false), count("holdout", false), count("holdout2", false), count("holdout3", false)),
+            (10, 10, 12, 10)
+        );
         assert_eq!(count("holdout2", true), 10, "holdout2 scores 10 aligned songs");
-        assert!(m.songs.iter().all(|s| matches!(s.split.as_deref(), Some("dev" | "holdout" | "holdout2"))), "unknown split");
+        assert_eq!(count("holdout3", true), 10, "holdout3 scores 10 aligned songs");
+        assert!(
+            m.songs.iter().all(|s| matches!(s.split.as_deref(), Some("dev" | "holdout" | "holdout2" | "holdout3"))),
+            "unknown split"
+        );
         let again: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
         assert_eq!(m, again);
         for s in &m.songs {

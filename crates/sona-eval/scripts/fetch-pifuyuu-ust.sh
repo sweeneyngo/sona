@@ -132,7 +132,7 @@ if todo:
 # Every song: the files the manifest names must be on disk.
 missing = []
 for song in manifest["songs"]:
-    for rel in (song.get("ust_lead_files") or []) + (song.get("ust_harmony_files") or []):
+    for rel in (song.get("ust_lead_files") or []) + (song.get("ust_other_voice_files") or []):
         p = os.path.join(dest, song["id"], rel)
         if not (os.path.isfile(p) and os.path.getsize(p) > 0):
             missing.append(f"{song['id']}/{rel}")
