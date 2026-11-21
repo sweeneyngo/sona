@@ -17,6 +17,8 @@
 
 pub mod annotation;
 pub mod confidence;
+#[cfg(feature = "game")]
+pub mod game;
 pub mod grid;
 pub mod hmm;
 pub mod midi;

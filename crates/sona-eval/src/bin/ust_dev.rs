@@ -77,7 +77,19 @@ fn tracker_key(p: &impl std::fmt::Debug) -> String {
     format!("{h:016x}")
 }
 
+/// An external front end's output (e.g. a neural f0 model run offline), when
+/// `$env` names a directory holding `<id>.json`. Lets a new pitch source be scored
+/// by the real decoder before it has a Rust backend.
+fn external<T: serde::de::DeserializeOwned>(env: &str, id: &str) -> Option<Result<T, EvalError>> {
+    let dir = std::env::var_os(env)?;
+    let path = PathBuf::from(dir).join(format!("{id}.json"));
+    Some(std::fs::read_to_string(&path).map_err(|e| EvalError::io(&path, e)).and_then(|t| serde_json::from_str(&t).map_err(|e| EvalError::parse(&path, e.to_string()))))
+}
+
 fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec<F0Frame>, EvalError> {
+    if let Some(c) = external("SONA_CONTOUR_DIR", id) {
+        return c;
+    }
     let path = cache_dir().join(format!("{id}.{}.f0.json", tracker_key(pyin)));
     if let Ok(text) = std::fs::read_to_string(&path) {
         if let Ok(c) = serde_json::from_str(&text) {
@@ -96,6 +108,9 @@ fn contour_cached(id: &str, samples: &[f32], sr: u32, pyin: &PYin) -> Result<Vec
 }
 
 fn cands_cached(id: &str, samples: &[f32], sr: u32) -> Result<Vec<Vec<PitchCandidate>>, EvalError> {
+    if let Some(c) = external("SONA_CANDS_DIR", id) {
+        return c;
+    }
     let hs = HarmonicSalience::default();
     let path = cache_dir().join(format!("{id}.hs{}.cand.json", tracker_key(&hs)));
     if let Ok(text) = std::fs::read_to_string(&path) {
@@ -118,12 +133,18 @@ struct Cfg {
     t: Transcriber,
     grid: GridChoice,
     cell: GridDecoder,
+    /// GAME note extraction at this presence threshold, snapped to the song's grid.
+    game: Option<f32>,
 }
 
 fn apply(cfg: &mut Cfg, key: &str, val: &str) -> Result<(), String> {
     let f = || val.parse::<f64>().map_err(|e| format!("{key}={val}: {e}"));
     let g = &mut cfg.cell;
     match key {
+        "game" => {
+            cfg.game = Some(f()? as f32);
+            return Ok(());
+        }
         "grid" => {
             cfg.grid = match val {
                 "est" | "1" => GridChoice::Estimated,
@@ -222,7 +243,7 @@ fn apply_t(t: &mut Transcriber, key: &str, val: &str) -> Result<(), String> {
 
 fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
     let (name, rest) = spec.split_once(':').unwrap_or((spec, ""));
-    let mut cfg = Cfg { t: Transcriber::default(), grid: GridChoice::Off, cell: GridDecoder::default() };
+    let mut cfg = Cfg { t: Transcriber::default(), grid: GridChoice::Off, cell: GridDecoder::default(), game: None };
     for kv in rest.split(',').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').ok_or_else(|| format!("bad knob {kv}"))?;
         apply(&mut cfg, k, v)?;
@@ -233,11 +254,41 @@ fn parse_cfg(spec: &str) -> Result<(String, Cfg), String> {
     Ok((name.to_string(), cfg))
 }
 
+#[cfg(feature = "game")]
+fn game_segments(it: &Item, pthr: f32, spacing: f64) -> Vec<sona_core::NoteSegment> {
+    use sona_core::game::{snap_to_grid, GameModel, GameNote, GameParams};
+    static MODEL: std::sync::OnceLock<GameModel> = std::sync::OnceLock::new();
+    let dir = std::env::var("SONA_GAME_DIR").expect("game=… needs SONA_GAME_DIR (a GAME ONNX release folder)");
+    let tag = std::path::Path::new(&dir).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let path = cache_dir().join(format!("{}.game-{tag}-p{pthr}.json", it.id));
+    let notes: Vec<GameNote> = match std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Vec<(f64, f64, f32, bool)>>(&t).ok()) {
+        Some(v) => v.into_iter().map(|(a, b, m, v)| GameNote { onset_s: a, offset_s: b, midi: m, voiced: v }).collect(),
+        None => {
+            let threads = std::env::var("SONA_GAME_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+            let model = MODEL.get_or_init(|| {
+                GameModel::load(std::path::Path::new(&dir), GameParams { threads, ..GameParams::default() }).expect("load GAME")
+            });
+            eprintln!("  GAME for {} (cached after this run)…", it.id);
+            let notes = model.transcribe_with(&it.samples, it.sr, GameParams { presence_threshold: pthr, ..model.params }).expect("GAME inference");
+            let raw: Vec<(f64, f64, f32, bool)> = notes.iter().map(|n| (n.onset_s, n.offset_s, n.midi, n.voiced)).collect();
+            let _ = std::fs::write(&path, serde_json::to_string(&raw).unwrap_or_default());
+            notes
+        }
+    };
+    snap_to_grid(&notes, spacing)
+}
+
+#[cfg(not(feature = "game"))]
+fn game_segments(_: &Item, _: f32, _: f64) -> Vec<sona_core::NoteSegment> {
+    panic!("game=… configs need `--features game`");
+}
+
 fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
     let t = &cfg.t;
     let onset = t.onset.detect(&it.samples, it.sr);
-    let segs = match (&it.grid, cfg.grid) {
-        (Some(g), GridChoice::Estimated | GridChoice::UstAnchor) => {
+    let segs = match (&it.grid, cfg.grid, cfg.game) {
+        (Some(g), _, Some(pthr)) => game_segments(it, pthr, g.opts.spacing),
+        (Some(g), GridChoice::Estimated | GridChoice::UstAnchor, None) => {
             let anchor = (cfg.grid == GridChoice::UstAnchor).then_some(g.opts.anchor);
             let grid = GridSpec { bpm: g.bpm, division: g.division, anchor_s: anchor };
             let cands = it.cands.as_deref().unwrap_or(&[]);
@@ -409,6 +460,8 @@ fn load_ust_items(split: &str, pyin: &PYin, stem: &str, with_cands: bool) -> Res
         .filter(|s| s.split.as_deref() == Some(split) && s.stratum == "vocaloid-original")
         .filter(|s| s.alignment_status.as_deref().is_some_and(|a| a.starts_with("aligned")) && s.alignment_offset_s.is_some())
         .filter(|s| stems.join(&s.id).join(&file).is_file())
+        // SONA_ONLY=id,id: score just these songs (quick checks).
+        .filter(|s| std::env::var("SONA_ONLY").map_or(true, |only| only.split(',').any(|o| o == s.id)))
         .collect();
     let items: Vec<Result<Item, EvalError>> = parallel_map(&songs, |song| {
         let offset = song.alignment_offset_s.expect("filtered");

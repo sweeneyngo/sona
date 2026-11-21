@@ -20,6 +20,9 @@ realfft = { workspace = true, optional = true }
 [features]
 default = ["spectral"]
 crepe = ["dep:ort"]
+# GAME note extraction (openvpi; weights user-downloaded, CC BY-NC-SA). ONNX
+# Runtime is loaded dynamically from ORT_DYLIB_PATH. See src/game.rs.
+game = ["dep:ort"]
 spectral = ["dep:realfft"]
 
 [dev-dependencies]

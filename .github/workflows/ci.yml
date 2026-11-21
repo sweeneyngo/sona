@@ -35,6 +35,13 @@ jobs:
       # `spectral` is a default feature (ADR-0016); keep the FFT-free core building.
       - name: core builds without default features
         run: cargo check -p sona-core --no-default-features
+      # GAME (sona-core `game`) is opt-in: its weights are user-downloaded
+      # (CC BY-NC-SA) and ONNX Runtime loads at run time, so lint and unit-test
+      # the feature here (the snapping and chunking tests need no model).
+      - name: game feature (lint + tests)
+        run: |
+          cargo clippy -p sona-core -p sona-eval --features sona-core/game,sona-eval/game --all-targets -- -D warnings
+          cargo test -p sona-core --release --features game game::
 
   web:
     runs-on: ubuntu-latest

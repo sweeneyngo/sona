@@ -214,6 +214,64 @@ Two more findings:
 - Published systems reach COnP F1 about 0.77 on pop vocals (MIR-ST500, [T3MS](https://arxiv.org/html/2502.12438v1)). sona's 0.51–0.61 trails mainly on boundaries.
 - sona's `crepe` feature is an empty placeholder, so any neural front end means building the `ort` path.
 
+## RMVPE, GAME and Vocal2Midi (2026-11-21, dev, vocal stems unless stated)
+
+Python prototypes on dumped intermediates; every number is dev cell accuracy (quantized, UST anchor, all cells), scored by the same `cells()` rule as the harness. sona's defaults are 79.2% on this scorer.
+
+**RMVPE (rejected).** Used as the candidate source, as the contour, or mixed with salience, it scored 76.8–79.4% and never beat salience.
+
+**GAME (openvpi) wins.** It runs free (its own boundaries), and its notes are snapped to the grid with the tuning offset removed.
+
+| GAME variant | cells | COnP F1 |
+|---|---|---|
+| medium, presence threshold 0.2 (GAME's default) | 85.2% | 0.754 |
+| medium, presence 0.45 / 0.6 / **0.75** / 0.85 / 0.92 | 85.4 / 85.6 / **86.0** / 85.9 / 84.5% | 0.757–0.765 |
+| large, presence 0.2 / 0.8 | 84.0 / 85.4% | 0.751 / 0.762 |
+| medium, phase estimated from GAME's own onsets instead of the UST anchor | 86.2% | |
+| medium on **lead stems**, presence 0.8 | **86.7%** | 0.770 |
+| both stems: cell is sung only if both say so, pitch from lead | 86.8% | |
+| per-cell oracle picking the better stem | 89.1% | |
+
+- The Rust port (`sona-core` `game` feature, `sona_core::game`) reproduces the prototype: telescope-nevermore scores 92.3% against the prototype's 92.1%.
+- Large is worse than medium on every setting.
+
+**Ceilings for GAME.**
+- Given the UST's exact boundaries (notes and rests), the estimator scores 90.4%.
+- Given only the UST's syllable onsets, with the segmenter left free, it scores 87.5% (note F1 0.865). That is the best a perfect lyrics → ASR → forced-alignment path could do.
+- So lyric alignment mostly buys note-start precision (F1), not cell accuracy.
+
+**Vocal2Midi** ([Xiantaidu/Vocal2Midi](https://github.com/Xiantaidu/Vocal2Midi), Apache-2.0). It wraps GAME medium with five other stages. Each was reproduced on dev:
+
+| Vocal2Midi stage | its setting | dev result |
+|---|---|---|
+| GAME language id | 0 (language-neutral) | 85.3% vs 86.0% with ja (2) |
+| slicing | drop audio below −30 dB, keep ≤ 0.5 s of silence, segments ≥ 5 s | 85.8% vs 86.0% with whole-stem 20 s chunks |
+| segmenter schedule | t0 0, 8 steps, threshold 0.2, radius 0.02 s | identical to ours |
+| presence threshold | 0.2 | 0.8 is better here (above) |
+| "smart" quantization (metrical-importance DP, off by default) | λ 0–8 | 84.6–85.2% vs 85.2% nearest-line |
+| lyrics: ASR (RomajiASR) → G2P → TiFA/HubertFA → vowel-start word boundaries as GAME's known boundaries | — | ceiling 87.5% (above); not built |
+
+**Post-processing that did nothing** (GAME p0.75):
+- filling gaps of ≤ 1 / 2 / 4 cells: 86.05 / 85.2 / 82.8%;
+- shifting onsets or offsets by ±¼–½ cell: ≤ 85.99%.
+
+GAME's boundaries are unbiased against Pifuyuu's, so no fixed shift or fill helps.
+
+**What remains after GAME** (lead stems, p0.8; 13.3% of cells wrong):
+- sung-vs-rest confusion, 7.1% (UST rest that GAME sings 3.8%; UST note that GAME rests 3.3%);
+- ±1/±2 pitch, 3.7% (mostly at note edges);
+- other pitches, 1.3%;
+- octave errors, 1.2%.
+
+Octave errors concentrate in amaten, where 104 of its 131 octave-error cells follow `low.ust`, an octave-down double Pifuyuu wrote as a separate voice. Premise check: the stems are the **original** songs and the USTs are Pifuyuu's transcriptions (`Song::original_url`). The residual is therefore the transcriber's conventions (when a note ends, when to rest, which doubled voice is the lead), which no off-the-shelf model is trained on.
+
+**Learned cell stage (in progress).**
+- **What it does:** a BiGRU over grid cells picks rest or one of these candidate pitches: GAME-lead, GAME-vocals, sona, GAME-lead ±12.
+- **Features:** GAME encoder embeddings (x_seg, x_est; both stems) averaged per cell, each system's note position and length, sona's f0 and energy, and whether the systems agree.
+- **Oracles:** perfect sung-vs-rest decisions with GAME-lead's pitch give 91.4%; also choosing among the three systems' pitches gives 95.6%.
+- **Result so far:** leave-one-song-out on the 9 dev songs, 86.70% → **87.60%**, with 7 of 9 songs improving.
+- **Training data:** the spent holdout and holdout2 songs, logged in the ledger as training use, so confirmation needs a fresh holdout3.
+
 ## Next
 
 0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy, in order:

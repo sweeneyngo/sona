@@ -11,6 +11,9 @@ repository.workspace = true
 # cue (ADR-0016) and the spectral-flux onsets (ADR-0013). On by default.
 default = ["spectral"]
 spectral = ["sona-core/spectral"]
+# GAME note extraction (sona-core `game`): `game=<presence threshold>` configs in
+# sona-eval-ust-dev, with SONA_GAME_DIR naming a GAME ONNX release folder.
+game = ["sona-core/game"]
 
 [dependencies]
 # Reuse the core's Hz->MIDI conversion and (later tickets) run the pipeline.
