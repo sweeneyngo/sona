@@ -88,6 +88,35 @@ export function quantizeNote(
 }
 
 /**
+ * Keep a snapped line monophonic. `quantizeNote` snaps each note on its own, so
+ * two neighbours can overlap: one snaps while its confident neighbour escapes,
+ * or both round onto the same line (verification/grid-notes, SnappedMonophonic).
+ * Walking in onset order:
+ * - **Overlap.** The later note starts inside the earlier one, so the earlier
+ *   note ends where the later begins.
+ * - **Collision.** Both start on the same line, so the later note moves to the
+ *   earlier one's end and keeps at least one cell. No note is ever dropped.
+ *
+ * Returns new timings in the input order. Raw notes are untouched.
+ */
+export function resolveOverlaps<T extends { onset_s: number; offset_s: number }>(notes: T[], spacing: number): T[] {
+  const out = notes.map((n) => ({ ...n }));
+  const order = out.map((_, i) => i).sort((a, b) => out[a].onset_s - out[b].onset_s || a - b);
+  for (let k = 1; k < order.length; k++) {
+    const prev = out[order[k - 1]];
+    const next = out[order[k]];
+    if (next.onset_s >= prev.offset_s - 1e-9) continue;
+    if (next.onset_s > prev.onset_s + 1e-9) {
+      prev.offset_s = next.onset_s;
+    } else {
+      next.onset_s = prev.offset_s;
+      if (next.offset_s <= next.onset_s + 1e-9) next.offset_s = next.onset_s + spacing;
+    }
+  }
+  return out;
+}
+
+/**
  * Whether a note should be visually flagged for review, and why. A note is
  * flagged when its confidence scalar is below the (UI-slider) `threshold`, or
  * when the escape hatch spared it from snapping. Both facts are surfaced so the

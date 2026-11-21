@@ -32,7 +32,7 @@ use sona_core::{Annotation, GridMode, Producer, PYin, Transcriber};
 use sona_eval::estimate::EstNote;
 use sona_eval::metrics::note::{match_notes, NoteParams};
 use sona_eval::metrics::Prf1;
-use sona_eval::quantize::{grid_spacing_seconds, quantize_note, QuantizeOptions};
+use sona_eval::quantize::{grid_spacing_seconds, quantize_note, resolve_overlaps, QuantizeOptions};
 use sona_eval::reference::RefNote;
 use sona_eval::ust_corpus::{manifest_path, overlaps_any, stems_dir, Manifest, Song, SongUsts};
 use sona_eval::{ust, vocadito, wav, EvalError};
@@ -155,13 +155,15 @@ fn raw_notes(a: &Annotation) -> Vec<EstNote> {
         .collect()
 }
 
+/// What the review surface exports: each note snapped (`quantizeNote`), then the
+/// line kept monophonic (`resolveOverlaps`).
 fn quantized_notes(a: &Annotation, opts: &QuantizeOptions) -> Vec<EstNote> {
+    let mut q: Vec<_> = a.notes.iter().map(|n| quantize_note(n.onset_s, n.offset_s, Some(n.sub_scores.onset_clarity), opts)).collect();
+    resolve_overlaps(&mut q, opts.spacing);
     a.notes
         .iter()
-        .map(|n| {
-            let q = quantize_note(n.onset_s, n.offset_s, Some(n.sub_scores.onset_clarity), opts);
-            EstNote { onset_s: q.onset_s, offset_s: q.offset_s, midi_pitch: n.midi_pitch, confidence: n.confidence }
-        })
+        .zip(q)
+        .map(|(n, q)| EstNote { onset_s: q.onset_s, offset_s: q.offset_s, midi_pitch: n.midi_pitch, confidence: n.confidence })
         .collect()
 }
 

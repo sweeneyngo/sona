@@ -1,7 +1,7 @@
 #!/bin/sh
 # Model-check the grid decoder's note assembly (GridNotes.tla) with TLC.
-#   ./check.sh           decoder rules + the known snap finding + mutants
-#   ./check.sh --quick   decoder rules only
+#   ./check.sh           every rule + mutants
+#   ./check.sh --quick   rules only
 # Needs Java 11+ and tla2tools.jar 1.7.4 (sha256 936a2620…0e88). Set TLA2TOOLS to
 # the jar; default ~/.cache/tla/tla2tools.jar.
 set -u
@@ -27,12 +27,9 @@ expect() { # LABEL WANT GOT
   if [ "$2" = "$3" ]; then echo "  pass  $1 ($3)"; else echo "  FAIL  $1: wanted $2, got $3"; fail=1; fi
 }
 
-echo "Decoder rules (every cell path, NCells=5):"
+echo "Rules (every cell path, NCells=5):"
 expect "GridNotes.cfg" ok "$(tlc "$here/GridNotes.tla" "$here/GridNotes.cfg")"
 [ "${1:-}" = "--quick" ] && { rm -rf "$tmp"; exit $fail; }
-
-echo "Known finding (review-surface snap on a dragged grid):"
-expect "GridNotesSnap.cfg" SnappedMonophonic "$(tlc "$here/GridNotes.tla" "$here/GridNotesSnap.cfg")"
 
 # Mutants: each breaks one line of the modelled code; its rule must catch it.
 small="$tmp/specs/small.cfg"
@@ -50,5 +47,9 @@ mutant zero-length-note       DecodedOnGrid  's/ELSE Append(notes, Note(a, b, st
 mutant fill-off-by-one        RestsStayRests 's/gap <= FillCells \* Q/gap <= (FillCells + 1) * Q/'
 mutant fill-to-next-offset    DecodedMonophonic 's/\[notes EXCEPT !\[i - 1\].off = notes\[i\].on\]/[notes EXCEPT ![i - 1].off = notes[i].off]/'
 mutant snap-rounds-up         SnapKeepsDecodedGrid 's/(t - shift + Q \\div 2) \\div Q/(t - shift + Q) \\div Q/'
+mutant no-overlap-resolve     SnappedMonophonic 's/IF next.on >= prev.off THEN snapped/IF TRUE THEN snapped/'
+# Not mutated: the collision branch of resolveOverlaps. Grid-decoded notes are
+# >= 1 cell apart and the review grid moves < 1 cell, so no collision is
+# reachable here; web/lib/grid.test.ts covers it (shared cases + 2000 random lines).
 rm -rf "$tmp"
 exit $fail

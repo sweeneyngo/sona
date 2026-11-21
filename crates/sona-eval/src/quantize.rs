@@ -103,6 +103,29 @@ pub fn quantize_note(
 /// JavaScript's `Math.round`: halves round toward +∞ (`-2.5 → -2`), unlike
 /// Rust's `f64::round` (away from zero, `-2.5 → -3`). Matters for a note exactly
 /// half a cell before the anchor.
+/// `grid.ts` `resolveOverlaps`: keep a snapped line monophonic. Walking in onset
+/// order, a note that starts inside its predecessor trims the predecessor to its
+/// onset; a note on the predecessor's onset line moves to the predecessor's end and
+/// keeps at least one cell. No note is dropped; input order is kept.
+pub fn resolve_overlaps(notes: &mut [QuantizedNote], spacing: f64) {
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by(|&a, &b| notes[a].onset_s.total_cmp(&notes[b].onset_s).then(a.cmp(&b)));
+    for k in 1..order.len() {
+        let (p, n) = (order[k - 1], order[k]);
+        if notes[n].onset_s >= notes[p].offset_s - 1e-9 {
+            continue;
+        }
+        if notes[n].onset_s > notes[p].onset_s + 1e-9 {
+            notes[p].offset_s = notes[n].onset_s;
+        } else {
+            notes[n].onset_s = notes[p].offset_s;
+            if notes[n].offset_s <= notes[n].onset_s + 1e-9 {
+                notes[n].offset_s = notes[n].onset_s + spacing;
+            }
+        }
+    }
+}
+
 fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
 }
@@ -158,6 +181,36 @@ mod tests {
             assert_eq!(q.escaped, c.expected.escaped, "{}: escaped", c.name);
             assert!((q.onset_s - c.expected.onset_s).abs() < 1e-9, "{}: onset {} vs {}", c.name, q.onset_s, c.expected.onset_s);
             assert!((q.offset_s - c.expected.offset_s).abs() < 1e-9, "{}: offset {} vs {}", c.name, q.offset_s, c.expected.offset_s);
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct Span {
+        onset_s: f64,
+        offset_s: f64,
+    }
+
+    #[derive(Deserialize)]
+    struct SequenceCase {
+        name: String,
+        spacing: f64,
+        notes: Vec<Span>,
+        expected: Vec<Span>,
+    }
+
+    #[test]
+    fn resolve_overlaps_agrees_with_grid_ts_on_the_shared_cases() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/quantize/sequence_cases.json");
+        let cases: Vec<SequenceCase> = serde_json::from_str(&std::fs::read_to_string(&path).expect("cases")).expect("parse");
+        assert!(cases.len() >= 5);
+        for c in cases {
+            let mut q: Vec<QuantizedNote> =
+                c.notes.iter().map(|n| QuantizedNote { onset_s: n.onset_s, offset_s: n.offset_s, escaped: false }).collect();
+            resolve_overlaps(&mut q, c.spacing);
+            for (i, (g, e)) in q.iter().zip(&c.expected).enumerate() {
+                assert!((g.onset_s - e.onset_s).abs() < 1e-9, "{}: onset {i}", c.name);
+                assert!((g.offset_s - e.offset_s).abs() < 1e-9, "{}: offset {i}", c.name);
+            }
         }
     }
 

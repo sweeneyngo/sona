@@ -27,7 +27,7 @@ import { detectKey, keyName, isInKey, snapToKey } from "./lib/key";
 import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
 import { clampPitch } from "./lib/math";
-import { gridSpacingSeconds, snapTime, quantizeNote, noteFlags } from "./lib/grid";
+import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
@@ -432,13 +432,19 @@ function effectiveNotes(): EffectiveNote[] {
   if (effectiveCache) return effectiveCache;
   const s = spacing();
   const key = currentKey();
-  effectiveCache = workingNotes.map((n) => {
-    // Manual notes never escape; everything else uses grid.ts's documented
-    // escape-hatch defaults (ADR-0003).
-    const q = quantizeNote(
-      n,
-      n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
-    );
+  // Manual notes never escape; everything else uses grid.ts's documented
+  // escape-hatch defaults (ADR-0003). Snapped one by one, then kept monophonic.
+  const snapped = resolveOverlaps(
+    workingNotes.map((n) =>
+      quantizeNote(
+        n,
+        n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
+      ),
+    ),
+    s,
+  );
+  effectiveCache = workingNotes.map((n, i) => {
+    const q = snapped[i];
     const flags = noteFlags(n, q, flagThreshold);
     // Pitch interpretation: snap to the detected key's scale when enabled, else
     // keep the raw pitch and flag it if it falls outside the key.

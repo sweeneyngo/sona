@@ -83,5 +83,5 @@ On three songs the quantized COnPOff is below raw: kinsei 0.41 → 0.37, fukagya
 ## Next
 
 1. BPM and division estimation, so grid mode needs only the stem. The corpus already has golden labels for both.
-2. Fix the review surface's escape-hatch overlap found by `verification/grid-notes` (clamp a snapped note's offset to the next onset).
+2. ~~Fix the review surface's escape-hatch overlap~~ — done: `resolveOverlaps` (`web/lib/grid.ts`), model-checked in `verification/grid-notes`.
 3. A stronger same-pitch re-articulation cue (e.g. a phoneme-level onset model), the largest remaining fixable error.

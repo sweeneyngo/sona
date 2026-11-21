@@ -7,6 +7,7 @@ import {
   snapTime,
   gridLines,
   quantizeNote,
+  resolveOverlaps,
   noteFlags,
 } from "./grid";
 
@@ -151,5 +152,46 @@ test("quantizeNote agrees with the Rust port on every shared case", () => {
     assert.equal(q.escaped, c.expected.escaped, `${c.name}: escaped`);
     assert.ok(Math.abs(q.onset_s - c.expected.onset_s) < 1e-9, `${c.name}: onset ${q.onset_s}`);
     assert.ok(Math.abs(q.offset_s - c.expected.offset_s) < 1e-9, `${c.name}: offset ${q.offset_s}`);
+  }
+});
+
+// The sequence pass has its own shared case file, asserted by the Rust port too.
+interface SequenceCase {
+  name: string;
+  spacing: number;
+  notes: { onset_s: number; offset_s: number }[];
+  expected: { onset_s: number; offset_s: number }[];
+}
+
+const sequenceCases: SequenceCase[] = JSON.parse(
+  readFileSync(new URL("../../crates/sona-eval/fixtures/quantize/sequence_cases.json", import.meta.url), "utf8"),
+);
+
+test("resolveOverlaps agrees with the Rust port on every shared sequence case", () => {
+  assert.ok(sequenceCases.length >= 5);
+  for (const c of sequenceCases) {
+    const got = resolveOverlaps(c.notes, c.spacing);
+    assert.equal(got.length, c.expected.length, c.name);
+    got.forEach((n, i) => {
+      assert.ok(Math.abs(n.onset_s - c.expected[i].onset_s) < 1e-9, `${c.name}: onset ${i}`);
+      assert.ok(Math.abs(n.offset_s - c.expected[i].offset_s) < 1e-9, `${c.name}: offset ${i}`);
+    });
+  }
+});
+
+test("resolveOverlaps leaves a monophonic line with every note kept", () => {
+  // Random snapped lines on a 0.1 s grid, some notes escaped (off-grid).
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  for (let trial = 0; trial < 2000; trial++) {
+    const notes = Array.from({ length: 1 + Math.floor(rnd() * 6) }, () => {
+      const on = Math.round(rnd() * 8) / 10 + (rnd() < 0.3 ? 0.05 : 0);
+      return { onset_s: on, offset_s: on + (1 + Math.floor(rnd() * 3)) / 10 };
+    });
+    const out = resolveOverlaps(notes, 0.1);
+    assert.equal(out.length, notes.length);
+    const sorted = [...out].sort((a, b) => a.onset_s - b.onset_s);
+    for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i].onset_s >= sorted[i - 1].offset_s - 1e-9, JSON.stringify(notes));
+    for (const n of out) assert.ok(n.offset_s > n.onset_s + 1e-9, JSON.stringify(notes));
   }
 });

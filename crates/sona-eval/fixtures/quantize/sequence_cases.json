@@ -1,0 +1,138 @@
+[
+ {
+  "name": "escape next to a snapped neighbour (the TLC counterexample): earlier note ends where the later begins",
+  "spacing": 0.1,
+  "notes": [
+   {
+    "onset_s": 0.25,
+    "offset_s": 0.35
+   },
+   {
+    "onset_s": 0.3,
+    "offset_s": 0.4
+   }
+  ],
+  "expected": [
+   {
+    "onset_s": 0.25,
+    "offset_s": 0.3
+   },
+   {
+    "onset_s": 0.3,
+    "offset_s": 0.4
+   }
+  ]
+ },
+ {
+  "name": "two notes on one line: the later moves to the earlier's end, keeping a cell",
+  "spacing": 0.1,
+  "notes": [
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.2
+   },
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.2
+   }
+  ],
+  "expected": [
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.2
+   },
+   {
+    "onset_s": 0.2,
+    "offset_s": 0.3
+   }
+  ]
+ },
+ {
+  "name": "a collision cascades without dropping a note",
+  "spacing": 0.1,
+  "notes": [
+   {
+    "onset_s": 0.0,
+    "offset_s": 0.1
+   },
+   {
+    "onset_s": 0.0,
+    "offset_s": 0.1
+   },
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.2
+   }
+  ],
+  "expected": [
+   {
+    "onset_s": 0.0,
+    "offset_s": 0.1
+   },
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.2
+   },
+   {
+    "onset_s": 0.2,
+    "offset_s": 0.3
+   }
+  ]
+ },
+ {
+  "name": "already monophonic: unchanged",
+  "spacing": 0.1,
+  "notes": [
+   {
+    "onset_s": 0.0,
+    "offset_s": 0.1
+   },
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.3
+   },
+   {
+    "onset_s": 0.4,
+    "offset_s": 0.5
+   }
+  ],
+  "expected": [
+   {
+    "onset_s": 0.0,
+    "offset_s": 0.1
+   },
+   {
+    "onset_s": 0.1,
+    "offset_s": 0.3
+   },
+   {
+    "onset_s": 0.4,
+    "offset_s": 0.5
+   }
+  ]
+ },
+ {
+  "name": "input order is kept; resolution follows onset order",
+  "spacing": 0.1,
+  "notes": [
+   {
+    "onset_s": 0.3,
+    "offset_s": 0.4
+   },
+   {
+    "onset_s": 0.2,
+    "offset_s": 0.4
+   }
+  ],
+  "expected": [
+   {
+    "onset_s": 0.3,
+    "offset_s": 0.4
+   },
+   {
+    "onset_s": 0.2,
+    "offset_s": 0.3
+   }
+  ]
+ }
+]

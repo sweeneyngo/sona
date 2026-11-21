@@ -61,4 +61,4 @@ The cost: a grid-mode annotation is tied to the BPM and division it was decoded 
   - same-pitch re-articulations, which no cue tried separates well;
   - stems where separation failed (BassSousha, 盲目シャボン).
 - **Verified.** `verification/grid-notes/` model-checks the path → notes → gap fill → snap assembly with TLA+/TLC on every path up to 5 cells, with six mutants each caught. The local `verify-grid-notes` skill says how to rerun it.
-- **Known finding.** The review surface's escape hatch (ADR-0003) can overlap two neighbours when the user drags the grid ≥ ¼ cell off the decoded phase. This predates grid mode, and the fix belongs in `quantizeNote`.
+- **Snap-overlap fix.** The model found that the review surface's escape hatch (ADR-0003) could overlap two neighbours when the user dragged the grid ≥ ¼ cell off the decoded phase. This predated grid mode. It is fixed by `resolveOverlaps` (`web/lib/grid.ts`, ported in `quantize.rs`), and the harness and the gate now score that resolved export.

@@ -8,6 +8,10 @@
 (*  FillGap   - grid.rs, GridDecoder::fill_gaps.                           *)
 (*  SnapNote  - web/lib/grid.ts quantizeNote (ported in                    *)
 (*              crates/sona-eval/src/quantize.rs quantize_note).           *)
+(*  Resolve   - web/lib/grid.ts resolveOverlaps (quantize.rs               *)
+(*              resolve_overlaps), one step per adjacent pair. The code    *)
+(*              walks in onset order; SnapKeepsOrder shows that is the     *)
+(*              decode order here, so the model walks the sequence.        *)
 (*                                                                         *)
 (* Time is in quarter-cells (Q per cell) so the UI grid can sit a quarter, *)
 (* half or three quarters of a cell off the decoded grid (the user dragged *)
@@ -92,12 +96,33 @@ SnapNote ==
 
 EndSnap ==
   /\ phase = "snap" /\ i > Len(notes)
+  /\ phase' = "resolve" /\ i' = 2
+  /\ UNCHANGED <<path, shift, clear, c, notes, snapped>>
+
+\* grid.ts resolveOverlaps: an overlap trims the earlier note; a collision
+\* moves the later note to the earlier one's end, keeping at least a cell.
+Resolve ==
+  /\ phase = "resolve" /\ i <= Len(snapped)
+  /\ LET prev == snapped[i - 1]
+         next == snapped[i]
+         moved == prev.off
+     IN snapped' =
+          IF next.on >= prev.off THEN snapped
+          ELSE IF next.on > prev.on THEN [snapped EXCEPT ![i - 1].off = next.on]
+          ELSE [snapped EXCEPT ![i].on = moved,
+                               ![i].off = IF next.off <= moved THEN moved + Q ELSE next.off]
+  /\ i' = i + 1
+  /\ UNCHANGED <<path, shift, clear, phase, c, notes>>
+
+EndResolve ==
+  /\ phase = "resolve" /\ i > Len(snapped)
   /\ phase' = "done"
   /\ UNCHANGED <<path, shift, clear, c, i, notes, snapped>>
 
 Done == phase = "done" /\ UNCHANGED vars
 
-Next == ReadCell \/ EndRead \/ FillGap \/ EndFill \/ SnapNote \/ EndSnap \/ Done
+Next == ReadCell \/ EndRead \/ FillGap \/ EndFill \/ SnapNote \/ EndSnap
+          \/ Resolve \/ EndResolve \/ Done
 
 Spec == Init /\ [][Next]_vars
 
@@ -134,6 +159,17 @@ RestsStayRests ==
 SnapKeepsDecodedGrid ==
   phase = "done" /\ shift = 0 => snapped = notes
 
-\* What the review surface exports is still one voice.
+\* Snapping never reorders notes (so resolving in decode order = onset order).
+SnapKeepsOrder ==
+  phase = "resolve" /\ i = 2 =>
+    \A x, y \in 1 .. Len(snapped) : x < y => snapped[x].on < snapped[y].on
+
+\* What the review surface exports is still one voice ...
 SnappedMonophonic == phase = "done" => Ordered(snapped)
+
+\* ... with every decoded note in it, none of them empty.
+SnappedKeepsEveryNote ==
+  phase = "done" =>
+    /\ Len(snapped) = Len(notes)
+    /\ \A x \in 1 .. Len(snapped) : snapped[x].off > snapped[x].on
 =============================================================================
