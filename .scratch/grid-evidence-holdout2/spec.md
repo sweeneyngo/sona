@@ -37,3 +37,11 @@ lead stems with both features beat vocal stems with both features by at least
 
 sona is deterministic, so song resampling is the noise. With 10 songs, a
 difference under about 2 points of cell accuracy is not distinguishable.
+
+## Comments
+
+**2026-11-21, before the read.** Alignment (05) flagged 2 of the first 10 songs:
+- kieru-mama: constant shift −49 ms;
+- teni-suru-bug: drift +69 ms, so a single BPM doesn't hold.
+
+Both stay in the manifest, flagged, and are excluded from scoring. The next two uploads in channel order were backfilled (dreamcore, mc-tokyo); both aligned. **10 aligned songs are scored**, as the rule assumes. No holdout2 score had been computed when the backfill was made.

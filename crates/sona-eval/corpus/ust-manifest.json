@@ -674,12 +674,12 @@
       "stratum_evidence": "original's title credits 洛天依; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 132.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -7.329,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "tengai/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -711,12 +711,12 @@
       "stratum_evidence": "original's title credits 重音テト; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 200.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -4.922,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "cinema-mitaina/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -743,12 +743,12 @@
       "stratum_evidence": "original's title credits デフォ子; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 180.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -5.329,
+      "alignment_status": "flagged: constant shift -49 ms",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kieru-mama/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -776,12 +776,12 @@
       "stratum_evidence": "original's title credits 重音テト; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 160.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -6.071,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "over-dreamin/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -807,12 +807,12 @@
       "stratum_evidence": "original's title credits 鏡音レン; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 140.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -6.91,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "jumble-jungle/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -839,12 +839,12 @@
       "stratum_evidence": "original's title credits 鳴花ヒメ; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 173.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -5.614,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "one/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -873,12 +873,12 @@
       "stratum_evidence": "original's title credits 巡音ルカ; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 162.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -6.001,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "lady-bug/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -904,12 +904,12 @@
       "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 142.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -6.819,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "shinki-mousou-heki/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -935,12 +935,12 @@
       "stratum_evidence": "original's title credits 結月ゆかり; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 178.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -5.477,
+      "alignment_status": "flagged: drift +69 ms over the song",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "teni-suru-bug/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
@@ -968,15 +968,81 @@
       "stratum_evidence": "original's title credits SF-A2 開発コードmiki; cover and original lengths agree within 1 s (no short cut)",
       "bpm_from_ust": 135.0,
       "grid_division": 16,
-      "alignment_offset_s": null,
-      "alignment_status": null,
+      "alignment_offset_s": -7.109,
+      "alignment_status": "aligned",
       "stem": {
-        "model": null,
-        "version": null,
-        "path": null
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kajikamu-suigin/vocals.wav"
       },
       "split": "holdout2",
       "notes": null
+    },
+    {
+      "id": "dreamcore",
+      "expected_title": "ドリームコア",
+      "ust_zip": "ドリームコア.zip",
+      "ust_zip_sha256": "35789be3a9197ab441447711c6139a1da8d1675c648e87c2c7da75358bb50a47",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1-high.ust",
+        "cho1-low.ust",
+        "cho2-high.ust",
+        "cho2-low.ust",
+        "low1.ust",
+        "low2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=V1i0M9rntqk",
+      "original_title": "Dreamcore / john feat. Hatsune Miku",
+      "original_duration_s": 127.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=PN3OpnlKduQ",
+      "upload_date": "2026-10-01",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 139.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.0,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "dreamcore/vocals.wav"
+      },
+      "split": "holdout2",
+      "notes": "backfill: kieru-mama and teni-suru-bug failed alignment (05), added before holdout2 was read"
+    },
+    {
+      "id": "mc-tokyo",
+      "expected_title": "M.C.TOKYO",
+      "ust_zip": "M.C.TOKYO.zip",
+      "ust_zip_sha256": "3bd44d6045a12869bcddee12cf912d11c256add77facd345691557b9feda2de4",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [],
+      "original_url": "https://www.youtube.com/watch?v=6DPvULLmSU4",
+      "original_title": "M.C.TOKYO feat. 初音ミク",
+      "original_duration_s": 202.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=P-xeldqQDKg",
+      "upload_date": "2026-10-01",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 200.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.828,
+      "alignment_status": "aligned",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "mc-tokyo/vocals.wav"
+      },
+      "split": "holdout2",
+      "notes": "backfill: kieru-mama and teni-suru-bug failed alignment (05), added before holdout2 was read"
     }
   ],
   "excluded": [
