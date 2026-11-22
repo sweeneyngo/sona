@@ -1,0 +1,69 @@
+/**
+ * Snapped notes → a singing-synth tick sequence, shared by the UST and USTX
+ * exporters (ADR-0018).
+ *
+ * The input is the same snapped, corrected notes the MIDI export uses. A
+ * singing-synth project puts tick 0 on a bar line, so the notes are moved back
+ * by the grid **phase** (the anchor's offset from a whole cell, under one cell)
+ * to land on the editor's grid. The caller reports that shift, because it moves
+ * the vocal relative to the stem.
+ */
+
+export const TICKS_PER_QUARTER = 480;
+/** The lyric of a note nobody gave one (a CV voicebank's plain "a"). */
+export const DEFAULT_LYRIC = "あ";
+
+export interface LyricNote {
+  onset_s: number;
+  offset_s: number;
+  midi_pitch: number;
+  lyric?: string;
+}
+
+export interface SeqNote {
+  /** Start, in ticks from the project's tick 0. */
+  position: number;
+  /** Length in ticks (≥ 1). */
+  duration: number;
+  /** MIDI note number, 0–127. */
+  tone: number;
+  lyric: string;
+}
+
+export interface Sequence {
+  notes: SeqNote[];
+  /** Seconds the notes were moved earlier to sit on the editor's grid. */
+  shiftS: number;
+}
+
+/** The grid phase: where in a cell the anchor sits, in `[0, spacing)`. */
+export function gridPhase(anchor: number, spacing: number): number {
+  if (!(spacing > 0)) return 0;
+  return ((anchor % spacing) + spacing) % spacing;
+}
+
+/**
+ * Convert seconds to ticks on the shifted timeline. Notes are sorted, clamped
+ * at tick 0, kept monophonic (a later note trims the one it starts inside),
+ * and at least one tick long.
+ */
+export function toSequence(notes: LyricNote[], opts: { bpm: number; spacing: number; anchor: number; tpq?: number }): Sequence {
+  const tpq = opts.tpq ?? TICKS_PER_QUARTER;
+  const shiftS = gridPhase(opts.anchor, opts.spacing);
+  const ticksPerSecond = (opts.bpm / 60) * tpq;
+  const toTicks = (s: number) => Math.max(0, Math.round((s - shiftS) * ticksPerSecond));
+  const sorted = [...notes].sort((a, b) => a.onset_s - b.onset_s);
+  const out: SeqNote[] = [];
+  for (const n of sorted) {
+    const position = toTicks(n.onset_s);
+    const end = Math.max(position + 1, toTicks(n.offset_s));
+    const prev = out[out.length - 1];
+    if (prev && position < prev.position + prev.duration) {
+      if (position <= prev.position) continue;
+      prev.duration = position - prev.position;
+    }
+    const lyric = (n.lyric ?? "").trim() || DEFAULT_LYRIC;
+    out.push({ position, duration: end - position, tone: Math.max(0, Math.min(127, Math.round(n.midi_pitch))), lyric });
+  }
+  return { notes: out, shiftS };
+}

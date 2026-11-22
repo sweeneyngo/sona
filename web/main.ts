@@ -29,6 +29,10 @@ import { buildSchedule } from "./lib/synth";
 import { clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
+import { assignLyrics, splitLyrics } from "./lib/lyrics";
+import { toSequence } from "./lib/sequence";
+import { encodeUst } from "./lib/ust";
+import { ustxText } from "./lib/ustx";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
 import type { Annotation, Note, WorkingNote } from "./lib/annotation";
@@ -77,6 +81,17 @@ const el = {
   settings: document.getElementById("settings") as HTMLButtonElement,
   settingsOverlay: document.getElementById("settings-overlay") as HTMLDivElement,
   settingsClose: document.getElementById("settings-close") as HTMLButtonElement,
+  lyrics: document.getElementById("lyrics") as HTMLButtonElement,
+  lyricsOverlay: document.getElementById("lyrics-overlay") as HTMLDivElement,
+  lyricsClose: document.getElementById("lyrics-close") as HTMLButtonElement,
+  lyricsText: document.getElementById("lyrics-text") as HTMLTextAreaElement,
+  lyricsPreview: document.getElementById("lyrics-preview") as HTMLParagraphElement,
+  lyricsFromSelected: document.getElementById("lyrics-from-selected") as HTMLButtonElement,
+  lyricsFromStart: document.getElementById("lyrics-from-start") as HTMLButtonElement,
+  lyricsClear: document.getElementById("lyrics-clear") as HTMLButtonElement,
+  lyricEditor: document.getElementById("lyric-editor") as HTMLInputElement,
+  exportUst: document.getElementById("export-ust") as HTMLButtonElement,
+  exportUstx: document.getElementById("export-ustx") as HTMLButtonElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -229,6 +244,7 @@ function applyLoadedJson(parsed: any): boolean {
     confidence: Number(n.confidence),
     sub_scores: n.sub_scores ?? {},
     ...(n.manual ? { manual: true as const } : {}),
+    ...(typeof n.lyric === "string" && n.lyric ? { lyric: n.lyric } : {}),
   }));
   // The producer's original notes: a saved session carries its own `baseline`;
   // a fresh annotation is its own baseline. Clone into fresh objects so later
@@ -527,11 +543,12 @@ function setModal(overlay: HTMLElement, open: boolean): void {
     el.helpOverlay.hidden = true;
     el.settingsOverlay.hidden = true;
     el.changesOverlay.hidden = true;
+    el.lyricsOverlay.hidden = true;
   }
   overlay.hidden = !open;
 }
 function anyModalOpen(): boolean {
-  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden || !el.changesOverlay.hidden;
+  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden || !el.changesOverlay.hidden || !el.lyricsOverlay.hidden;
 }
 
 el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
@@ -613,6 +630,9 @@ function rebuild(): void {
   el.play.disabled = !(annotation && audioBuffer) || !!playback;
   el.stop.disabled = !playback;
   el.export.disabled = !annotation;
+  el.exportUst.disabled = !annotation;
+  el.exportUstx.disabled = !annotation;
+  el.lyrics.disabled = !annotation;
   el.save.disabled = !annotation;
 }
 
@@ -945,6 +965,17 @@ function drawNotes(): void {
     ctx2d.stroke();
     ctx2d.restore();
 
+    if (eff.raw.lyric && wNote >= 12 && barH >= 9) {
+      ctx2d.save();
+      roundRect(x, y, wNote, barH, NOTE_RADIUS);
+      ctx2d.clip();
+      ctx2d.fillStyle = "#0b0b0b";
+      ctx2d.font = `600 ${Math.min(13, Math.max(9, barH - 3))}px "Outfit", system-ui, sans-serif`;
+      ctx2d.textBaseline = "middle";
+      ctx2d.fillText(eff.raw.lyric, x + 4, y + barH / 2 + 0.5);
+      ctx2d.restore();
+    }
+
     if (eff.raw === selectedNote) {
       ctx2d.strokeStyle = "#ffffff";
       ctx2d.lineWidth = 2;
@@ -1152,6 +1183,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     setModal(el.helpOverlay, false);
     setModal(el.settingsOverlay, false);
     setModal(el.changesOverlay, false);
+    setModal(el.lyricsOverlay, false);
     e.preventDefault();
     return;
   }
@@ -1183,6 +1215,12 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       break;
     case " ": // play / pause
       togglePlay();
+      break;
+    case "l":
+    case "L":
+      if (!selectedNote) return;
+      openLyricEditor(selectedNote);
+      e.preventDefault();
       break;
     case "ArrowRight":
       setSeek(seekOffset + beat * (e.shiftKey ? 4 : 1));
@@ -1453,6 +1491,150 @@ function exportMidi(): void {
   download(encodeMidiFile(notes, { bpm }) as BlobPart, "sona.mid", "audio/midi");
   setStatus(`Exported ${notes.length} notes to sona.mid at ${bpm} BPM.`);
 }
+
+// --- Lyrics + UTAU export (ADR-0018) ---------------------------------------
+
+/** Working notes in the order they sound (by snapped onset). */
+function notesInTimeOrder(): WorkingNote[] {
+  return [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s).map((e) => e.raw);
+}
+
+/** The effective notes with their lyrics, as the UST/USTX sequence needs them. */
+function lyricNotes() {
+  return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric }));
+}
+
+function exportSequence() {
+  return toSequence(lyricNotes(), { bpm, spacing: spacing(), anchor: gridAnchor });
+}
+
+function shiftNote(shiftS: number): string {
+  return shiftS > 0.0005 ? ` Notes moved ${Math.round(shiftS * 1000)} ms earlier onto the editor's grid.` : "";
+}
+
+function exportUst(): void {
+  if (!annotation) return;
+  const seq = exportSequence();
+  const { bytes, encoding } = encodeUst(seq, { bpm, projectName: "sona" });
+  download(bytes as BlobPart, "sona.ust", "text/plain");
+  setStatus(`Exported ${seq.notes.length} notes to sona.ust (${encoding === "shift_jis" ? "Shift-JIS" : "UTF-8"}) at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+}
+
+function exportUstx(): void {
+  if (!annotation) return;
+  const seq = exportSequence();
+  download(ustxText(seq, { bpm, name: "sona" }), "sona.ustx", "text/yaml");
+  setStatus(`Exported ${seq.notes.length} notes to sona.ustx at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+}
+
+el.exportUst.addEventListener("click", exportUst);
+el.exportUstx.addEventListener("click", exportUstx);
+
+/** The note the inline lyric editor is open on, or null. */
+let lyricTarget: WorkingNote | null = null;
+
+/** Open the inline lyric box over `note` (scrolling it into view first). */
+function openLyricEditor(note: WorkingNote): void {
+  selectedNote = note;
+  const eff = effectiveNotes().find((e) => e.raw === note);
+  if (eff && (eff.onset_s < viewT0 || eff.offset_s > viewT1)) {
+    scrollX = clampScroll(scrollX + (eff.onset_s - viewT0 - (viewT1 - viewT0) * 0.3) * (plotWidthPx() * zoomX) / Math.max(totalDuration(), 1e-9));
+  }
+  redraw();
+  const hit = noteHitboxes.find((h) => h.note === note);
+  if (!hit) return;
+  lyricTarget = note;
+  el.tooltip.style.display = "none";
+  el.lyricEditor.value = note.lyric ?? "";
+  el.lyricEditor.style.left = `${Math.max(2, hit.x)}px`;
+  el.lyricEditor.style.top = `${Math.max(2, hit.y - 28)}px`;
+  el.lyricEditor.hidden = false;
+  el.lyricEditor.focus();
+  el.lyricEditor.select();
+}
+
+/** Save the box's text as the target's lyric; an empty box clears it. */
+function commitLyric(): void {
+  if (!lyricTarget) return;
+  const text = el.lyricEditor.value.trim();
+  if (text) lyricTarget.lyric = text;
+  else delete lyricTarget.lyric;
+  markDirty();
+}
+
+function closeLyricEditor(): void {
+  lyricTarget = null;
+  el.lyricEditor.hidden = true;
+  el.lyricEditor.blur();
+  redraw();
+}
+
+el.lyricEditor.addEventListener("keydown", (e: KeyboardEvent) => {
+  e.stopPropagation(); // typing a lyric must not trigger roll shortcuts
+  if (e.key === "Escape") {
+    closeLyricEditor();
+  } else if (e.key === "Enter" || e.key === "Tab") {
+    e.preventDefault();
+    commitLyric();
+    const order = notesInTimeOrder();
+    const i = lyricTarget ? order.indexOf(lyricTarget) : -1;
+    const next = order[i + (e.shiftKey ? -1 : 1)];
+    if (next) openLyricEditor(next);
+    else closeLyricEditor();
+  }
+});
+el.lyricEditor.addEventListener("blur", () => {
+  if (lyricTarget) {
+    commitLyric();
+    closeLyricEditor();
+  }
+});
+
+function updateLyricsPreview(): void {
+  const tokens = splitLyrics(el.lyricsText.value);
+  const total = workingNotes.length;
+  const sung = workingNotes.filter((n) => n.lyric).length;
+  el.lyricsPreview.textContent =
+    `${tokens.length} token${tokens.length === 1 ? "" : "s"} · ${total} notes (${sung} with lyrics)` +
+    (tokens.length ? ` · starts: ${tokens.slice(0, 12).join(" ")}${tokens.length > 12 ? " …" : ""}` : "");
+  el.lyricsFromSelected.disabled = !selectedNote || !tokens.length;
+  el.lyricsFromStart.disabled = !tokens.length;
+}
+
+function fillLyrics(from: WorkingNote | null): void {
+  const order = notesInTimeOrder();
+  const start = from ? Math.max(0, order.indexOf(from)) : 0;
+  const tokens = splitLyrics(el.lyricsText.value);
+  const { assigned, leftover } = assignLyrics(tokens, order.length, start);
+  for (const [i, lyric] of assigned) order[i].lyric = lyric;
+  markDirty();
+  setModal(el.lyricsOverlay, false);
+  redraw();
+  setStatus(
+    `Filled ${assigned.size} notes with lyrics` +
+      (leftover ? `; ${leftover} token${leftover === 1 ? "" : "s"} left over (more tokens than notes).` : "."),
+  );
+}
+
+el.lyrics.addEventListener("click", () => {
+  setModal(el.lyricsOverlay, el.lyricsOverlay.hidden);
+  updateLyricsPreview();
+  if (!el.lyricsOverlay.hidden) el.lyricsText.focus();
+});
+el.lyricsClose.addEventListener("click", () => setModal(el.lyricsOverlay, false));
+el.lyricsOverlay.addEventListener("click", (e) => {
+  if (e.target === el.lyricsOverlay) setModal(el.lyricsOverlay, false);
+});
+el.lyricsText.addEventListener("input", updateLyricsPreview);
+el.lyricsFromSelected.addEventListener("click", () => fillLyrics(selectedNote));
+el.lyricsFromStart.addEventListener("click", () => fillLyrics(null));
+el.lyricsClear.addEventListener("click", () => {
+  for (const n of workingNotes) delete n.lyric;
+  markDirty();
+  setModal(el.lyricsOverlay, false);
+  redraw();
+  setStatus("Cleared all lyrics.");
+});
 
 // --- Playback ---------------------------------------------------------------
 

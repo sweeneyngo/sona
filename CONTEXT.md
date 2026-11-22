@@ -1,11 +1,11 @@
 # sona
 
-A tool for transcribing a single isolated vocal line into a MIDI file, specialized for vocals ripped from a finished mix (not dry studio stems). Output stops at MIDI; notation, UST/VSQX, and source separation are out of scope.
+A tool for transcribing a single isolated vocal line into MIDI and singing-synth projects (UST for UTAU, USTX for OpenUtau), specialized for vocals ripped from a finished mix (not dry studio stems). Scope grew on 2026-11-22 ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)): lyrics and UST/USTX export are in; pitch curves (portamento, vibrato) and one-click generation (source separation + transcription from the app) are planned; notation and VSQX remain out.
 
 ## Language
 
 **Perception vs. interpretation**:
-The core split. *Perception* = the Rust core's job: audio → raw note events (onset/offset in seconds), pitch, confidence, f0 contour, energy envelope. *Interpretation* = the UI's job: grid anchoring, quantization/snap, correction, MIDI export. The core's output is invariant to musical settings.
+The core split. *Perception* = the Rust core's job: audio → raw note events (onset/offset in seconds), pitch, confidence, f0 contour, energy envelope. *Interpretation* = the UI's job: grid anchoring, quantization/snap, correction, lyrics, and MIDI/UST/USTX export. The core's output is invariant to musical settings.
 
 **Annotation JSON**:
 The primary artifact and the core↔UI contract: raw note events + confidence (scalar + sub-scores) + f0 contour + energy envelope + BPM. MIDI is derived from it (raw MIDI optionally from the core; the authoritative corrected MIDI is exported by the UI). Any producer that emits this JSON — including basic-pitch via an adapter — can be auditioned in the review surface.
@@ -31,7 +31,7 @@ Beat basic-pitch *on isolated vocal stems specifically* — cleaner note boundar
 _Avoid_: "better than basic-pitch" (unqualified), mir_eval/COnP/COnPOff (deliberately not used)
 
 **Review surface**:
-A web piano-roll where the user listens to sona's output against the stem, corrects flagged notes, and exports MIDI. Modeled (as reference, not copy) on onlinesequencer.net — BPM, grid, time signature, playback, export. Two jobs in one: (1) sona's *measurement instrument* (evaluation is by ear, so this is how every backend and tweak gets judged), and (2) where the remaining ~20% of manual correction happens before export. Fed by the headless Rust core's JSON output; the core itself has no UI.
+A web piano-roll where the user listens to sona's output against the stem, corrects flagged notes, attaches lyrics, and exports MIDI, UST or USTX. Modeled (as reference, not copy) on onlinesequencer.net — BPM, grid, time signature, playback, export. Two jobs in one: (1) sona's *measurement instrument* (evaluation is by ear, so this is how every backend and tweak gets judged), and (2) where the remaining ~20% of manual correction happens before export. Fed by the headless Rust core's JSON output; the core itself has no UI.
 _Avoid_: viewer (it also edits), DAW plugin
 
 **Confidence (per note)**:

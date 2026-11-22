@@ -101,4 +101,6 @@ export interface Annotation {
  */
 export interface WorkingNote extends Note {
   manual?: boolean;
+  /** The sung lyric (ADR-0018): UI-side interpretation, saved in the session only. */
+  lyric?: string;
 }

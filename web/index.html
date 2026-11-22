@@ -458,6 +458,35 @@
         gap: 8px;
         align-items: flex-start;
       }
+      #lyric-editor {
+        position: absolute;
+        z-index: 6;
+        min-width: 56px;
+        padding: 2px 6px;
+        font: 600 13px "Outfit", system-ui, sans-serif;
+        color: var(--ink);
+        background: #0b0b0b;
+        border: 1px solid #ffffff;
+        border-radius: 4px;
+        outline: none;
+      }
+      #lyrics-text {
+        width: 100%;
+        min-height: 140px;
+        box-sizing: border-box;
+        padding: 8px;
+        font: 14px "Outfit", system-ui, sans-serif;
+        color: var(--ink);
+        background: #0b0b0b;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        resize: vertical;
+      }
+      .lyrics-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
       .setting input[type="range"] {
         width: 220px;
       }
@@ -592,8 +621,11 @@
 
         <div class="divider" aria-hidden="true"></div>
 
+        <button id="lyrics" title="Lyrics — paste a text to fill notes (L types one note's lyric)" disabled>あ Lyrics</button>
         <button id="save" title="Save session (JSON) — reload it to resume editing" disabled>⤒ Save</button>
         <button id="export" title="Export MIDI" disabled>⤓ MIDI</button>
+        <button id="export-ust" title="Export UST (UTAU) — notes and lyrics on UTAU's grid" disabled>⤓ UST</button>
+        <button id="export-ustx" title="Export USTX (OpenUtau) — notes and lyrics on OpenUtau's grid" disabled>⤓ USTX</button>
 
         <div class="spacer"></div>
 
@@ -607,6 +639,7 @@
       <div class="roll-wrap">
         <canvas id="roll"></canvas>
         <div id="tooltip"></div>
+        <input id="lyric-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Lyric for the selected note" hidden />
       </div>
       <div class="legend">
         <span class="grp">low <span class="bar" aria-hidden="true"></span> high confidence</span>
@@ -645,7 +678,7 @@
               Load an annotation JSON and its vocal stem, then play the stem against the
               synthesized notes. Notes hard-snap to the grid live (set BPM · division ·
               drag the ruler for phase); a confident off-grid note escapes snapping and is
-              flagged. Fix flagged notes, then export the corrected MIDI.
+              flagged. Fix flagged notes, add lyrics, then export MIDI, UST or USTX.
               <b>Save</b> writes a session JSON — reload it through the annotation
               input to resume editing exactly where you left off (MIDI can't do
               that: it keeps only the snapped notes).
@@ -658,6 +691,20 @@
               Drag a note to move it (time + pitch), drag its right edge to resize,
               double-click empty space to add, select and press Delete to remove. Hover or
               click a note to see its confidence sub-scores.
+            </p>
+          </section>
+
+          <section>
+            <h3>Lyrics and UTAU export</h3>
+            <p>
+              Select a note and press <span class="kbd">L</span> to type its lyric:
+              <span class="kbd">Enter</span> or <span class="kbd">Tab</span> saves it and
+              moves to the next note (<span class="kbd">Shift</span>+<span class="kbd">Tab</span>
+              the previous), <span class="kbd">Esc</span> stops. <b>あ Lyrics</b> pastes a
+              whole text at once. <b>UST</b> (UTAU) and <b>USTX</b> (OpenUtau) export the
+              same snapped notes as MIDI, with lyrics; a note without one sings あ. The
+              notes move onto the editor's grid, so the vocal starts up to one grid cell
+              earlier than the stem (the status line says how much).
             </p>
           </section>
 
@@ -682,6 +729,7 @@
               <div><span class="kbd">Home</span> jump to start</div>
               <div><span class="kbd">0</span> reset the view</div>
               <div><span class="kbd">Del</span> delete selected note</div>
+              <div><span class="kbd">L</span> type the selected note's lyric</div>
               <div><span class="kbd">?</span> this help</div>
             </div>
           </section>
@@ -715,6 +763,30 @@
             <h3>Musical key <output id="key-detail">—</output></h3>
             <label class="toggle"><input id="snap-key" type="checkbox" /> snap notes to key</label>
             <p>The key is auto-detected from the notes. Off: out-of-key notes are outlined for review. On: every note is snapped to the nearest scale tone (display + export). Purely interpretation — it never changes what was detected.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="lyrics-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lyrics-title">
+        <div class="modal-head">
+          <h2 id="lyrics-title">Lyrics</h2>
+          <button id="lyrics-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p>
+            Paste the lyrics. They're split into one token per note: kana by mora
+            (きゃ is one; ー, っ and ん are their own), romaji and English by word
+            (write romaji morae with spaces: <code>sa ku ra</code>), each kanji on its
+            own (paste kana for best results). Tokens fill notes in time order.
+          </p>
+          <textarea id="lyrics-text" placeholder="きらきら ひかる…"></textarea>
+          <p id="lyrics-preview"></p>
+          <div class="lyrics-actions">
+            <button id="lyrics-from-selected" disabled>Fill from the selected note</button>
+            <button id="lyrics-from-start">Fill from the first note</button>
+            <button id="lyrics-clear">Clear all lyrics</button>
           </div>
         </div>
       </div>

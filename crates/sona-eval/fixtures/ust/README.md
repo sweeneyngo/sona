@@ -16,6 +16,7 @@ synthesis parameters the parser must ignore. Each file covers one case:
 | `legato.ust` | Shift-JIS, CRLF | 120 BPM; contiguous notes; 8th-triplets; one start nudged 30 ticks off-grid; a `息` breath that terminates the note before it |
 | `tempo-change.ust` | Shift-JIS, CRLF | katakana; lowercase `r` rest; a note-level `Tempo=` change (128 → 64) mid-song |
 | `utf8.ust` | UTF-8, LF | `Charset=UTF-8` declaration; VCV lyrics (`a ら`, `- ん`); `ゔ`, which has no CP932 code point and so only survives the UTF-8 path |
+| `sona-export.ust` | Shift-JIS, CRLF | **Generated, not hand-authored**: the review surface's UST exporter (`web/lib/ust.ts`) output for four synthetic notes (`web/lib/export.test.ts`, regenerate with `UPDATE_GOLDEN=1`). The Rust parser must read back the exported notes; the web test must reproduce these bytes. |
 
 The tests check exact expected values for these files (rest-terminated counts,
 grid classes, residuals, durations), so editing one means updating its test.

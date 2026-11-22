@@ -158,6 +158,13 @@ npm run dev        # http://localhost:5173 (HMR)
 
 Open the app, use **Settings (⚙)** to choose the annotation JSON and its stem audio, set the BPM and grid division, and press **Play** to hear the stem against the synthesized notes. Notes are colored by a confidence heatmap (red → green); low-confidence and off-grid notes are outlined and flagged. Drag to move, resize, double-click to add, Delete to remove, then **Export MIDI** to write the authoritative file. Use **Save** to keep a session JSON if you want to resume editing later.
 
+**Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
+- **Paste lyrics.** **あ Lyrics** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
+- **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
+- **Export.** **⤓ UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **⤓ USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
+- **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
+- **Sessions.** Lyrics are saved in the session JSON.
+
 ### Evaluate (optional)
 
 ```bash

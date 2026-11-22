@@ -552,6 +552,30 @@ mod tests {
         assert_eq!(u.tempo, 140.0);
     }
 
+    /// `sona-export.ust` is written by the review surface's UST exporter
+    /// (`web/lib/ust.ts`; the web test `export.test.ts` checks it writes these
+    /// exact bytes). This parser must read back the notes the exporter meant:
+    /// four notes moved 0.05 s earlier onto a 120 BPM sixteenth grid.
+    #[test]
+    fn web_exporter_output_reads_back_as_the_exported_notes() {
+        let u = fixture("sona-export.ust");
+        assert_eq!(u.encoding, UstEncoding::ShiftJis);
+        assert_eq!(u.tempo, 120.0);
+        assert_eq!(u.project_name.as_deref(), Some("golden"));
+        assert_eq!(lyrics(&u), ["R", "さ", "くら", "R", "きゃ", "あ"]);
+        let sung: Vec<(f64, f64, u8)> = u
+            .timeline()
+            .iter()
+            .filter(|p| p.kind != BlockKind::Rest)
+            .map(|p| (p.start_s, p.end_s, p.note_num))
+            .collect();
+        let expected = [(1.0, 1.25, 64), (1.25, 1.5, 66), (1.75, 2.0, 67), (2.0, 2.25, 67)];
+        assert_eq!(sung.len(), expected.len());
+        for ((s, e, n), (es, ee, en)) in sung.iter().zip(expected) {
+            assert!((s - es).abs() < 1e-9 && (e - ee).abs() < 1e-9 && *n == en, "{sung:?}");
+        }
+    }
+
     #[test]
     fn tempo_change_and_lowercase_rest() {
         let u = fixture("tempo-change.ust");
