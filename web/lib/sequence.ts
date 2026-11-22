@@ -1,24 +1,14 @@
 /**
- * Snapped notes → a singing-synth tick sequence, shared by the UST and USTX
- * exporters (ADR-0018).
- *
- * The input is the same snapped, corrected notes the MIDI export uses. A
- * singing-synth project puts tick 0 on a bar line, so the notes are moved back
- * by the grid **phase** (the anchor's offset from a whole cell, under one cell)
- * to land on the editor's grid. The caller reports that shift, because it moves
- * the vocal relative to the stem.
+ * A singing-synth project puts tick 0 on a bar line, so the notes are moved back
+ * by the grid **phase** to land on the editor's grid.
  */
 
+import type { WorkingNote } from "./annotation";
+
 export const TICKS_PER_QUARTER = 480;
-/** The lyric of a note nobody gave one (a CV voicebank's plain "a"). */
 export const DEFAULT_LYRIC = "あ";
 
-export interface LyricNote {
-  onset_s: number;
-  offset_s: number;
-  midi_pitch: number;
-  lyric?: string;
-}
+export type LyricNote = Pick<WorkingNote, "onset_s" | "offset_s" | "midi_pitch" | "lyric">;
 
 export interface SeqNote {
   /** Start, in ticks from the project's tick 0. */
@@ -55,13 +45,13 @@ export function toSequence(notes: LyricNote[], opts: { bpm: number; spacing: num
   const sorted = [...notes].sort((a, b) => a.onset_s - b.onset_s);
   const out: SeqNote[] = [];
   for (const n of sorted) {
-    const position = toTicks(n.onset_s);
-    const end = Math.max(position + 1, toTicks(n.offset_s));
+    let position = toTicks(n.onset_s);
     const prev = out[out.length - 1];
     if (prev && position < prev.position + prev.duration) {
-      if (position <= prev.position) continue;
-      prev.duration = position - prev.position;
+      if (position <= prev.position) position = prev.position + prev.duration;
+      else prev.duration = position - prev.position;
     }
+    const end = Math.max(position + 1, toTicks(n.offset_s));
     const lyric = (n.lyric ?? "").trim() || DEFAULT_LYRIC;
     out.push({ position, duration: end - position, tone: Math.max(0, Math.min(127, Math.round(n.midi_pitch))), lyric });
   }

@@ -1,16 +1,16 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LYRIC, gridPhase, toSequence, type LyricNote } from "./sequence";
+import { DEFAULT_LYRIC, TICKS_PER_QUARTER, gridPhase, toSequence, type LyricNote } from "./sequence";
 import { encodeShiftJis } from "./sjis";
 import { encodeUst, ustText } from "./ust";
 import { toYaml, ustxProject, ustxText } from "./ustx";
 
-// 120 BPM, 1/16 grid: one cell = 0.125 s = 120 ticks. The grid anchor sits
-// 0.05 s into a cell, so every note moves 0.05 s earlier onto the editor grid.
 const BPM = 120;
 const SPACING = 0.125;
-const ANCHOR = 1.05;
+const PHASE_S = 0.05;
+const ANCHOR = 8 * SPACING + PHASE_S;
+const CELL_TICKS = (SPACING * BPM * TICKS_PER_QUARTER) / 60;
 const notes: LyricNote[] = [
   { onset_s: 1.05, offset_s: 1.3, midi_pitch: 64, lyric: "さ" },
   { onset_s: 1.3, offset_s: 1.55, midi_pitch: 66, lyric: "くら" },
@@ -24,15 +24,15 @@ describe("toSequence", () => {
   const seq = toSequence(notes, { bpm: BPM, spacing: SPACING, anchor: ANCHOR });
 
   it("shifts by the grid phase so notes land on whole ticks of the editor grid", () => {
-    expect(gridPhase(ANCHOR, SPACING)).toBeCloseTo(0.05, 9);
-    expect(seq.shiftS).toBeCloseTo(0.05, 9);
+    expect(gridPhase(ANCHOR, SPACING)).toBeCloseTo(PHASE_S, 9);
+    expect(seq.shiftS).toBeCloseTo(PHASE_S, 9);
     expect(seq.notes.map((n) => [n.position, n.duration])).toEqual([
       [960, 240],
       [1200, 240],
       [1680, 240],
       [1920, 240],
     ]);
-    for (const n of seq.notes) expect(n.position % 120).toBe(0);
+    for (const n of seq.notes) expect(n.position % CELL_TICKS).toBe(0);
   });
 
   it("rounds pitch and gives a lyric-less note the default lyric", () => {
@@ -53,6 +53,7 @@ describe("toSequence", () => {
       expect(s.notes[i].position).toBeGreaterThanOrEqual(s.notes[i - 1].position + s.notes[i - 1].duration);
     }
     expect(s.notes.every((n) => n.duration >= 1)).toBe(true);
+    expect(s.notes).toHaveLength(3);
     expect(s.notes[0].duration).toBe(480);
   });
 });
@@ -122,8 +123,8 @@ describe("USTX export", () => {
 
   it("puts every note in one voice part with OpenUtau's melisma alias", () => {
     const p = ustxProject(toSequence([...notes, { onset_s: 2.3, offset_s: 2.55, midi_pitch: 67, lyric: "ー" }], { bpm: BPM, spacing: SPACING, anchor: ANCHOR }), { bpm: BPM });
-    const part = (p.voice_parts as any[])[0];
-    expect(part.notes.map((n: any) => n.lyric)).toEqual(["さ", "くら", "きゃ", DEFAULT_LYRIC, "+~"]);
+    const part = p.voice_parts[0];
+    expect(part.notes.map((n) => n.lyric)).toEqual(["さ", "くら", "きゃ", DEFAULT_LYRIC, "+~"]);
     expect(part.notes[0]).toMatchObject({ position: 960, duration: 240, tone: 64 });
     expect(part.duration).toBe(2400);
     expect(p.resolution).toBe(480);

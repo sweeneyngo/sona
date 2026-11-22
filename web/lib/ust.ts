@@ -1,15 +1,7 @@
 /**
- * UST (UTAU sequence) export (ADR-0018).
- *
- * A UST is a contiguous list of blocks in ticks (480 per quarter): every
- * block starts where the previous one ended, and silence is an explicit block
- * with lyric `R`. Only the musical fields are written; synthesis parameters
- * are left at UTAU's defaults.
- *
- * The file is encoded as Shift-JIS when every character allows it, since
- * classic UTAU reads Shift-JIS. Otherwise (ゔ, emoji, most non-Japanese
- * scripts) it is UTF-8 with `Charset=UTF-8`, which UTAU ≥ 0.4.18 and OpenUtau
- * honour. sona's own Rust parser (`sona-eval` `ust.rs`) reads both.
+ * A UST is a contiguous list of blocks in ticks: every block starts where the
+ * previous one ended, and silence is an explicit block with lyric `R`.
+ * Classic UTAU reads USTs as Shift-JIS (CP932).
  */
 
 import { encodeShiftJis } from "./sjis";

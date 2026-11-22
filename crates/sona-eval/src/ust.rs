@@ -552,10 +552,6 @@ mod tests {
         assert_eq!(u.tempo, 140.0);
     }
 
-    /// `sona-export.ust` is written by the review surface's UST exporter
-    /// (`web/lib/ust.ts`; the web test `export.test.ts` checks it writes these
-    /// exact bytes). This parser must read back the notes the exporter meant:
-    /// four notes moved 0.05 s earlier onto a 120 BPM sixteenth grid.
     #[test]
     fn web_exporter_output_reads_back_as_the_exported_notes() {
         let u = fixture("sona-export.ust");

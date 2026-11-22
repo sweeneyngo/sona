@@ -1,23 +1,50 @@
-/**
- * USTX (OpenUtau project) export (ADR-0018).
- *
- * The USTX is YAML: one track, one voice part holding the notes at 480 ticks
- * per quarter, a single tempo and 4/4. Each note gets OpenUtau's neutral pitch
- * points and an off vibrato. Pitch curves are a later milestone.
- *
- * The layout follows what OpenUtau and external tools (UtaFormatix) read:
- * `ustx_version` 0.7, the full expression table, `exp_selectors`. Every string
- * is double-quoted, so lyrics can't break the YAML.
- */
-
 import { TICKS_PER_QUARTER, type Sequence } from "./sequence";
 import { USTX_EXPRESSIONS } from "./ustx-expressions";
 
 /** OpenUtau's melisma lyric: `+~` extends the previous syllable's vowel. */
 const LYRIC_ALIASES: Record<string, string> = { "-": "+~", "ー": "+~" };
 
-/** Build the USTX project object for `seq`. */
-export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string }): Record<string, unknown> {
+const NEUTRAL_PITCH_POINTS: UstxNote["pitch"]["data"] = [
+  { x: -40, y: 0, shape: "io" },
+  { x: 15, y: 0, shape: "io" },
+];
+
+const VIBRATO_OFF: UstxNote["vibrato"] = { length: 0, period: 175, depth: 25, in: 10, out: 10, shift: 0, drift: 0, vol_link: 0 };
+
+export interface UstxNote {
+  position: number;
+  duration: number;
+  tone: number;
+  lyric: string;
+  pitch: { data: { x: number; y: number; shape: string }[]; snap_first: boolean };
+  vibrato: Record<"length" | "period" | "depth" | "in" | "out" | "shift" | "drift" | "vol_link", number>;
+  phoneme_expressions: never[];
+  phoneme_overrides: never[];
+}
+
+export interface UstxProject {
+  name: string;
+  comment: string;
+  output_dir: string;
+  cache_dir: string;
+  ustx_version: string;
+  resolution: number;
+  bpm: number;
+  beat_per_bar: number;
+  beat_unit: number;
+  expressions: typeof USTX_EXPRESSIONS;
+  exp_selectors: string[];
+  exp_primary: number;
+  exp_secondary: number;
+  key: number;
+  time_signatures: { bar_position: number; beat_per_bar: number; beat_unit: number }[];
+  tempos: { position: number; bpm: number }[];
+  tracks: Record<string, unknown>[];
+  voice_parts: { duration: number; name: string; comment: string; track_no: number; position: number; notes: UstxNote[]; curves: never[] }[];
+  wave_parts: never[];
+}
+
+export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string }): UstxProject {
   const name = opts.name ?? "sona";
   const end = seq.notes.reduce((m, n) => Math.max(m, n.position + n.duration), 0);
   return {
@@ -64,13 +91,10 @@ export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string })
           tone: n.tone,
           lyric: LYRIC_ALIASES[n.lyric] ?? n.lyric,
           pitch: {
-            data: [
-              { x: -40, y: 0, shape: "io" },
-              { x: 15, y: 0, shape: "io" },
-            ],
+            data: NEUTRAL_PITCH_POINTS,
             snap_first: true,
           },
-          vibrato: { length: 0, period: 175, depth: 25, in: 10, out: 10, shift: 0, drift: 0, vol_link: 0 },
+          vibrato: VIBRATO_OFF,
           phoneme_expressions: [],
           phoneme_overrides: [],
         })),
@@ -81,12 +105,10 @@ export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string })
   };
 }
 
-/** The USTX file text for `seq`. */
 export function ustxText(seq: Sequence, opts: { bpm: number; name?: string }): string {
   return toYaml(ustxProject(seq, opts)) + "\n";
 }
 
-/** A minimal block-style YAML emitter for plain JSON-like data. */
 export function toYaml(value: unknown, indent = 0): string {
   const pad = " ".repeat(indent);
   if (Array.isArray(value)) {
@@ -106,7 +128,7 @@ export function toYaml(value: unknown, indent = 0): string {
     if (entries.length === 0) return "{}";
     return entries
       .map(([k, v]) => {
-        const key = /^[A-Za-z_][A-Za-z0-9_+]*$/.test(k) ? k : JSON.stringify(k);
+        const key = /^[A-Za-z_][A-Za-z0-9_+]*$/.test(k) ? k : yamlDoubleQuoted(k);
         if ((Array.isArray(v) && v.length) || (isPlainObject(v) && Object.keys(v).length)) {
           return `${pad}${key}:\n${toYaml(v, indent + 2)}`;
         }
@@ -120,11 +142,13 @@ export function toYaml(value: unknown, indent = 0): string {
 function scalarOrInline(v: unknown, indent: number): string {
   if (Array.isArray(v)) return v.length ? "\n" + toYaml(v, indent) : "[]";
   if (isPlainObject(v)) return Object.keys(v).length ? "\n" + toYaml(v, indent) : "{}";
-  if (typeof v === "string") return JSON.stringify(v);
+  if (typeof v === "string") return yamlDoubleQuoted(v);
   if (typeof v === "number") return Number.isFinite(v) ? String(v) : "0";
   if (typeof v === "boolean") return v ? "true" : "false";
   return "null";
 }
+
+const yamlDoubleQuoted = (s: string): string => JSON.stringify(s);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);

@@ -1,9 +1,7 @@
 /**
- * Shift-JIS encoding for UST export. Classic UTAU reads USTs as Shift-JIS
- * (CP932). Browsers ship a Shift-JIS *decoder* (`TextDecoder("shift_jis")`)
- * but no encoder, so the table is built once by decoding every one- and
- * two-byte code with the platform's own decoder. That keeps the mapping
- * identical to what a Shift-JIS reader expects, and no table ships.
+ * Browsers ship a Shift-JIS *decoder* (`TextDecoder("shift_jis")`) but no
+ * encoder, so the table is built once by decoding every one- and two-byte code
+ * with the platform's own decoder.
  */
 
 let table: Map<string, number[]> | null = null;

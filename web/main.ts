@@ -1492,14 +1492,10 @@ function exportMidi(): void {
   setStatus(`Exported ${notes.length} notes to sona.mid at ${bpm} BPM.`);
 }
 
-// --- Lyrics + UTAU export (ADR-0018) ---------------------------------------
-
-/** Working notes in the order they sound (by snapped onset). */
 function notesInTimeOrder(): WorkingNote[] {
   return [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s).map((e) => e.raw);
 }
 
-/** The effective notes with their lyrics, as the UST/USTX sequence needs them. */
 function lyricNotes() {
   return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric }));
 }
@@ -1530,19 +1526,28 @@ function exportUstx(): void {
 el.exportUst.addEventListener("click", exportUst);
 el.exportUstx.addEventListener("click", exportUstx);
 
-/** The note the inline lyric editor is open on, or null. */
 let lyricTarget: WorkingNote | null = null;
 
-/** Open the inline lyric box over `note` (scrolling it into view first). */
+/** Notes are culled by time only, so an off-pitch note still has a hitbox: scroll pitch too. */
+function scrollNoteIntoViewBothAxes(eff: EffectiveNote): void {
+  if (eff.onset_s < viewT0 || eff.offset_s > viewT1) {
+    scrollX = clampScroll(scrollX + ((eff.onset_s - viewT0 - (viewT1 - viewT0) * 0.3) * (plotWidthPx() * zoomX)) / Math.max(totalDuration(), 1e-9));
+  }
+  if (eff.pitch > pitchTop || eff.pitch < pitchTop - VISIBLE_SEMITONES + 1) {
+    pitchTop = clampPitchTop(Math.round(eff.pitch) + Math.floor(VISIBLE_SEMITONES / 2));
+  }
+}
+
 function openLyricEditor(note: WorkingNote): void {
   selectedNote = note;
   const eff = effectiveNotes().find((e) => e.raw === note);
-  if (eff && (eff.onset_s < viewT0 || eff.offset_s > viewT1)) {
-    scrollX = clampScroll(scrollX + (eff.onset_s - viewT0 - (viewT1 - viewT0) * 0.3) * (plotWidthPx() * zoomX) / Math.max(totalDuration(), 1e-9));
-  }
+  if (eff) scrollNoteIntoViewBothAxes(eff);
   redraw();
   const hit = noteHitboxes.find((h) => h.note === note);
-  if (!hit) return;
+  if (!hit) {
+    closeLyricEditor();
+    return;
+  }
   lyricTarget = note;
   el.tooltip.style.display = "none";
   el.lyricEditor.value = note.lyric ?? "";
@@ -1553,7 +1558,6 @@ function openLyricEditor(note: WorkingNote): void {
   el.lyricEditor.select();
 }
 
-/** Save the box's text as the target's lyric; an empty box clears it. */
 function commitLyric(): void {
   if (!lyricTarget) return;
   const text = el.lyricEditor.value.trim();
@@ -1570,7 +1574,6 @@ function closeLyricEditor(): void {
 }
 
 el.lyricEditor.addEventListener("keydown", (e: KeyboardEvent) => {
-  e.stopPropagation(); // typing a lyric must not trigger roll shortcuts
   if (e.key === "Escape") {
     closeLyricEditor();
   } else if (e.key === "Enter" || e.key === "Tab") {
@@ -1605,7 +1608,7 @@ function fillLyrics(from: WorkingNote | null): void {
   const order = notesInTimeOrder();
   const start = from ? Math.max(0, order.indexOf(from)) : 0;
   const tokens = splitLyrics(el.lyricsText.value);
-  const { assigned, leftover } = assignLyrics(tokens, order.length, start);
+  const { assigned, leftover } = assignLyrics({ tokens, count: order.length, from: start });
   for (const [i, lyric] of assigned) order[i].lyric = lyric;
   markDirty();
   setModal(el.lyricsOverlay, false);

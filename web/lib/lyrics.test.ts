@@ -30,7 +30,7 @@ describe("splitLyrics", () => {
 
 describe("assignLyrics", () => {
   it("fills consecutive notes from the start index and counts the overflow", () => {
-    const { assigned, leftover } = assignLyrics(["a", "b", "c"], 4, 2);
+    const { assigned, leftover } = assignLyrics({ tokens: ["a", "b", "c"], count: 4, from: 2 });
     expect([...assigned]).toEqual([
       [2, "a"],
       [3, "b"],

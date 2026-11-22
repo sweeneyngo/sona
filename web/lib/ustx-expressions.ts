@@ -1,8 +1,6 @@
 /**
- * OpenUtau's default expression descriptors, written into every USTX so the
- * project opens with the standard curves and options. The values match
- * OpenUtau's built-in defaults (MIT); this list was taken from Vocal2Midi's
- * USTX writer (Apache-2.0, inference/API/ustx_api.py).
+ * The values match OpenUtau's built-in defaults (MIT); this list was taken from
+ * Vocal2Midi's USTX writer (Apache-2.0, inference/API/ustx_api.py).
  */
 export const USTX_EXPRESSIONS: Record<string, Record<string, unknown>> = {
   "dyn": {
