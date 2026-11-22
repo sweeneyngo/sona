@@ -138,3 +138,73 @@ describe("USTX export", () => {
     expect(text).toContain('    lyric: "きゃ"');
   });
 });
+
+describe("pitch expression export (ADR-0019)", () => {
+  const expr = {
+    points: [
+      { x: -80, y: 0, shape: "io" as const },
+      { x: 30, y: 0, shape: "l" as const },
+      { x: 400, y: 0, shape: "o" as const },
+      { x: 500, y: -25, shape: "i" as const },
+    ],
+    snapFirst: true,
+    vibrato: { length: 55, period: 170, depth: 35, in: 20, out: 15, shift: 30, drift: -5 },
+  };
+  const seq = toSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64, lyric: "ら", expr }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+
+  // OpenUtau's UstNote.ParsePitchBend / ParseVibrato (MIT), ported for the round trip.
+  function parseLikeOpenUtau(block: string) {
+    const get = (k: string) => block.match(new RegExp(`^${k}=(.*)\\r?$`, "m"))?.[1] ?? "";
+    const [x0, y0] = get("PBS").split(";").map(Number);
+    const points = [{ x: x0, y: y0, shape: "io" }];
+    const w = get("PBW").split(",").map(Number);
+    const y = get("PBY").split(",").map(Number);
+    let x = x0;
+    w.forEach((wi, i) => {
+      x += wi;
+      points.push({ x, y: y[i] ?? 0, shape: "io" });
+    });
+    const shapes: Record<string, string> = { r: "o", s: "l", j: "i" };
+    get("PBM").split(",").forEach((m, i) => points[i] && (points[i].shape = shapes[m] ?? "io"));
+    const v = get("VBR").split(",").map(Number);
+    return { points, vibrato: { length: v[0], period: v[1], depth: v[2], in: v[3], out: v[4], shift: v[5], drift: v[6] } };
+  }
+
+  it("writes UST Mode2 lines that OpenUtau's parser reads back as the same points and vibrato", () => {
+    const text = ustText(seq, { bpm: BPM });
+    const block = text.split("[#0000]")[1];
+    const back = parseLikeOpenUtau(block);
+    expect(back.points).toEqual(expr.points);
+    expect(back.vibrato).toEqual(expr.vibrato);
+    expect(text).toContain("PBM=,s,r,j\r\n");
+  });
+
+  it("writes the same points and vibrato into the USTX note", () => {
+    const note = ustxProject(seq, { bpm: BPM }).voice_parts[0].notes[0];
+    expect(note.pitch).toEqual({ data: expr.points, snap_first: true });
+    expect(note.vibrato).toEqual({ ...expr.vibrato, vol_link: 0 });
+  });
+
+  it("round-trips random point sets of every shape through OpenUtau's UST parser (property)", () => {
+    let seed = 5;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const shapes = ["io", "l", "i", "o"] as const;
+    for (let trial = 0; trial < 100; trial++) {
+      let x = -Math.round(rand() * 200) || 0;
+      const points = Array.from({ length: 2 + Math.floor(rand() * 5) }, () => {
+        const pt = { x, y: Math.round((rand() - 0.5) * 240) || 0, shape: shapes[Math.floor(rand() * 4)] };
+        x += 1 + Math.round(rand() * 300);
+        return pt;
+      });
+      const e = { points, snapFirst: rand() < 0.5, vibrato: null };
+      const s = toSequence([{ onset_s: 0, offset_s: 1, midi_pitch: 60, expr: e }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+      expect(parseLikeOpenUtau(ustText(s, { bpm: BPM }).split("[#0000]")[1]).points).toEqual(points);
+    }
+  });
+
+  it("leaves notes without an expression at OpenUtau's neutral defaults and writes no pitch lines", () => {
+    const plain = toSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64 }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+    expect(ustText(plain, { bpm: BPM })).not.toMatch(/PBS|VBR/);
+    expect(ustxProject(plain, { bpm: BPM }).voice_parts[0].notes[0].vibrato.length).toBe(0);
+  });
+});

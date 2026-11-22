@@ -299,6 +299,25 @@
       }
 
       /* --- Legend ---------------------------------------------------------- */
+      /* --- Expression bar (selected note's pitch) --- */
+      .expr-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .expr-bar[hidden] {
+        display: none;
+      }
+      .expr-bar .expr-title {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .expr-bar input[type="number"] {
+        width: 58px;
+      }
       .legend {
         display: flex;
         flex-wrap: wrap;
@@ -621,6 +640,8 @@
 
         <div class="divider" aria-hidden="true"></div>
 
+        <button id="fit-pitch" title="Fit every note's portamento and vibrato from the stem's pitch (overwrites edits)" disabled>〰 Fit pitch</button>
+        <label class="toggle" title="Show the pitch curve the exported notes will sing"><input id="show-curve" type="checkbox" checked /> curve</label>
         <button id="lyrics" title="Lyrics — paste a text to fill notes (L types one note's lyric)" disabled>あ Lyrics</button>
         <button id="save" title="Save session (JSON) — reload it to resume editing" disabled>⤒ Save</button>
         <button id="export" title="Export MIDI" disabled>⤓ MIDI</button>
@@ -640,6 +661,19 @@
         <canvas id="roll"></canvas>
         <div id="tooltip"></div>
         <input id="lyric-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Lyric for the selected note" hidden />
+      </div>
+      <div id="expr-bar" class="expr-bar" hidden>
+        <span class="expr-title">Pitch of the selected note</span>
+        <span class="field"><label for="glide-start">glide from</label><input id="glide-start" type="number" step="5" /> ms</span>
+        <span class="field"><label for="glide-end">to</label><input id="glide-end" type="number" step="5" /> ms</span>
+        <label class="toggle"><input id="vib-on" type="checkbox" /> vibrato</label>
+        <span class="field"><label for="vib-depth">depth</label><input id="vib-depth" type="number" min="5" max="200" step="1" /> ¢</span>
+        <span class="field"><label for="vib-period">period</label><input id="vib-period" type="number" min="5" max="500" step="5" /> ms</span>
+        <span class="field"><label for="vib-length">length</label><input id="vib-length" type="number" min="0" max="100" step="1" /> %</span>
+        <span class="field"><label for="vib-in">fade in</label><input id="vib-in" type="number" min="0" max="100" step="1" /> %</span>
+        <span class="field"><label for="vib-out">fade out</label><input id="vib-out" type="number" min="0" max="100" step="1" /> %</span>
+        <button id="expr-fit" title="Fit this note from the stem's pitch">Fit note</button>
+        <button id="expr-reset" title="Back to OpenUtau's neutral defaults">Reset</button>
       </div>
       <div class="legend">
         <span class="grp">low <span class="bar" aria-hidden="true"></span> high confidence</span>
@@ -709,6 +743,17 @@
           </section>
 
           <section>
+            <h3>Pitch: portamento and vibrato</h3>
+            <p>
+              <b>〰 Fit pitch</b> reads each note's glide and vibrato from the stem's pitch
+              track (the white line). The orange <b>curve</b> is what the exported notes will
+              sing in OpenUtau. Select a note to edit its glide and vibrato in the bar under
+              the roll, or press <span class="kbd">V</span> to toggle its vibrato. UST and USTX
+              export carry them (USTX pitch points and vibrato; UST PBS/PBW/PBY/PBM and VBR).
+            </p>
+          </section>
+
+          <section>
             <h3>Navigation</h3>
             <p>
               The roll shows ~2 octaves at a time. Scroll to move pitch, Shift-scroll to
@@ -730,6 +775,7 @@
               <div><span class="kbd">0</span> reset the view</div>
               <div><span class="kbd">Del</span> delete selected note</div>
               <div><span class="kbd">L</span> type the selected note's lyric</div>
+              <div><span class="kbd">V</span> vibrato on / off for the selected note</div>
               <div><span class="kbd">?</span> this help</div>
             </div>
           </section>

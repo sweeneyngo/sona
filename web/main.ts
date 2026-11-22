@@ -33,6 +33,8 @@ import { assignLyrics, splitLyrics } from "./lib/lyrics";
 import { toSequence } from "./lib/sequence";
 import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
+import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
+import { fitExpressions } from "./lib/fitexpr";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
 import type { Annotation, Note, WorkingNote } from "./lib/annotation";
@@ -92,6 +94,19 @@ const el = {
   lyricEditor: document.getElementById("lyric-editor") as HTMLInputElement,
   exportUst: document.getElementById("export-ust") as HTMLButtonElement,
   exportUstx: document.getElementById("export-ustx") as HTMLButtonElement,
+  fitPitch: document.getElementById("fit-pitch") as HTMLButtonElement,
+  showCurve: document.getElementById("show-curve") as HTMLInputElement,
+  exprBar: document.getElementById("expr-bar") as HTMLDivElement,
+  glideStart: document.getElementById("glide-start") as HTMLInputElement,
+  glideEnd: document.getElementById("glide-end") as HTMLInputElement,
+  vibOn: document.getElementById("vib-on") as HTMLInputElement,
+  vibDepth: document.getElementById("vib-depth") as HTMLInputElement,
+  vibPeriod: document.getElementById("vib-period") as HTMLInputElement,
+  vibLength: document.getElementById("vib-length") as HTMLInputElement,
+  vibIn: document.getElementById("vib-in") as HTMLInputElement,
+  vibOut: document.getElementById("vib-out") as HTMLInputElement,
+  exprFit: document.getElementById("expr-fit") as HTMLButtonElement,
+  exprReset: document.getElementById("expr-reset") as HTMLButtonElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -245,6 +260,7 @@ function applyLoadedJson(parsed: any): boolean {
     sub_scores: n.sub_scores ?? {},
     ...(n.manual ? { manual: true as const } : {}),
     ...(typeof n.lyric === "string" && n.lyric ? { lyric: n.lyric } : {}),
+    ...(isExpression(n.expr) ? { expr: n.expr } : {}),
   }));
   // The producer's original notes: a saved session carries its own `baseline`;
   // a fresh annotation is its own baseline. Clone into fresh objects so later
@@ -633,6 +649,8 @@ function rebuild(): void {
   el.exportUst.disabled = !annotation;
   el.exportUstx.disabled = !annotation;
   el.lyrics.disabled = !annotation;
+  el.fitPitch.disabled = !annotation || !annotation.f0_contour.length;
+  syncExprBar();
   el.save.disabled = !annotation;
 }
 
@@ -641,6 +659,7 @@ function redraw(): void {
   syncScale();
   updateCorrectionReadout();
   draw();
+  syncExprBar();
 }
 
 function devicePixelRatioSafe(): number {
@@ -704,6 +723,7 @@ function draw(): void {
   drawEnergyEnvelope(w, h);
   drawF0Contour();
   drawNotes();
+  if (el.showCurve.checked) drawExpressionCurve();
   // currentPlayheadS() returns the seek offset when stopped, so this covers both.
   drawPlayhead(currentPlayheadS(), h, !playback);
   ctx2d.restore();
@@ -1216,6 +1236,12 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     case " ": // play / pause
       togglePlay();
       break;
+    case "v":
+    case "V":
+      if (!selectedNote) return;
+      toggleVibrato(selectedNote);
+      e.preventDefault();
+      break;
     case "l":
     case "L":
       if (!selectedNote) return;
@@ -1497,7 +1523,7 @@ function notesInTimeOrder(): WorkingNote[] {
 }
 
 function lyricNotes() {
-  return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric }));
+  return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric, expr: e.raw.expr }));
 }
 
 function exportSequence() {
@@ -1637,6 +1663,137 @@ el.lyricsClear.addEventListener("click", () => {
   setModal(el.lyricsOverlay, false);
   redraw();
   setStatus("Cleared all lyrics.");
+});
+
+function renderNotes(from: EffectiveNote[]): RenderNote[] {
+  return from.map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, tone: Math.round(e.pitch), expr: e.raw.expr }));
+}
+
+function drawExpressionCurve(): void {
+  if (!scale || !workingNotes.some((n) => n.expr)) return;
+  const effs = effectiveNotes().filter((e) => e.offset_s > viewT0 - 1 && e.onset_s < viewT1 + 1);
+  if (!effs.length) return;
+  const step = 0.005;
+  const times: number[] = [];
+  for (const e of effs) {
+    if (e.offset_s < viewT0 || e.onset_s > viewT1) continue;
+    for (let t = Math.max(e.onset_s, viewT0); t < Math.min(e.offset_s, viewT1); t += step) times.push(t);
+  }
+  const pitch = renderPitch(renderNotes(effs), times);
+  ctx2d.save();
+  ctx2d.strokeStyle = "#ff9f40";
+  ctx2d.lineWidth = 2;
+  ctx2d.beginPath();
+  let prevT = -Infinity;
+  times.forEach((t, i) => {
+    const x = scale!.timeToX(t);
+    const y = scale!.pitchToY(pitch[i]) + scale!.rowHeight / 2;
+    if (t - prevT > step * 1.5) ctx2d.moveTo(x, y);
+    else ctx2d.lineTo(x, y);
+    prevT = t;
+  });
+  ctx2d.stroke();
+  ctx2d.restore();
+}
+
+function fitAll(only?: WorkingNote): void {
+  if (!annotation?.f0_contour.length) return;
+  const effs = effectiveNotes();
+  const fits = fitExpressions(renderNotes(effs), annotation.f0_contour);
+  let glides = 0;
+  let vibratos = 0;
+  effs.forEach((e, i) => {
+    if (only && e.raw !== only) return;
+    e.raw.expr = fits[i];
+    if (fits[i].vibrato) vibratos++;
+    if (fits[i].points.length > 2 || fits[i].points[0].x !== NEUTRAL_EXPRESSION.points[0].x) glides++;
+  });
+  markDirty();
+  redraw();
+  setStatus(only ? "Fitted the selected note's pitch." : `Fitted pitch: ${glides} glides, ${vibratos} vibratos across ${effs.length} notes.`);
+}
+
+function exprOf(note: WorkingNote): Expression {
+  return note.expr ?? { ...NEUTRAL_EXPRESSION, points: NEUTRAL_EXPRESSION.points.map((p) => ({ ...p })) };
+}
+
+function toggleVibrato(note: WorkingNote): void {
+  const ex = exprOf(note);
+  note.expr = { ...ex, vibrato: ex.vibrato ? null : { ...DEFAULT_VIBRATO } };
+  markDirty();
+  redraw();
+}
+
+let noteShownInExprBar: WorkingNote | null = null;
+
+const exprBarHasFocus = (): boolean => el.exprBar.contains(document.activeElement);
+
+const OPENUTAU_VIBRATO_LIMITS = { depth: [5, 200], period: [5, 500], percent: [0, 100] } as const;
+const GLIDE_X_LIMITS_MS = { start: [-2000, 2000], end: [-2000, 5000] } as const;
+
+function syncExprBar(): void {
+  if (exprBarHasFocus()) return;
+  const n = selectedNote;
+  noteShownInExprBar = n;
+  el.exprBar.hidden = !n || !annotation;
+  if (!n) return;
+  const ex = exprOf(n);
+  el.glideStart.value = String(ex.points[0]?.x ?? 0);
+  el.glideEnd.value = String(ex.points[1]?.x ?? 0);
+  const v = ex.vibrato;
+  el.vibOn.checked = !!v;
+  const shown = v ?? DEFAULT_VIBRATO;
+  el.vibDepth.value = String(shown.depth);
+  el.vibPeriod.value = String(shown.period);
+  el.vibLength.value = String(shown.length);
+  el.vibIn.value = String(shown.in);
+  el.vibOut.value = String(shown.out);
+  for (const input of [el.vibDepth, el.vibPeriod, el.vibLength, el.vibIn, el.vibOut]) input.disabled = !v;
+  el.exprFit.disabled = !annotation?.f0_contour.length;
+}
+
+const clampNum = (input: HTMLInputElement, lo: number, hi: number, fallback: number): number => {
+  const v = Number(input.value);
+  return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+};
+
+function applyExprBar(): void {
+  const n = noteShownInExprBar;
+  if (!n) return;
+  const ex = exprOf(n);
+  const points = ex.points.map((p) => ({ ...p }));
+  if (points.length >= 2) {
+    points[0].x = clampNum(el.glideStart, ...GLIDE_X_LIMITS_MS.start, points[0].x);
+    points[1].x = Math.max(points[0].x + 1, clampNum(el.glideEnd, ...GLIDE_X_LIMITS_MS.end, points[1].x));
+  }
+  const base = ex.vibrato ?? DEFAULT_VIBRATO;
+  const fadeIn = clampNum(el.vibIn, ...OPENUTAU_VIBRATO_LIMITS.percent, base.in);
+  const vibrato = el.vibOn.checked
+    ? {
+        ...base,
+        depth: clampNum(el.vibDepth, ...OPENUTAU_VIBRATO_LIMITS.depth, base.depth),
+        period: clampNum(el.vibPeriod, ...OPENUTAU_VIBRATO_LIMITS.period, base.period),
+        length: clampNum(el.vibLength, ...OPENUTAU_VIBRATO_LIMITS.percent, base.length),
+        in: fadeIn,
+        out: Math.min(100 - fadeIn, clampNum(el.vibOut, ...OPENUTAU_VIBRATO_LIMITS.percent, base.out)),
+      }
+    : null;
+  n.expr = { ...ex, points, vibrato };
+  markDirty();
+  redraw();
+}
+
+for (const input of [el.glideStart, el.glideEnd, el.vibOn, el.vibDepth, el.vibPeriod, el.vibLength, el.vibIn, el.vibOut]) {
+  input.addEventListener("change", applyExprBar);
+}
+el.fitPitch.addEventListener("click", () => fitAll());
+el.showCurve.addEventListener("change", () => redraw());
+el.exprFit.addEventListener("click", () => selectedNote && fitAll(selectedNote));
+el.exprReset.addEventListener("click", () => {
+  if (!selectedNote) return;
+  delete selectedNote.expr;
+  markDirty();
+  redraw();
 });
 
 // --- Playback ---------------------------------------------------------------

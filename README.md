@@ -165,6 +165,12 @@ Open the app, use **Settings (⚙)** to choose the annotation JSON and its stem 
 - **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
 - **Sessions.** Lyrics are saved in the session JSON.
 
+**Pitch: portamento and vibrato** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md)):
+- **Fit.** **〰 Fit pitch** reads every note's glide and vibrato from the stem's pitch track. The orange **curve** is what OpenUtau will sing, drawn over the singer's pitch (white).
+- **Edit.** Select a note to edit its glide and vibrato in the bar under the roll, or press **V** to toggle its vibrato.
+- **Export.** UST and USTX carry them in OpenUtau's own form: USTX pitch points and vibrato, UST `PBS/PBW/PBY/PBM` and `VBR`.
+- **How close it gets.** On songs the fitter was never tuned on, fitted curves sit 9–30% closer to the singer's pitch than flat notes; the per-song numbers are in the ADR.
+
 ### Evaluate (optional)
 
 ```bash

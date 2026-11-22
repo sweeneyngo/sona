@@ -1,6 +1,6 @@
 # sona
 
-A tool for transcribing a single isolated vocal line into MIDI and singing-synth projects (UST for UTAU, USTX for OpenUtau), specialized for vocals ripped from a finished mix (not dry studio stems). Scope grew on 2026-11-22 ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)): lyrics and UST/USTX export are in; pitch curves (portamento, vibrato) and one-click generation (source separation + transcription from the app) are planned; notation and VSQX remain out.
+A tool for transcribing a single isolated vocal line into MIDI and singing-synth projects (UST for UTAU, USTX for OpenUtau), specialized for vocals ripped from a finished mix (not dry studio stems). Scope grew on 2026-11-22 ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)): lyrics, UST/USTX export and pitch curves (portamento, vibrato; [ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md)) are in; one-click generation (source separation + transcription from the app) is planned; notation and VSQX remain out.
 
 ## Language
 

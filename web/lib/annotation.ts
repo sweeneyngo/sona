@@ -1,3 +1,5 @@
+import type { Expression } from "./expression";
+
 /**
  * The **annotation JSON** — sona's primary artifact and the core↔UI contract
  * (ADR-0004). The Rust perception core (`crates/sona-core/src/annotation.rs`)
@@ -102,4 +104,5 @@ export interface Annotation {
 export interface WorkingNote extends Note {
   manual?: boolean;
   lyric?: string;
+  expr?: Expression;
 }

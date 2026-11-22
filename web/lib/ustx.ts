@@ -91,10 +91,10 @@ export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string })
           tone: n.tone,
           lyric: LYRIC_ALIASES[n.lyric] ?? n.lyric,
           pitch: {
-            data: NEUTRAL_PITCH_POINTS,
-            snap_first: true,
+            data: n.expr ? n.expr.points.map((pt) => ({ x: pt.x, y: pt.y, shape: pt.shape })) : NEUTRAL_PITCH_POINTS,
+            snap_first: n.expr ? n.expr.snapFirst : true,
           },
-          vibrato: VIBRATO_OFF,
+          vibrato: n.expr?.vibrato ? { ...n.expr.vibrato, vol_link: 0 } : VIBRATO_OFF,
           phoneme_expressions: [],
           phoneme_overrides: [],
         })),

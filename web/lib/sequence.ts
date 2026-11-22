@@ -4,11 +4,12 @@
  */
 
 import type { WorkingNote } from "./annotation";
+import type { Expression } from "./expression";
 
 export const TICKS_PER_QUARTER = 480;
 export const DEFAULT_LYRIC = "あ";
 
-export type LyricNote = Pick<WorkingNote, "onset_s" | "offset_s" | "midi_pitch" | "lyric">;
+export type LyricNote = Pick<WorkingNote, "onset_s" | "offset_s" | "midi_pitch" | "lyric" | "expr">;
 
 export interface SeqNote {
   /** Start, in ticks from the project's tick 0. */
@@ -18,6 +19,7 @@ export interface SeqNote {
   /** MIDI note number, 0–127. */
   tone: number;
   lyric: string;
+  expr?: Expression;
 }
 
 export interface Sequence {
@@ -53,7 +55,7 @@ export function toSequence(notes: LyricNote[], opts: { bpm: number; spacing: num
     }
     const end = Math.max(position + 1, toTicks(n.offset_s));
     const lyric = (n.lyric ?? "").trim() || DEFAULT_LYRIC;
-    out.push({ position, duration: end - position, tone: Math.max(0, Math.min(127, Math.round(n.midi_pitch))), lyric });
+    out.push({ position, duration: end - position, tone: Math.max(0, Math.min(127, Math.round(n.midi_pitch))), lyric, ...(n.expr ? { expr: n.expr } : {}) });
   }
   return { notes: out, shiftS };
 }
