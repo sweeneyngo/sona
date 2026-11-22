@@ -41,3 +41,27 @@ on dev is reported separately and labelled as dev-tuned.
 
 **Confirmation still owed:** every split is now spent, so a result that passes here needs holdout4.
 That in turn needs a BowlRoll fetcher, because the OneDrive share holds only part of Pifuyuu's USTs.
+
+## Amendment (2026-11-22, before training finished and before any dev read)
+
+**Finding.** GAME's segmenter graph has an unseeded `RandomUniformLike` node (D3PM drops boundaries at
+random), in the official ONNX too. ONNX Runtime seeds it per process, so the same stem gives different
+notes run to run: the official medium model gave 68, 69 and 70 notes on three runs of the same 25 s
+clip. A segmenter seeded with a fixed `seed` attribute gives identical notes on every run. Every GAME
+number so far (including ADR-0017's holdout reads) carries this run-to-run noise, which the song
+bootstrap did not include.
+
+**Measurement, replacing the single run above.**
+- Both arms are copied with the segmenter seeded (`~/.cache/sona/game-ft/scripts/seed_segmenter.py`),
+  for seeds **1, 2, 3, 4, 5**, the same seeds for both arms. Nothing else in the graphs changes.
+- Each song's cell accuracy is the **mean over the 5 seeds**. The rule's pooled cells, its 95% song
+  bootstrap (10 000 resamples) and the per-song losses are computed on those seed means.
+- Reported alongside, as the noise floor: the base model's pooled cells for each seed (min–max), and
+  the same for the fine-tuned model.
+
+**Which fine-tuned weights.** Training runs 1 000 steps (`finetune.yaml`: LR 5e-5 halved at 400 and 800,
+encoder frozen). The checkpoint is the one with the lowest validation `total_loss` on the 2 held-back
+*training-split* songs (lady-bug, maru-shite-kudasai), chosen before dev is read. Dev is read once for
+that checkpoint; no other checkpoint is scored on dev.
+
+The decision rule itself is unchanged.
