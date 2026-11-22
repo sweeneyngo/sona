@@ -22,6 +22,13 @@ export interface UstxNote {
   phoneme_overrides: never[];
 }
 
+/** An expression curve over the part, e.g. `pitd` (pitch deviation in cents) drawn by OpenUtau's pitch pen. */
+export interface UstxCurve {
+  xs: number[];
+  ys: number[];
+  abbr: string;
+}
+
 export interface UstxProject {
   name: string;
   comment: string;
@@ -40,11 +47,17 @@ export interface UstxProject {
   time_signatures: { bar_position: number; beat_per_bar: number; beat_unit: number }[];
   tempos: { position: number; bpm: number }[];
   tracks: Record<string, unknown>[];
-  voice_parts: { duration: number; name: string; comment: string; track_no: number; position: number; notes: UstxNote[]; curves: never[] }[];
+  voice_parts: { duration: number; name: string; comment: string; track_no: number; position: number; notes: UstxNote[]; curves: UstxCurve[] }[];
   wave_parts: never[];
 }
 
-export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string }): UstxProject {
+export interface UstxOpts {
+  bpm: number;
+  name?: string;
+  curves?: UstxCurve[];
+}
+
+export function ustxProject(seq: Sequence, opts: UstxOpts): UstxProject {
   const name = opts.name ?? "sona";
   const end = seq.notes.reduce((m, n) => Math.max(m, n.position + n.duration), 0);
   return {
@@ -98,14 +111,14 @@ export function ustxProject(seq: Sequence, opts: { bpm: number; name?: string })
           phoneme_expressions: [],
           phoneme_overrides: [],
         })),
-        curves: [],
+        curves: (opts.curves ?? []).filter((c) => c.xs.length > 0),
       },
     ],
     wave_parts: [],
   };
 }
 
-export function ustxText(seq: Sequence, opts: { bpm: number; name?: string }): string {
+export function ustxText(seq: Sequence, opts: UstxOpts): string {
   return toYaml(ustxProject(seq, opts)) + "\n";
 }
 

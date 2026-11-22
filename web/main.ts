@@ -30,9 +30,12 @@ import { clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, splitLyrics } from "./lib/lyrics";
-import { toSequence } from "./lib/sequence";
+import { TICKS_PER_QUARTER, sequenceInSeconds, toSequence } from "./lib/sequence";
 import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
+import { sungPitchCurve } from "./lib/sungPitch";
+import { penErase, penStroke } from "./lib/pitchPen";
+import { packContour, unpackContour } from "./lib/contourStore";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
@@ -96,8 +99,10 @@ const el = {
   lyricEditor: document.getElementById("lyric-editor") as HTMLInputElement,
   exportUst: document.getElementById("export-ust") as HTMLButtonElement,
   exportUstx: document.getElementById("export-ustx") as HTMLButtonElement,
+  exportUstxSung: document.getElementById("export-ustx-sung") as HTMLButtonElement,
   fitPitch: document.getElementById("fit-pitch") as HTMLButtonElement,
   showCurve: document.getElementById("show-curve") as HTMLInputElement,
+  pitchPen: document.getElementById("pitch-pen") as HTMLInputElement,
   exprBar: document.getElementById("expr-bar") as HTMLDivElement,
   glideStart: document.getElementById("glide-start") as HTMLInputElement,
   glideEnd: document.getElementById("glide-end") as HTMLInputElement,
@@ -166,6 +171,7 @@ interface DragBase {
 type Drag =
   | (DragBase & { mode: "offset"; origAnchor: number })
   | (DragBase & { mode: "handle"; note: WorkingNote; handle: Handle; origExpr: Expression; span: NoteSpan })
+  | (DragBase & { mode: "pen"; lastT: number; lastCents: number; erase: boolean })
   | (DragBase & {
       mode: "move" | "resize";
       note: WorkingNote;
@@ -371,7 +377,7 @@ function normalizeAnnotation(raw: any): Annotation {
       confidence: Number(n.confidence),
       sub_scores: n.sub_scores ?? {},
     })),
-    f0_contour: Array.isArray(raw.f0_contour) ? raw.f0_contour : [],
+    f0_contour: unpackContour(raw.f0_contour),
     energy_envelope: Array.isArray(raw.energy_envelope) ? raw.energy_envelope : [],
   };
 }
@@ -691,6 +697,9 @@ function rebuild(): void {
   el.export.disabled = !annotation;
   el.exportUst.disabled = !annotation;
   el.exportUstx.disabled = !annotation;
+  el.exportUstxSung.disabled = !annotation?.f0_contour.length;
+  el.pitchPen.disabled = !annotation?.f0_contour.length;
+  if (el.pitchPen.disabled) el.pitchPen.checked = false;
   el.lyrics.disabled = !annotation;
   el.fitPitch.disabled = !annotation || !annotation.f0_contour.length;
   el.start.hidden = !!annotation;
@@ -1097,10 +1106,23 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
     return;
   }
 
+  if (el.pitchPen.checked && annotation?.f0_contour.length) {
+    const t = scale.xToTime(x);
+    const c = scale.yToPitchExact(y) * 100;
+    drag = { mode: "pen", lastT: t, lastCents: c, erase: e.altKey, startX: x, startY: y, moved: false };
+    if (e.altKey) penErase(annotation.f0_contour, t, t);
+    else penStroke(annotation.f0_contour, t, c, t, c);
+    markDirty();
+    redraw();
+    return;
+  }
+
   const h = handleAtPoint(x, y);
   if (h && selectedNote) {
-    // Commit a value still being typed in the bar before the drag starts from it.
-    if (el.exprBar.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    if (el.exprBar.contains(document.activeElement)) {
+      applyExprBar();
+      (document.activeElement as HTMLElement).blur();
+    }
     if (e.altKey && h.handle.kind === "point") {
       selectedNote.expr = removePoint(exprOf(selectedNote), h.handle.index);
       markDirty();
@@ -1147,6 +1169,19 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
   const { x, y } = canvasPoint(e);
   d.moved = d.moved || Math.abs(x - d.startX) > 2 || Math.abs(y - d.startY) > 2;
   const dt = scale.xToTime(x) - scale.xToTime(d.startX);
+
+  if (d.mode === "pen") {
+    if (!annotation) return;
+    const t = scale.xToTime(x);
+    const c = scale.yToPitchExact(y) * 100;
+    if (d.erase) penErase(annotation.f0_contour, d.lastT, t);
+    else penStroke(annotation.f0_contour, d.lastT, d.lastCents, t, c);
+    d.lastT = t;
+    d.lastCents = c;
+    markDirty();
+    redraw();
+    return;
+  }
 
   if (d.mode === "handle") {
     const dCents = (-(y - d.startY) / scale.rowHeight) * 100;
@@ -1261,7 +1296,7 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
   if (span && selectedNote && el.showCurve.checked) {
     const t = scale.xToTime(x);
     if (t >= span.onset_s - 0.25 && t <= span.offset_s) {
-      const pitchAtY = span.tone + (scale.pitchToY(span.tone) + scale.rowHeight / 2 - y) / scale.rowHeight;
+      const pitchAtY = scale.yToPitchExact(y);
       const curve = renderPitch(renderNotes(effectiveNotes()), [t])[0];
       if (Math.abs(pitchAtY - curve) * scale.rowHeight < 20) {
         selectedNote.expr = addPoint(exprOf(selectedNote), (t - span.onset_s) * 1000, (pitchAtY - span.tone) * 10).expr;
@@ -1323,8 +1358,9 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     case "Delete":
     case "Backspace":
       if (!selectedNote) return;
-      if (hoveredHandle?.kind === "point") {
-        selectedNote.expr = removePoint(exprOf(selectedNote), hoveredHandle.index);
+      const under = lastMouse && !el.pitchPen.checked ? handleAtPoint(lastMouse.x, lastMouse.y)?.handle : undefined;
+      if (under?.kind === "point") {
+        selectedNote.expr = removePoint(exprOf(selectedNote), under.index);
         hoveredHandle = null;
         markDirty();
         redraw();
@@ -1334,6 +1370,13 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
       break;
     case " ": // play / pause
       togglePlay();
+      break;
+    case "p":
+    case "P":
+      if (!annotation?.f0_contour.length) return;
+      el.pitchPen.checked = !el.pitchPen.checked;
+      setStatus(el.pitchPen.checked ? "Pitch pen on: drag to redraw the white line, Alt-drag to erase it. P to turn it off." : "Pitch pen off.");
+      e.preventDefault();
       break;
     case "v":
     case "V":
@@ -1395,10 +1438,11 @@ function zoomBy(factor: number): void {
 
 function updateHover(e: MouseEvent): void {
   const { x, y } = canvasPoint(e);
+  lastMouse = overRoll ? { x, y } : null;
   const hit = hitTest(x, y);
-  hoveredHandle = handleAtPoint(x, y)?.handle ?? null;
-  // Cursor cues: resize on the right edge, move on the body, grid on the ruler.
-  if (hoveredHandle) el.canvas.style.cursor = hoveredHandle.kind === "vibrato-start" || hoveredHandle.kind === "vibrato-period" ? "ew-resize" : "grab";
+  hoveredHandle = el.pitchPen.checked ? null : (handleAtPoint(x, y)?.handle ?? null);
+  if (el.pitchPen.checked && y >= RULER_H) el.canvas.style.cursor = e.altKey ? "cell" : "crosshair";
+  else if (hoveredHandle) el.canvas.style.cursor = hoveredHandle.kind === "vibrato-start" || hoveredHandle.kind === "vibrato-period" ? "ew-resize" : "grab";
   else if (y < RULER_H) el.canvas.style.cursor = "ew-resize";
   else if (hit) el.canvas.style.cursor = x >= hit.x + hit.w - RESIZE_GRAB_PX ? "ew-resize" : "grab";
   else el.canvas.style.cursor = "default";
@@ -1414,6 +1458,7 @@ el.canvas.addEventListener("mouseenter", () => {
 });
 el.canvas.addEventListener("mouseleave", () => {
   overRoll = false;
+  lastMouse = null;
   if (selectedNote) showSelectedTooltip();
   else el.tooltip.style.display = "none";
   redraw(); // hide the highlight
@@ -1509,9 +1554,9 @@ interface SessionState {
  * `baseline` (so correction cost survives a reload), and the review settings
  * appended.
  */
-function buildSessionFile(): object {
+function buildSessionFile(): Annotation & { baseline: Note[]; session: SessionState } {
   const session: SessionState = { bpm, division, gridAnchor, flagThreshold, snapKey };
-  return { ...annotation, notes: workingNotes, baseline: baselineNotes, session };
+  return { ...annotation!, notes: workingNotes, baseline: baselineNotes, session };
 }
 
 /**
@@ -1536,8 +1581,8 @@ function markDirty(): void {
 
 /**
  * Persist the session to localStorage (not a download — that would spam the
- * Downloads folder). Retries without the immutable f0/energy tracks if the full
- * session exceeds the storage quota, so at least the edits + settings survive.
+ * Downloads folder). If the full session exceeds the storage quota it retries
+ * with the energy track dropped and the pitch line packed, then without either.
  */
 function autosave(): void {
   if (!annotation) return;
@@ -1547,10 +1592,18 @@ function autosave(): void {
   try {
     write({ savedAt, file });
   } catch {
+    // The pitch pen edits the contour, so a lite save keeps it (packed) and drops it only as a last resort.
     try {
-      write({ savedAt, file: { ...file, f0_contour: [], energy_envelope: [] }, lite: true });
+      write({ savedAt, file: { ...file, f0_contour: packContour(file.f0_contour), energy_envelope: [] }, lite: true });
     } catch {
-      return; // storage unavailable / still too big — give up quietly
+      try {
+        write({ savedAt, file: { ...file, f0_contour: [], energy_envelope: [] }, lite: true });
+        setStatus("Autosaved without the pitch line (browser storage is full): use File → Save session to keep pen edits.", true);
+        dirty = false;
+        return;
+      } catch {
+        return; // storage unavailable / still too big — give up quietly
+      }
     }
   }
   dirty = false;
@@ -1672,6 +1725,18 @@ function exportUstx(): void {
 
 el.exportUst.addEventListener("click", exportUst);
 el.exportUstx.addEventListener("click", exportUstx);
+el.exportUstxSung.addEventListener("click", exportUstxSung);
+
+function exportUstxSung(): void {
+  if (!annotation) return;
+  const seq = exportSequence();
+  const curve = sungPitchCurve(annotation.f0_contour, sequenceInSeconds(seq, bpm), {
+    shiftS: seq.shiftS,
+    ticksPerSecond: (bpm / 60) * TICKS_PER_QUARTER,
+  });
+  download(ustxText(seq, { bpm, name: "sona", curves: [{ ...curve, abbr: "pitd" }] }), "sona.ustx", "text/yaml");
+  setStatus(`Exported ${seq.notes.length} notes to sona.ustx with the singer's pitch (${curve.xs.length} curve points) at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+}
 
 let lyricTarget: WorkingNote | null = null;
 
@@ -1791,10 +1856,10 @@ function renderNotes(from: EffectiveNote[]): RenderNote[] {
 }
 
 let hoveredHandle: Handle | null = null;
+let lastMouse: { x: number; y: number } | null = null;
 const HANDLE_RADIUS = 5;
 const HANDLE_GRAB_PX = 9;
 
-/** The selected note as the handles see it: snapped span, tone, and a touching previous note. */
 function selectedSpan(): NoteSpan | null {
   if (!selectedNote) return null;
   const effs = [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s);
@@ -1825,12 +1890,38 @@ function sameHandle(a: Handle | null, b: Handle): boolean {
   return !!a && a.kind === b.kind && (a.kind !== "point" || (b.kind === "point" && a.index === b.index));
 }
 
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const HANDLE_FADE_MS = 160;
+let handlesShownFor: WorkingNote | null = null;
+let handlesShownAt = 0;
+let fadeFrame = 0;
+
+function noteHandlesShownFor(note: WorkingNote | null): void {
+  if (handlesShownFor === note) return;
+  handlesShownFor = note;
+  handlesShownAt = performance.now();
+}
+
+function handleFadeAlpha(): number {
+  if (reducedMotion.matches) return 1;
+  const k = Math.min(1, (performance.now() - handlesShownAt) / HANDLE_FADE_MS);
+  if (k < 1 && !fadeFrame) {
+    fadeFrame = requestAnimationFrame(() => {
+      fadeFrame = 0;
+      redraw();
+    });
+  }
+  return 1 - (1 - k) ** 3;
+}
+
 function drawPitchHandles(): void {
   const span = selectedSpan();
+  noteHandlesShownFor(span ? selectedNote : null);
   if (!scale || !span || !selectedNote) return;
   const expr = exprOf(selectedNote);
   const hs = handlesFor(expr, span);
   ctx2d.save();
+  ctx2d.globalAlpha = handleFadeAlpha();
   const v = expr.vibrato;
   if (v && v.length > 0) {
     const at = (k: string) => hs.find((h) => h.handle.kind === k)!;
@@ -2379,6 +2470,9 @@ function followPlayhead(): void {
 function setStatus(msg: string, isError = false): void {
   el.status.textContent = msg;
   el.status.classList.toggle("error", isError);
+  el.status.classList.remove("changed");
+  void el.status.offsetWidth; // restart the fade for each new message
+  el.status.classList.add("changed");
 }
 
 // First paint (placeholder) once the layout has a size, then restore any

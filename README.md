@@ -174,19 +174,21 @@ cd web
 npm run dev        # http://localhost:5173 (HMR)
 ```
 
-Open the app, use **Settings (⚙)** to choose the annotation JSON and its stem audio, set the BPM and grid division, and press **Play** to hear the stem against the synthesized notes. Notes are colored by a confidence heatmap (red → green); low-confidence and off-grid notes are outlined and flagged. Drag to move, resize, double-click to add, Delete to remove, then **Export MIDI** to write the authoritative file. Use **Save** to keep a session JSON if you want to resume editing later.
+Open the app and start from its start screen: **Generate from audio** (with `sona serve`), or **File → Open annotation…** and **Open stem audio…**. Then set the BPM and grid division, and press **Play** to hear the stem against the synthesized notes. Notes are colored by a confidence heatmap (red → green); low-confidence and off-grid notes are outlined and flagged. Drag to move, resize, double-click to add, Delete to remove, then **Export → MIDI** to write the authoritative file. Use **File → Save session** to keep a session JSON if you want to resume editing later.
 
 **Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
-- **Paste lyrics.** **あ Lyrics** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
+- **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
 - **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
-- **Export.** **⤓ UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **⤓ USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
+- **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **Export → USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
 - **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
 - **Sessions.** Lyrics are saved in the session JSON.
 
-**Pitch: portamento and vibrato** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md)):
-- **Fit.** **〰 Fit pitch** reads every note's glide and vibrato from the stem's pitch track. The orange **curve** is what OpenUtau will sing, drawn over the singer's pitch (white).
-- **Edit.** Select a note to edit its glide and vibrato in the bar under the roll, or press **V** to toggle its vibrato.
-- **Export.** UST and USTX carry them in OpenUtau's own form: USTX pitch points and vibrato, UST `PBS/PBW/PBY/PBM` and `VBR`.
+**Pitch: portamento, vibrato and the singer's own pitch** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md), [ADR-0021](docs/adr/0021-direct-pitch-editing-and-sung-pitch.md)):
+- **Fit.** **Edit → Fit pitch** reads every note's glide and vibrato from the stem's pitch track. The orange **curve** is what OpenUtau will sing, drawn over the singer's pitch (white).
+- **Edit on the roll.** Select a note and its pitch handles appear on the orange curve, as in OpenUtau. Circles are portamento points: drag to move, double-click the curve to add, Alt-click (or hover + Delete) to remove. Diamonds shape the vibrato: drag its start, the top corners for depth and fade-in/out, the lower one for its period. **V** toggles a note's vibrato; the bar under the roll takes exact numbers.
+- **The singer's own pitch.** **Export → USTX with the singer's pitch** adds the white line as OpenUtau's drawn pitch curve (`pitd`), measured against the notes exactly as exported, so OpenUtau sings the singer's inflections and you can keep editing them with its pitch pen. Unvoiced frames, rests and octave slips (> 600 cents off) fall back to the notes. UST has no free curve, so the plain exports keep points and vibrato.
+- **Pitch pen.** Press **P** (or tick **pen**) and drag on the roll to redraw the white line; Alt-drag erases it back to the notes. Edits are saved in the session.
+- **Export.** UST and USTX carry points and vibrato in OpenUtau's own form: USTX pitch points and vibrato, UST `PBS/PBW/PBY/PBM` and `VBR`.
 - **How close it gets.** On songs the fitter was never tuned on, fitted curves sit 9–30% closer to the singer's pitch than flat notes; the per-song numbers are in the ADR.
 
 ### Evaluate (optional)

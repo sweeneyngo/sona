@@ -792,6 +792,77 @@
           grid-template-columns: 1fr;
         }
       }
+
+      @keyframes sona-fade {
+        from { opacity: 0; }
+      }
+      @keyframes sona-pop {
+        from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      }
+      @keyframes sona-drop {
+        from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+      }
+      @keyframes sona-rise {
+        from { opacity: 0; transform: translateY(10px); }
+      }
+      .overlay:not([hidden]) {
+        animation: sona-fade 0.16s ease-out;
+      }
+      .overlay:not([hidden]) .modal {
+        animation: sona-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .menu-list:not([hidden]) {
+        transform-origin: top left;
+        animation: sona-drop 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .menu-list:not([hidden]) [role="menuitem"] {
+        animation: sona-fade 0.2s ease-out both;
+      }
+      .menu-list:not([hidden]) [role="menuitem"]:nth-child(2) { animation-delay: 0.02s; }
+      .menu-list:not([hidden]) [role="menuitem"]:nth-child(3) { animation-delay: 0.04s; }
+      .menu-list:not([hidden]) [role="menuitem"]:nth-child(n + 4) { animation-delay: 0.06s; }
+      .start:not([hidden]) .start-inner {
+        animation: sona-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .start:not([hidden]) .start-card {
+        animation: sona-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+      }
+      .start:not([hidden]) .start-card:nth-child(2) { animation-delay: 0.06s; }
+      .start:not([hidden]) .start-card:nth-child(3) { animation-delay: 0.12s; }
+      .start-card {
+        transition: transform 0.16s ease-out, border-color 0.16s, background 0.16s, box-shadow 0.16s;
+      }
+      .start-card:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      .expr-bar:not([hidden]) {
+        animation: sona-rise 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      #lyric-editor:not([hidden]) {
+        animation: sona-pop 0.14s ease-out;
+      }
+      #tooltip {
+        animation: sona-fade 0.12s ease-out;
+      }
+      #status.changed {
+        animation: sona-fade 0.3s ease-out;
+      }
+      button:active:not(:disabled) {
+        transform: scale(0.97);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        button:active:not(:disabled),
+        .start-card:hover:not(:disabled) {
+          transform: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -840,6 +911,7 @@
           <button class="menu-btn" aria-haspopup="menu" aria-expanded="false">Export</button>
           <div class="menu-list" role="menu" hidden>
             <button role="menuitem" id="export-ustx" disabled>USTX<span class="hint">OpenUtau</span></button>
+            <button role="menuitem" id="export-ustx-sung" disabled title="Adds the white line as OpenUtau's drawn pitch (pitd), so it sings the singer's own inflections">USTX with the singer's pitch<span class="hint">OpenUtau</span></button>
             <button role="menuitem" id="export-ust" disabled>UST<span class="hint">UTAU</span></button>
             <button role="menuitem" id="export" disabled>MIDI<span class="hint">notes only</span></button>
           </div>
@@ -876,6 +948,7 @@
         <div class="divider" aria-hidden="true"></div>
 
         <label class="toggle" title="Show the pitch curve the exported notes will sing"><input id="show-curve" type="checkbox" checked /> pitch curve</label>
+        <label class="toggle" title="Pitch pen (P): drag on the roll to redraw the singer's pitch (the white line) that “USTX with the singer's pitch” exports; Alt-drag erases it back to the notes"><input id="pitch-pen" type="checkbox" /> pen</label>
 
         <div class="spacer"></div>
 

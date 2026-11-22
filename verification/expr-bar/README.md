@@ -5,10 +5,16 @@
 on the canvas). You type in a field (glide, vibrato depth, …), and the value
 commits on Enter or when the field loses focus.
 
-Rule, checked on every path with 3 notes:
-- **EditLandsOnTheNoteShown:** a value you type goes to the note whose values the bar was showing.
+It also models dragging a pitch handle on the roll (ADR-0021), which rewrites the
+note from the expression it captured at mousedown.
 
-`./check.sh` runs TLC on the rule and on two mutants, each of which must be caught.
+Rules, checked on every path with 3 notes:
+- **EditLandsOnTheNoteShown:** a value you type goes to the note whose values the bar was showing.
+- **NoEditIsLost:** a handle drag never overwrites a value committed after it captured the note.
+
+`./check.sh` runs TLC on the rules and on three mutants, each of which must be caught.
+`capture-before-blur` is a drag that captures the note before the bar's typed value
+commits; the mousedown handler commits the bar first (`applyExprBar`, then blur).
 `commit-to-selected` is the bug the pstack statechart pass found on 2026-11-22:
 1. **Why it happened.** Clicking a note selects it on mousedown, before the field you were editing blurs and commits.
 2. **The effect.** Committing to the *selected* note moved your typed value onto the note you just clicked.

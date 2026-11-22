@@ -155,6 +155,8 @@ export interface Scale {
   pitchToY(pitch: number): number;
   xToTime(x: number): number;
   yToPitch(y: number): number;
+  /** Fractional pitch at `y`, with whole semitones at row centres (the inverse of `pitchToY(p) + rowHeight / 2`). */
+  yToPitchExact(y: number): number;
 }
 
 /**
@@ -201,6 +203,9 @@ export function makeScale({
     },
     xToTime(x) {
       return ((x - padLeft + scrollX) / contentWidth) * safeDuration;
+    },
+    yToPitchExact(y) {
+      return maxPitch - (y - padTop - rowHeight / 2) / rowHeight;
     },
     yToPitch(y) {
       // Floor, so any y inside a row's band maps to that row's pitch.

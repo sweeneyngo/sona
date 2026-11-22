@@ -1,11 +1,6 @@
-/**
- * Direct-manipulation handles for a note's pitch expression (ADR-0019): its
- * portamento points and its vibrato envelope, positioned in note time and
- * cents, so the roll can draw them and turn drags into new expressions.
- * Limits are OpenUtau's (`UVibrato` setters); points keep their order.
- */
+/** Vibrato limits are OpenUtau's (`UVibrato` setters). ADR-0019. */
 
-import type { Expression, PitchPoint, Vibrato } from "./expression";
+import { snappedPoints, type Expression, type PitchPoint, type Vibrato } from "./expression";
 
 export type Handle =
   | { kind: "point"; index: number }
@@ -32,12 +27,6 @@ export interface HandleAt {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-/** The y a point really has: snap_first pins the first point to the previous note's pitch. */
-function effectiveY(expr: Expression, i: number, span: NoteSpan): number {
-  if (i === 0 && expr.snapFirst) return span.touchingPrevTone === null ? 0 : (span.touchingPrevTone - span.tone) * 10;
-  return expr.points[i].y;
-}
-
 function vibratoGeometry(v: Vibrato, span: NoteSpan) {
   const dur = span.offset_s - span.onset_s;
   const start = span.offset_s - (dur * v.length) / 100;
@@ -46,10 +35,11 @@ function vibratoGeometry(v: Vibrato, span: NoteSpan) {
 }
 
 export function handlesFor(expr: Expression, span: NoteSpan): HandleAt[] {
-  const out: HandleAt[] = expr.points.map((p, index) => ({
+  const prev = span.touchingPrevTone === null ? undefined : { onset_s: span.onset_s - 1, offset_s: span.onset_s, tone: span.touchingPrevTone };
+  const out: HandleAt[] = snappedPoints({ onset_s: span.onset_s, offset_s: span.offset_s, tone: span.tone, expr }, prev).map((p, index) => ({
     handle: { kind: "point", index },
     t: span.onset_s + p.x / 1000,
-    pitch: span.tone + effectiveY(expr, index, span) / 10,
+    pitch: span.tone + p.y / 10,
   }));
   const v = expr.vibrato;
   if (v && v.length > 0) {

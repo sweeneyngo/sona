@@ -99,6 +99,8 @@ test("makeScale inverses round-trip time and pitch", () => {
   // pitchToY targets a row's top; sampling the row centre recovers the pitch.
   const y = scale.pitchToY(65) + scale.rowHeight / 2;
   assert.equal(scale.yToPitch(y), 65);
+  assert.ok(Math.abs(scale.yToPitchExact(y) - 65) < 1e-9);
+  assert.ok(Math.abs(scale.yToPitchExact(scale.pitchToY(65.37) + scale.rowHeight / 2) - 65.37) < 1e-9);
 });
 
 const baseScale = {

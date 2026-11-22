@@ -89,7 +89,7 @@ export function vibratoCents(v: Vibrato, nPos: number, nPeriod: number): number 
 }
 
 /** The first point's y after `snapFirst`, as OpenUtau's `UNote.Validate` sets it. */
-function snappedPoints(note: RenderNote, prev: RenderNote | undefined): PitchPoint[] {
+export function snappedPoints(note: RenderNote, prev: RenderNote | undefined): PitchPoint[] {
   const expr = note.expr ?? NEUTRAL_EXPRESSION;
   const pts = expr.points.length ? expr.points.map((p) => ({ ...p })) : [];
   if (pts.length && expr.snapFirst) {

@@ -43,5 +43,6 @@ mutant() {
 echo "Mutants (each must be caught):"
 mutant commit-to-selected  EditLandsOnTheNoteShown "s/appliedTo' = exprBarNote/appliedTo' = selected/"
 mutant sync-while-editing  EditLandsOnTheNoteShown "s/exprBarNote' = IF editing THEN exprBarNote ELSE i/exprBarNote' = i/"
+mutant capture-before-blur NoEditIsLost "s/dragBase' = v\\[selected\\]/dragBase' = version[selected]/"
 rm -rf "$tmp"
 exit $fail

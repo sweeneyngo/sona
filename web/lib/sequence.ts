@@ -28,6 +28,17 @@ export interface Sequence {
   shiftS: number;
 }
 
+/** The exported notes back on the stem's timeline, in seconds, as a singing synth will play them. */
+export function sequenceInSeconds(seq: Sequence, bpm: number, tpq = TICKS_PER_QUARTER): { onset_s: number; offset_s: number; tone: number; expr?: Expression }[] {
+  const ticksPerSecond = (bpm / 60) * tpq;
+  return seq.notes.map((n) => ({
+    onset_s: n.position / ticksPerSecond + seq.shiftS,
+    offset_s: (n.position + n.duration) / ticksPerSecond + seq.shiftS,
+    tone: n.tone,
+    expr: n.expr,
+  }));
+}
+
 /** The grid phase: where in a cell the anchor sits, in `[0, spacing)`. */
 export function gridPhase(anchor: number, spacing: number): number {
   if (!(spacing > 0)) return 0;
