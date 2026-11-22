@@ -112,6 +112,16 @@ impl GameModel {
     /// Load `encoder.onnx`, `segmenter.onnx`, `estimator.onnx`, `dur2bd.onnx` and
     /// `bd2dur.onnx` from a GAME ONNX release folder.
     pub fn load(dir: &Path, params: GameParams) -> Result<Self, GameError> {
+        const GRAPHS: [&str; 5] = ["encoder", "segmenter", "estimator", "dur2bd", "bd2dur"];
+        if let Some(missing) = GRAPHS.iter().map(|g| dir.join(format!("{g}.onnx"))).find(|p| !p.is_file()) {
+            return Err(GameError::Ort(format!("{} not found: point at a GAME ONNX release folder", missing.display())));
+        }
+        // ort's dynamic loader panics when the library can't be opened, so check first.
+        match std::env::var_os("ORT_DYLIB_PATH") {
+            Some(p) if Path::new(&p).is_file() => {}
+            Some(p) => return Err(GameError::Ort(format!("ORT_DYLIB_PATH={} is not a file", Path::new(&p).display()))),
+            None => return Err(GameError::Ort("set ORT_DYLIB_PATH to an ONNX Runtime shared library (libonnxruntime.so / .dylib / onnxruntime.dll)".into())),
+        }
         let open = |name: &str| -> Result<Mutex<Session>, GameError> {
             let s = Session::builder()
                 .map_err(ort_err)?
@@ -355,6 +365,12 @@ pub fn correct_octaves(notes: &mut [GameNote], samples: &[f32], sample_rate: u32
         }
     }
     moved
+}
+
+/// One grid cell in seconds at `bpm` for a grid of `division` cells per whole
+/// note (16 = sixteenths, 24 = sixteenth triplets).
+pub fn grid_spacing_s(bpm: f64, division: u32) -> f64 {
+    240.0 / bpm / f64::from(division.max(1))
 }
 
 /// Snap GAME's notes to a grid of `spacing_s` seconds: remove the stem's tuning

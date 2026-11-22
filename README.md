@@ -85,10 +85,17 @@ cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 128 --midi out.mid > 
 
 # grid-locked material (Vocaloid): decode notes on a 16th grid (24 = 16th-triplets)
 cargo run -p sona-cli -- transcribe path/to/stem.wav --bpm 198 --grid 16 > annotation.json
+
+# experimental: notes from openvpi GAME (ADR-0017). Download a GAME ONNX release
+# (e.g. GAME-1.0.3-medium-onnx; weights are CC BY-NC-SA, non-commercial) and an
+# ONNX Runtime library; a 44.1 kHz lead-vocal stem works best.
+export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
+cargo run --release -p sona-cli --features game -- transcribe lead.wav --bpm 198 --grid 16 \
+    --game ~/models/GAME-1.0.3-medium-onnx > annotation.json
 ```
 
 ```
-Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue]]
+Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue] [--game <DIR> [--no-octave-check]]]
 
 Transcribes an isolated mono vocal stem to an annotation JSON (stdout).
 
@@ -105,6 +112,9 @@ Options:
                     follows the lead where other voices sing (on by default, ADR-0016).
   --no-spectral-cue With --grid: turn off the spectral cue that splits held pitches
                     at syllable changes (on by default, ADR-0016).
+  --game <DIR>      With --grid: take the notes from openvpi GAME (experimental, ADR-0017;
+                    build with --features game, set ORT_DYLIB_PATH, 44.1 kHz stem).
+  --no-octave-check With --game: skip the subharmonic octave check (on by default).
 ```
 
 `--grid` is the mode to use for UST/Vocaloid-style material. Without it, sona stays on the grid-free perception path. Grid mode includes harmonic-salience pitch evidence and the spectral re-articulation cue by default (`--no-salience` and `--no-spectral-cue` turn them off). Grid cells matching the UST:

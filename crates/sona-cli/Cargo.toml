@@ -24,3 +24,6 @@ default = ["spectral"]
 crepe = ["sona-core/crepe"]
 # Spectral features (pure-Rust FFT) for `--spectral-cue` (ADR-0016).
 spectral = ["sona-core/spectral"]
+# GAME note extraction for `--game <DIR>` (ADR-0017). The weights are
+# user-downloaded (CC BY-NC-SA); ONNX Runtime loads from ORT_DYLIB_PATH.
+game = ["sona-core/game"]

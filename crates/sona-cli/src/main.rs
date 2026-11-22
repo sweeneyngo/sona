@@ -36,6 +36,13 @@ OPTIONS (transcribe):
     --no-spectral-cue
                      With --grid: turn off the spectral model that splits held pitches
                      at syllable changes (on by default, ADR-0016)
+    --game <DIR>     With --grid: take the notes from openvpi GAME instead (experimental,
+                     ADR-0017). DIR is a GAME ONNX release folder you downloaded
+                     (e.g. GAME-1.0.3-medium-onnx; weights are CC BY-NC-SA, non-commercial).
+                     Needs a build with `--features game`, ORT_DYLIB_PATH set to an ONNX
+                     Runtime library, and a 44.1 kHz stem (a lead-vocal stem works best)
+    --no-octave-check
+                     With --game: skip the subharmonic octave check (on by default)
     -h, --help       Print this usage
     -V, --version    Print version
 
@@ -78,6 +85,8 @@ struct TranscribeArgs {
     grid: Option<u32>,
     salience: bool,
     spectral_cue: bool,
+    game: Option<String>,
+    octave_check: bool,
 }
 
 /// The `transcribe` subcommand: parse args, decode the stem, run the pipeline,
@@ -86,14 +95,23 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
     let parsed = parse_transcribe_args(args)?;
 
     let (samples, sample_rate) = load_wav_mono(&parsed.stem)?;
-    let transcriber = Transcriber { grid: parsed.grid.map(|division| grid_mode(division, &parsed)), ..Transcriber::default() };
-    let annotation = transcriber.transcribe(
+    // With --game, GAME supplies the notes; the default pipeline still supplies
+    // the f0 contour and energy envelope the review surface draws, so skip its
+    // (replaced) grid decode.
+    let grid = if parsed.game.is_some() { None } else { parsed.grid.map(|division| grid_mode(division, &parsed)) };
+    let transcriber = Transcriber { grid, ..Transcriber::default() };
+    #[allow(unused_mut)]
+    let mut annotation = transcriber.transcribe(
         &PYin::default(),
         &samples,
         sample_rate,
         parsed.bpm,
         Producer::Pyin,
     );
+
+    if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
+        game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
+    }
 
     // The JSON contract is the primary artifact: it goes to stdout so the command
     // composes in a pipeline.
@@ -110,6 +128,35 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+/// Replace the annotation's notes with GAME's, snapped to the grid (ADR-0017).
+#[cfg(feature = "game")]
+fn game_notes(annotation: &mut sona_core::Annotation, transcriber: &Transcriber, samples: &[f32], dir: &str, division: u32, octave_check: bool) -> Result<(), String> {
+    use sona_core::game::{correct_octaves, grid_spacing_s, snap_to_grid, GameModel, GameParams, OctaveRule, GAME_SAMPLE_RATE};
+    if annotation.sample_rate != GAME_SAMPLE_RATE {
+        return Err(format!(
+            "--game needs a {GAME_SAMPLE_RATE} Hz stem, got {} Hz (resample it first, e.g. ffmpeg -i in.wav -ar {GAME_SAMPLE_RATE} out.wav)",
+            annotation.sample_rate
+        ));
+    }
+    let model = GameModel::load(Path::new(dir), GameParams::default()).map_err(|e| e.to_string())?;
+    let mut notes = model.transcribe(samples, annotation.sample_rate).map_err(|e| e.to_string())?;
+    if octave_check {
+        let moved = correct_octaves(&mut notes, samples, annotation.sample_rate, OctaveRule::default());
+        if moved > 0 {
+            eprintln!("sona: octave check raised {moved} GAME notes by an octave");
+        }
+    }
+    let segments = snap_to_grid(&notes, grid_spacing_s(annotation.bpm, division));
+    annotation.notes = transcriber.scorer.score_all(&segments, &annotation.energy_envelope);
+    annotation.producer = Producer::Game;
+    Ok(())
+}
+
+#[cfg(not(feature = "game"))]
+fn game_notes(_: &mut sona_core::Annotation, _: &Transcriber, _: &[f32], _: &str, _: u32, _: bool) -> Result<(), String> {
+    Err("--game needs sona built with `--features game` (cargo build --release -p sona-cli --features game)".into())
 }
 
 /// Grid mode with the requested evidence (ADR-0015, ADR-0016).
@@ -133,6 +180,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let mut midi: Option<String> = None;
     let mut grid: Option<u32> = None;
     let (mut salience, mut spectral_cue) = (true, cfg!(feature = "spectral"));
+    let (mut game, mut octave_check): (Option<String>, bool) = (None, true);
 
     let mut i = 0;
     while i < args.len() {
@@ -159,6 +207,12 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
             i = next;
         } else if arg == "--salience" || arg == "--spectral-cue" {
             // Accepted for compatibility: both are on by default now.
+        } else if let Some(rest) = arg.strip_prefix("--game") {
+            let (raw, next) = flag_value(args, i, rest, "--game")?;
+            i = next;
+            game = Some(raw.to_string());
+        } else if arg == "--no-octave-check" {
+            octave_check = false;
         } else if arg == "--no-salience" {
             salience = false;
         } else if arg == "--no-spectral-cue" {
@@ -183,7 +237,13 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     if refinement && grid.is_none() {
         return Err("--salience / --spectral-cue (and their --no- forms) refine grid mode; add --grid 16 or --grid 24".into());
     }
-    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue })
+    if game.is_some() && grid.is_none() {
+        return Err("--game snaps GAME's notes to the grid; add --grid 16 or --grid 24".into());
+    }
+    if !octave_check && game.is_none() {
+        return Err("--no-octave-check only applies with --game".into());
+    }
+    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue, game, octave_check })
 }
 
 /// Resolve a flag's value at index `i`, where `rest` is whatever followed the

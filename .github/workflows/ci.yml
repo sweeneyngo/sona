@@ -40,7 +40,7 @@ jobs:
       # the feature here (the snapping and chunking tests need no model).
       - name: game feature (lint + tests)
         run: |
-          cargo clippy -p sona-core -p sona-eval --features sona-core/game,sona-eval/game --all-targets -- -D warnings
+          cargo clippy -p sona-core -p sona-eval -p sona-cli --features sona-core/game,sona-eval/game,sona-cli/game --all-targets -- -D warnings
           cargo test -p sona-core --release --features game game::
 
   web:

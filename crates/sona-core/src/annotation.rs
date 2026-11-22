@@ -97,7 +97,7 @@ pub struct EnergyFrame {
 }
 
 /// The backend or adapter that produced an annotation. Serialized in
-/// kebab-case (`"pyin"`, `"crepe"`, `"basic-pitch"`) so the wire form matches
+/// kebab-case (`"pyin"`, `"crepe"`, `"basic-pitch"`, `"game"`) so the wire form matches
 /// the names used across the spec and CONTEXT.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -108,6 +108,8 @@ pub enum Producer {
     Crepe,
     /// basic-pitch, joined to the comparison via an adapter.
     BasicPitch,
+    /// openvpi GAME note extraction (the optional `game` feature, ADR-0017).
+    Game,
 }
 
 #[cfg(test)]

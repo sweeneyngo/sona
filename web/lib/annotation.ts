@@ -12,7 +12,7 @@
 export const SCHEMA_VERSION = 1;
 
 /** The backend or adapter that produced an annotation. */
-export type Producer = "pyin" | "crepe" | "basic-pitch";
+export type Producer = "pyin" | "crepe" | "basic-pitch" | "game";
 
 /**
  * Per-dimension confidence sub-scores, each in `0..=1`. A note is only as
