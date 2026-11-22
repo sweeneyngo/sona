@@ -313,6 +313,21 @@ Octave errors concentrate in amaten, where 104 of its 131 octave-error cells fol
 - All 28 songs: 84.0% vs 83.7% (2 songs up by more than a point, 1 down).
 - That's within noise, so we keep 8.
 
+## holdout3 confirmation (2026-11-21, read once at `1bac372`)
+
+| holdout3 (10 songs) | cells |
+|---|---|
+| sona grid defaults, vocal stems | 72.5% |
+| GAME-lead | 76.0% |
+| + octave rule | 76.3% |
+| + learned cell stage | **78.8%** |
+
+- **GAME vs default:** +3.8 [−0.6, +7.5]. That fails the +5 bar, so GAME stays experimental.
+- **Octave rule:** +0.3 [+0.1, +0.6]. Confirmed.
+- **Learned stage:** +2.2 [+0.8, +3.5]. Confirmed.
+- **Outlier:** ironication, where every system sits an octave under the UST.
+- **Details:** `.scratch/game-holdout3/spec.md` and [ADR-0017](../../../docs/adr/0017-game-note-extraction.md).
+
 ## Next
 
 0. ~~Confirm ADR-0016 on a fresh holdout~~: done (holdout2). Toward 90% cell accuracy, in order:

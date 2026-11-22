@@ -1,6 +1,6 @@
 # Spec: confirm the GAME pipeline on the fresh holdout (holdout3)
 
-Status: **rule committed; holdout3 unread at this commit.** The read runs `tmp/scripts/h3_read.sh` (job scratch) once.
+Status: **done: holdout3 read once at 1bac372; rule 1 fails, rules 2 and 3 pass (Result below).**
 
 ## Question
 
@@ -60,3 +60,24 @@ There are 10 songs, and GAME's run-to-run outputs are deterministic. Song resamp
 - Octave rule: `OctaveRule::default()` (song −0.25, low-song note 0.0, other −1.5).
 - Learned stage D: `cellstage_D.pt` (local, not committed), BiGRU hid 96, 15 epochs, seed 0, trained on all 28 songs' `cells_oct` features. sha256 `e3c1b9a5434169e91ec436a70c9f89967f898aa1e0a575f87321c556a61325c9`.
 - **E is not a candidate.** Its 28-song CV (same folds/seed as D) gave 84.50% against D's 84.91% (−0.41; 1 song more than a point better, 2 worse), short of the ≥ +0.5 bar. TiFA hard boundaries were also rejected on dev (report). Rules 4 and the E rows do not apply.
+
+## Result (holdout3, 10 songs, read once at 1bac372; both ledger entries logged)
+
+| candidate | cells |
+|---|---|
+| A sona grid defaults, vocal stems | 72.51% |
+| A′ the same on lead stems | 71.46% |
+| B GAME-lead | 76.00% |
+| C B + octave rule | 76.31% |
+| C\* C in the prototype | 76.62% |
+| D C\* + learned cell stage | **78.78%** |
+
+1. **GAME pipeline, C − A = +3.80, 95% [−0.60, +7.53]. ✘** Fails both bars (≥ +5, interval excludes 0). 9 songs improve by 2 points or more; ironication loses 10.2. GAME stays experimental (ADR-0017). Dev (+6.7 over the lead-stem default) was optimistic.
+2. **Octave rule, C − B = +0.31 [+0.12, +0.62], no song worse. ✔** It stays on inside the GAME path; maru-shite-kudasai gains 2.2.
+3. **Learned stage, D − C\* = +2.17 [+0.83, +3.47], none worse than −0.4. ✔** Confirmed as an opt-in prototype; weights stay local.
+4. Not applicable (E was not a candidate).
+5. **90% target: not reached.** The best is D at 78.78%. Per song, D ranges from 46.5% (ironication) to 97.0% (denpa).
+
+Not pre-registered, so exploratory: D − A = +6.27 [+2.64, +9.45], with 9 of 10 songs better.
+
+After the read: ironication is an outlier for every system. GAME and sona both sit an octave under the UST in most sung cells, and GAME rests through 769 sung cells. holdout3 is now spent.
