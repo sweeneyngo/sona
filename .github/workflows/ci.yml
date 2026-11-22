@@ -80,3 +80,5 @@ jobs:
       - run: verification/lyric-editor/check.sh
       # TLA+ model of the pitch expression bar (verification/expr-bar, ADR-0019).
       - run: verification/expr-bar/check.sh
+      # TLA+ model of sona serve's job queue (verification/serve-jobs, ADR-0020).
+      - run: verification/serve-jobs/check.sh

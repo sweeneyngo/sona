@@ -224,6 +224,8 @@
         font-family: var(--mono);
         color: var(--muted);
         font-size: 11px;
+        flex: 1 1 0;
+        min-width: 6ch;
         max-width: 42ch;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -299,6 +301,27 @@
       }
 
       /* --- Legend ---------------------------------------------------------- */
+      .generate-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        margin: 10px 0;
+      }
+      .generate-progress {
+        color: var(--ink);
+        min-height: 1.2em;
+      }
+      .generate-log {
+        max-height: 160px;
+        overflow: auto;
+        font-size: 11px;
+        color: var(--muted);
+        background: #0b0b0b;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        white-space: pre-wrap;
+      }
       /* --- Expression bar (selected note's pitch) --- */
       .expr-bar {
         display: flex;
@@ -633,6 +656,7 @@
               <option value="4">1/4</option>
               <option value="8">1/8</option>
               <option value="16" selected>1/16</option>
+              <option value="24">1/16T</option>
               <option value="32">1/32</option>
             </select>
           </span>
@@ -640,6 +664,7 @@
 
         <div class="divider" aria-hidden="true"></div>
 
+        <button id="generate" title="Make a stem and an annotation from a song (needs sona serve)">＋ From audio</button>
         <button id="fit-pitch" title="Fit every note's portamento and vibrato from the stem's pitch (overwrites edits)" disabled>〰 Fit pitch</button>
         <label class="toggle" title="Show the pitch curve the exported notes will sing"><input id="show-curve" type="checkbox" checked /> curve</label>
         <button id="lyrics" title="Lyrics — paste a text to fill notes (L types one note's lyric)" disabled>あ Lyrics</button>
@@ -725,6 +750,15 @@
               Drag a note to move it (time + pitch), drag its right edge to resize,
               double-click empty space to add, select and press Delete to remove. Hover or
               click a note to see its confidence sub-scores.
+            </p>
+          </section>
+
+          <section>
+            <h3>From a song</h3>
+            <p>
+              <b>＋ From audio</b> turns a song into a stem and an annotation and loads both
+              here. It needs the app opened from <code>sona serve</code> (which also runs the
+              separators); the dialog says which separations and note engines it has.
             </p>
           </section>
 
@@ -834,6 +868,51 @@
             <button id="lyrics-from-start">Fill from the first note</button>
             <button id="lyrics-clear">Clear all lyrics</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="generate-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="generate-title">
+        <div class="modal-head">
+          <h2 id="generate-title">New from audio</h2>
+          <button id="generate-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p>
+            Pick a song (or a vocal stem). sona separates the vocal, transcribes it on the
+            grid, and loads the notes and the stem here. It all runs on this computer through
+            <code>sona serve</code>; separation takes a few minutes per song.
+          </p>
+          <div class="setting">
+            <h3>Audio</h3>
+            <input id="generate-file" type="file" accept="audio/*" />
+          </div>
+          <div class="generate-options">
+            <span class="field"><label for="generate-bpm">BPM</label><input id="generate-bpm" type="number" min="20" max="400" step="0.1" value="120" /></span>
+            <span class="field">
+              <label for="generate-grid">Grid</label>
+              <select id="generate-grid"><option value="16" selected>1/16</option><option value="24">1/16T</option></select>
+            </span>
+            <span class="field">
+              <label for="generate-separation">Separation</label>
+              <select id="generate-separation">
+                <option value="lead" selected>Lead vocal (song)</option>
+                <option value="vocals">All vocals (song)</option>
+                <option value="none">None (already a stem)</option>
+              </select>
+            </span>
+            <span class="field">
+              <label for="generate-engine">Notes</label>
+              <select id="generate-engine"><option value="game">GAME</option><option value="pyin" selected>sona (pYIN)</option></select>
+            </span>
+          </div>
+          <div class="lyrics-actions">
+            <button id="generate-start">Start</button>
+            <button id="generate-cancel" disabled>Cancel</button>
+          </div>
+          <p id="generate-progress" class="generate-progress"></p>
+          <pre id="generate-log" class="generate-log" hidden></pre>
         </div>
       </div>
     </div>

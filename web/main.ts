@@ -35,6 +35,7 @@ import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
+import { PHASE_LABEL, cancelJob, fetchCapabilities, fetchJob, fetchResults, isFinal, submitJob, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
 import type { Annotation, Note, WorkingNote } from "./lib/annotation";
@@ -107,6 +108,18 @@ const el = {
   vibOut: document.getElementById("vib-out") as HTMLInputElement,
   exprFit: document.getElementById("expr-fit") as HTMLButtonElement,
   exprReset: document.getElementById("expr-reset") as HTMLButtonElement,
+  generate: document.getElementById("generate") as HTMLButtonElement,
+  generateOverlay: document.getElementById("generate-overlay") as HTMLDivElement,
+  generateClose: document.getElementById("generate-close") as HTMLButtonElement,
+  generateFile: document.getElementById("generate-file") as HTMLInputElement,
+  generateBpm: document.getElementById("generate-bpm") as HTMLInputElement,
+  generateGrid: document.getElementById("generate-grid") as HTMLSelectElement,
+  generateSeparation: document.getElementById("generate-separation") as HTMLSelectElement,
+  generateEngine: document.getElementById("generate-engine") as HTMLSelectElement,
+  generateStart: document.getElementById("generate-start") as HTMLButtonElement,
+  generateCancel: document.getElementById("generate-cancel") as HTMLButtonElement,
+  generateProgress: document.getElementById("generate-progress") as HTMLParagraphElement,
+  generateLog: document.getElementById("generate-log") as HTMLPreElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -226,21 +239,32 @@ let playback: Playback | null = null;
 
 // --- Loading ---------------------------------------------------------------
 
-el.json.addEventListener("change", async () => {
-  const file = el.json.files?.[0];
-  if (!file) return;
+function loadAnnotationJson(parsed: unknown, name: string): boolean {
   try {
-    const parsed = JSON.parse(await file.text());
     const session = applyLoadedJson(parsed);
-    const what = session ? "session" : "annotation";
-    setStatus(`Loaded ${what}: ${workingNotes.length} notes from “${file.name}”.`);
+    setStatus(`Loaded ${session ? "session" : "annotation"}: ${workingNotes.length} notes from “${name}”.`);
     dirty = false; // a freshly loaded file is not unsaved work
+    return true;
   } catch (err) {
     annotation = null;
     workingNotes = [];
     setStatus(`Could not read annotation JSON: ${(err as Error).message}`, true);
     rebuild();
+    return false;
   }
+}
+
+el.json.addEventListener("change", async () => {
+  const file = el.json.files?.[0];
+  if (!file) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (err) {
+    setStatus(`Could not read annotation JSON: ${(err as Error).message}`, true);
+    return;
+  }
+  loadAnnotationJson(parsed, file.name);
 });
 
 /**
@@ -293,19 +317,21 @@ function applyLoadedJson(parsed: any): boolean {
   return !!(session && typeof session === "object");
 }
 
-el.audio.addEventListener("change", async () => {
-  const file = el.audio.files?.[0];
-  if (!file) return;
+async function loadStemBytes(bytes: ArrayBuffer, name: string): Promise<void> {
   try {
-    const bytes = await file.arrayBuffer();
     audioBuffer = await ensureAudioContext().decodeAudioData(bytes);
-    setStatus(`Loaded stem “${file.name}” (${audioBuffer.duration.toFixed(2)} s).`);
+    setStatus(`Loaded stem “${name}” (${audioBuffer.duration.toFixed(2)} s).`);
     rebuild();
   } catch (err) {
     audioBuffer = null;
     setStatus(`Could not decode audio: ${(err as Error).message}`, true);
     rebuild();
   }
+}
+
+el.audio.addEventListener("change", async () => {
+  const file = el.audio.files?.[0];
+  if (file) await loadStemBytes(await file.arrayBuffer(), file.name);
 });
 
 /**
@@ -560,11 +586,12 @@ function setModal(overlay: HTMLElement, open: boolean): void {
     el.settingsOverlay.hidden = true;
     el.changesOverlay.hidden = true;
     el.lyricsOverlay.hidden = true;
+    el.generateOverlay.hidden = true;
   }
   overlay.hidden = !open;
 }
 function anyModalOpen(): boolean {
-  return !el.helpOverlay.hidden || !el.settingsOverlay.hidden || !el.changesOverlay.hidden || !el.lyricsOverlay.hidden;
+  return [el.helpOverlay, el.settingsOverlay, el.changesOverlay, el.lyricsOverlay, el.generateOverlay].some((o) => !o.hidden);
 }
 
 el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
@@ -1204,6 +1231,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     setModal(el.settingsOverlay, false);
     setModal(el.changesOverlay, false);
     setModal(el.lyricsOverlay, false);
+    setModal(el.generateOverlay, false);
     e.preventDefault();
     return;
   }
@@ -1794,6 +1822,117 @@ el.exprReset.addEventListener("click", () => {
   delete selectedNote.expr;
   markDirty();
   redraw();
+});
+
+let activeJob: string | null = null;
+let pollTimer: number | null = null;
+
+function setGenerating(running: boolean): void {
+  el.generateStart.disabled = running;
+  el.generateCancel.disabled = !running;
+  for (const c of [el.generateFile, el.generateBpm, el.generateGrid, el.generateSeparation, el.generateEngine]) c.disabled = running;
+}
+
+function showJob(s: JobStatus): void {
+  el.generateProgress.textContent = `${PHASE_LABEL[s.phase]} · ${Math.round(s.elapsedS)} s` + (s.error ? ` — ${s.error}` : "");
+  el.generateLog.hidden = s.log.length === 0;
+  el.generateLog.textContent = s.log.join("\n");
+}
+
+async function openGenerate(): Promise<void> {
+  setModal(el.generateOverlay, true);
+  if (activeJob) return;
+  el.generateBpm.value = String(bpm);
+  try {
+    const caps = await fetchCapabilities();
+    for (const opt of Array.from(el.generateSeparation.options)) opt.disabled = !caps.separation[opt.value as Separation];
+    for (const opt of Array.from(el.generateEngine.options)) opt.disabled = !caps.engines[opt.value as Engine];
+    for (const sel of [el.generateSeparation, el.generateEngine]) {
+      if (sel.selectedOptions[0]?.disabled) sel.value = Array.from(sel.options).find((o) => !o.disabled)?.value ?? sel.value;
+    }
+    el.generateStart.disabled = false;
+    el.generateProgress.textContent = caps.separation.lead ? "" : "Separation isn't set up on this server: only stems can be transcribed.";
+  } catch (err) {
+    el.generateStart.disabled = true;
+    el.generateProgress.textContent = (err as Error).message;
+  }
+}
+
+async function startGenerate(): Promise<void> {
+  const file = el.generateFile.files?.[0];
+  const bpmIn = Number(el.generateBpm.value);
+  if (!file) return void (el.generateProgress.textContent = "Pick an audio file first.");
+  if (!(bpmIn > 0 && bpmIn <= 400)) return void (el.generateProgress.textContent = "Set the song's BPM (it fixes the grid).");
+  const grid = el.generateGrid.value === "24" ? 24 : 16;
+  setGenerating(true);
+  try {
+    const job = await submitJob(
+      { bpm: bpmIn, grid, separation: el.generateSeparation.value as Separation, engine: el.generateEngine.value as Engine, name: file.name },
+      file,
+    );
+    activeJob = job.id;
+    showJob(job);
+    pollJob(job.id, bpmIn, grid);
+  } catch (err) {
+    setGenerating(false);
+    el.generateProgress.textContent = (err as Error).message;
+  }
+}
+
+function pollJob(id: string, jobBpm: number, grid: number): void {
+  pollTimer = window.setTimeout(async () => {
+    if (activeJob !== id) return;
+    try {
+      const s = await fetchJob(id);
+      showJob(s);
+      if (!isFinal(s.phase)) return pollJob(id, jobBpm, grid);
+      activeJob = null;
+      setGenerating(false);
+      if (s.phase === "done") await loadJobResults(s, jobBpm, grid);
+    } catch (err) {
+      activeJob = null;
+      setGenerating(false);
+      el.generateProgress.textContent = (err as Error).message;
+    }
+  }, 1000);
+}
+
+async function loadJobResults(s: JobStatus, jobBpm: number, grid: number): Promise<void> {
+  if (dirty && !window.confirm(`Replace the current notes with the ones generated from “${s.name}”? Your unsaved edits stay in the autosave.`)) {
+    el.generateProgress.textContent = "Done. The results are on the server; start the job again to load them.";
+    return;
+  }
+  const { annotation: ann, stem } = await fetchResults(s.id);
+  if (!loadAnnotationJson(ann, s.name)) return;
+  bpm = jobBpm;
+  el.bpm.value = String(jobBpm);
+  if (Array.from(el.division.options).some((o) => o.value === String(grid))) {
+    division = grid;
+    el.division.value = String(grid);
+  }
+  invalidateEffective();
+  await loadStemBytes(stem, s.name);
+  setModal(el.generateOverlay, false);
+  setStatus(`Generated from “${s.name}”: ${workingNotes.length} notes and the stem are loaded.`);
+}
+
+el.generate.addEventListener("click", () => void openGenerate());
+el.generateClose.addEventListener("click", () => setModal(el.generateOverlay, false));
+el.generateOverlay.addEventListener("click", (e) => {
+  if (e.target === el.generateOverlay) setModal(el.generateOverlay, false);
+});
+el.generateStart.addEventListener("click", () => void startGenerate());
+el.generateCancel.addEventListener("click", async () => {
+  if (!activeJob) return;
+  const id = activeJob;
+  activeJob = null;
+  if (pollTimer !== null) window.clearTimeout(pollTimer);
+  setGenerating(false);
+  try {
+    showJob(await cancelJob(id));
+  } catch (err) {
+    el.generateProgress.textContent = (err as Error).message;
+  }
 });
 
 // --- Playback ---------------------------------------------------------------

@@ -147,6 +147,24 @@ The annotation JSON is the core↔UI contract — raw note events in *seconds*, 
 }
 ```
 
+### From a song, in one click (`sona serve`)
+
+`sona serve` runs the review surface together with a local job runner ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)). Open the address it prints, press **＋ From audio**, pick a song, set its BPM, and choose the separation and the note engine. sona then:
+1. separates the vocals (demucs);
+2. separates the lead (the UVR karaoke model);
+3. transcribes the notes, with pYIN or GAME;
+4. loads the notes and the stem for you.
+
+```bash
+(cd web && npm run build)                  # once: the app sona serve hosts
+cargo run --release -p sona-cli -- serve   # http://127.0.0.1:8977
+# with GAME notes: --features game, ORT_DYLIB_PATH, and --game ~/models/GAME-1.0.3-medium-onnx
+```
+
+- **Separators:** separation uses the same venvs as the corpus scripts (`~/.local/share/sona/demucs-venv`, `~/.local/share/sona/separator-venv`, or `--demucs-venv` / `--separator-venv`). The dialog shows what's available; an existing stem always works with "None".
+- **Privacy and safety:** everything runs on this computer. The server listens on 127.0.0.1 only and refuses requests for any other host name.
+- **Speed:** a 25 s song excerpt took 46 s from upload to loaded notes on a CPU.
+
 ### Review, correct, and export (web)
 
 Run the Vite dev server, then load the annotation JSON alongside its stem:

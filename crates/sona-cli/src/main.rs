@@ -16,6 +16,10 @@ use std::process::ExitCode;
 
 use sona_core::{CueModel, GridMode, PYin, Producer, Transcriber};
 
+mod http;
+mod jobs;
+mod serve;
+
 const USAGE: &str = "\
 sona — vocal-to-MIDI perception core (CLI)
 
@@ -25,6 +29,8 @@ USAGE:
 COMMANDS:
     transcribe <STEM> --bpm <BPM>    Transcribe a WAV vocal stem to annotation JSON
                                      (printed to stdout)
+    serve                            Run the review surface with one-click generation
+                                     (song → stem → annotation) on http://127.0.0.1:8977
 
 OPTIONS (transcribe):
     --bpm <BPM>      Tempo, carried into the annotation for the UI's grid (required)
@@ -46,6 +52,14 @@ OPTIONS (transcribe):
     -h, --help       Print this usage
     -V, --version    Print version
 
+OPTIONS (serve):
+    --port <N>             Listen on 127.0.0.1:<N> (default 8977; 0 picks a free port)
+    --web-dir <DIR>        The built review surface (default: web/dist in this checkout)
+    --jobs-dir <DIR>       Where uploads and results go (default: a temp folder)
+    --demucs-venv <DIR>    demucs venv for vocal separation (default ~/.local/share/sona/demucs-venv)
+    --separator-venv <DIR> audio-separator venv for the lead (default ~/.local/share/sona/separator-venv)
+    --game <DIR>           Offer GAME note extraction (needs --features game and ORT_DYLIB_PATH)
+
 The core emits the annotation JSON contract (raw note events + confidence +
 f0 contour + energy envelope); the web review surface interprets it (grid,
 quantization, correction, MIDI export). See CONTEXT.md.";
@@ -64,6 +78,13 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("transcribe") => match run_transcribe(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("sona: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("serve") => match serve::run_serve(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("sona: {e}");
@@ -93,25 +114,7 @@ struct TranscribeArgs {
 /// emit JSON (and optional MIDI). Returns a human-readable message on any error.
 fn run_transcribe(args: &[String]) -> Result<(), String> {
     let parsed = parse_transcribe_args(args)?;
-
-    let (samples, sample_rate) = load_wav_mono(&parsed.stem)?;
-    // With --game, GAME supplies the notes; the default pipeline still supplies
-    // the f0 contour and energy envelope the review surface draws, so skip its
-    // (replaced) grid decode.
-    let grid = if parsed.game.is_some() { None } else { parsed.grid.map(|division| grid_mode(division, &parsed)) };
-    let transcriber = Transcriber { grid, ..Transcriber::default() };
-    #[allow(unused_mut)]
-    let mut annotation = transcriber.transcribe(
-        &PYin::default(),
-        &samples,
-        sample_rate,
-        parsed.bpm,
-        Producer::Pyin,
-    );
-
-    if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
-        game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
-    }
+    let annotation = transcribe(&parsed)?;
 
     // The JSON contract is the primary artifact: it goes to stdout so the command
     // composes in a pipeline.
@@ -119,8 +122,8 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
         .map_err(|e| format!("serializing annotation: {e}"))?;
     println!("{json}");
 
-    if let Some(midi_path) = parsed.midi {
-        write_midi_file(&annotation, &midi_path)?;
+    if let Some(midi_path) = &parsed.midi {
+        write_midi_file(&annotation, midi_path)?;
         // Progress on stderr keeps stdout pure JSON.
         eprintln!(
             "sona: wrote raw MIDI ({} notes) to {midi_path}",
@@ -128,6 +131,21 @@ fn run_transcribe(args: &[String]) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn transcribe(parsed: &TranscribeArgs) -> Result<sona_core::Annotation, String> {
+    let (samples, sample_rate) = load_wav_mono(&parsed.stem)?;
+    // With --game, GAME supplies the notes; the default pipeline still supplies
+    // the f0 contour and energy envelope the review surface draws, so skip its
+    // (replaced) grid decode.
+    let grid = if parsed.game.is_some() { None } else { parsed.grid.map(|division| grid_mode(division, parsed)) };
+    let transcriber = Transcriber { grid, ..Transcriber::default() };
+    #[allow(unused_mut)]
+    let mut annotation = transcriber.transcribe(&PYin::default(), &samples, sample_rate, parsed.bpm, Producer::Pyin);
+    if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
+        game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
+    }
+    Ok(annotation)
 }
 
 /// Replace the annotation's notes with GAME's, snapped to the grid (ADR-0017).
