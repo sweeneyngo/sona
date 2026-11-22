@@ -35,6 +35,7 @@ import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
+import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
 import { PHASE_LABEL, cancelJob, fetchCapabilities, fetchJob, fetchResults, isFinal, submitJob, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
@@ -120,6 +121,17 @@ const el = {
   generateCancel: document.getElementById("generate-cancel") as HTMLButtonElement,
   generateProgress: document.getElementById("generate-progress") as HTMLParagraphElement,
   generateLog: document.getElementById("generate-log") as HTMLPreElement,
+  openAnnotation: document.getElementById("open-annotation") as HTMLButtonElement,
+  openStem: document.getElementById("open-stem") as HTMLButtonElement,
+  editLyric: document.getElementById("edit-lyric") as HTMLButtonElement,
+  editVibrato: document.getElementById("edit-vibrato") as HTMLButtonElement,
+  editDelete: document.getElementById("edit-delete") as HTMLButtonElement,
+  start: document.getElementById("start") as HTMLDivElement,
+  startGenerate: document.getElementById("start-generate") as HTMLButtonElement,
+  startGenerateNote: document.getElementById("start-generate-note") as HTMLSpanElement,
+  startOpen: document.getElementById("start-open") as HTMLButtonElement,
+  startResume: document.getElementById("start-resume") as HTMLButtonElement,
+  startResumeDetail: document.getElementById("start-resume-detail") as HTMLSpanElement,
 };
 const ctx2d = el.canvas.getContext("2d")!;
 
@@ -153,6 +165,7 @@ interface DragBase {
 }
 type Drag =
   | (DragBase & { mode: "offset"; origAnchor: number })
+  | (DragBase & { mode: "handle"; note: WorkingNote; handle: Handle; origExpr: Expression; span: NoteSpan })
   | (DragBase & {
       mode: "move" | "resize";
       note: WorkingNote;
@@ -242,7 +255,10 @@ let playback: Playback | null = null;
 function loadAnnotationJson(parsed: unknown, name: string): boolean {
   try {
     const session = applyLoadedJson(parsed);
-    setStatus(`Loaded ${session ? "session" : "annotation"}: ${workingNotes.length} notes from “${name}”.`);
+    setStatus(
+      `Loaded ${session ? "session" : "annotation"}: ${workingNotes.length} notes from “${name}”.` +
+        (audioBuffer ? "" : " Next: File → Open stem audio… to hear it."),
+    );
     dirty = false; // a freshly loaded file is not unsaved work
     return true;
   } catch (err) {
@@ -677,6 +693,7 @@ function rebuild(): void {
   el.exportUstx.disabled = !annotation;
   el.lyrics.disabled = !annotation;
   el.fitPitch.disabled = !annotation || !annotation.f0_contour.length;
+  el.start.hidden = !!annotation;
   syncExprBar();
   el.save.disabled = !annotation;
 }
@@ -703,6 +720,14 @@ function resizeCanvas(): void {
 }
 
 window.addEventListener("resize", rebuild);
+// The roll also changes size without the window doing so (the expression bar
+// appears under it when a note is selected): keep the backing store in step,
+// or drawing and pointer coordinates drift apart.
+new ResizeObserver(() => {
+  const r = el.canvas.getBoundingClientRect();
+  const dpr = devicePixelRatioSafe();
+  if (Math.round(r.width * dpr) !== el.canvas.width || Math.round(r.height * dpr) !== el.canvas.height) rebuild();
+}).observe(el.canvas);
 
 // --- Drawing ----------------------------------------------------------------
 
@@ -750,7 +775,10 @@ function draw(): void {
   drawEnergyEnvelope(w, h);
   drawF0Contour();
   drawNotes();
-  if (el.showCurve.checked) drawExpressionCurve();
+  if (el.showCurve.checked) {
+    drawExpressionCurve();
+    drawPitchHandles();
+  }
   // currentPlayheadS() returns the seek offset when stopped, so this covers both.
   drawPlayhead(currentPlayheadS(), h, !playback);
   ctx2d.restore();
@@ -760,7 +788,7 @@ function drawPlaceholder(w: number, h: number): void {
   ctx2d.fillStyle = "#5b6072";
   ctx2d.font = "13px system-ui, sans-serif";
   ctx2d.textAlign = "center";
-  ctx2d.fillText("Open ⚙ Settings to load an annotation JSON.", w / 2, h / 2);
+  ctx2d.fillText("Start a project, or open files from the File menu.", w / 2, h / 2);
   ctx2d.textAlign = "left";
 }
 
@@ -1069,6 +1097,21 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
     return;
   }
 
+  const h = handleAtPoint(x, y);
+  if (h && selectedNote) {
+    // Commit a value still being typed in the bar before the drag starts from it.
+    if (el.exprBar.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    if (e.altKey && h.handle.kind === "point") {
+      selectedNote.expr = removePoint(exprOf(selectedNote), h.handle.index);
+      markDirty();
+      redraw();
+      return;
+    }
+    drag = { mode: "handle", note: selectedNote, handle: h.handle, origExpr: exprOf(selectedNote), span: h.span, startX: x, startY: y, moved: false };
+    el.canvas.style.cursor = "grabbing";
+    return;
+  }
+
   const hit = hitTest(x, y);
   if (hit) {
     selectedNote = hit.note;
@@ -1104,6 +1147,14 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
   const { x, y } = canvasPoint(e);
   d.moved = d.moved || Math.abs(x - d.startX) > 2 || Math.abs(y - d.startY) > 2;
   const dt = scale.xToTime(x) - scale.xToTime(d.startX);
+
+  if (d.mode === "handle") {
+    const dCents = (-(y - d.startY) / scale.rowHeight) * 100;
+    d.note.expr = dragHandle(d.origExpr, d.span, d.handle, dt, dCents);
+    markDirty();
+    redraw();
+    return;
+  }
 
   if (d.mode === "offset") {
     // Only shift the grid once it's really a drag; a sub-threshold click stays a
@@ -1206,6 +1257,20 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
     redraw();
     return;
   }
+  const span = selectedSpan();
+  if (span && selectedNote && el.showCurve.checked) {
+    const t = scale.xToTime(x);
+    if (t >= span.onset_s - 0.25 && t <= span.offset_s) {
+      const pitchAtY = span.tone + (scale.pitchToY(span.tone) + scale.rowHeight / 2 - y) / scale.rowHeight;
+      const curve = renderPitch(renderNotes(effectiveNotes()), [t])[0];
+      if (Math.abs(pitchAtY - curve) * scale.rowHeight < 20) {
+        selectedNote.expr = addPoint(exprOf(selectedNote), (t - span.onset_s) * 1000, (pitchAtY - span.tone) * 10).expr;
+        markDirty();
+        redraw();
+        return;
+      }
+    }
+  }
   const s = spacing();
   const onset = Math.max(0, snapTime(scale.xToTime(x), s, gridAnchor));
   const note: WorkingNote = {
@@ -1235,6 +1300,10 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     e.preventDefault();
     return;
   }
+  if (openMenu) {
+    if (e.key === "Escape") closeMenu(true);
+    return;
+  }
   const tag = document.activeElement?.tagName;
   const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
   if (e.key === "?" && !inField) {
@@ -1254,12 +1323,14 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     case "Delete":
     case "Backspace":
       if (!selectedNote) return;
-      workingNotes = workingNotes.filter((n) => n !== selectedNote);
-      selectedNote = null;
-      el.tooltip.style.display = "none";
-      invalidateEffective();
-      markDirty();
-      redraw();
+      if (hoveredHandle?.kind === "point") {
+        selectedNote.expr = removePoint(exprOf(selectedNote), hoveredHandle.index);
+        hoveredHandle = null;
+        markDirty();
+        redraw();
+        break;
+      }
+      deleteSelectedNote();
       break;
     case " ": // play / pause
       togglePlay();
@@ -1325,8 +1396,10 @@ function zoomBy(factor: number): void {
 function updateHover(e: MouseEvent): void {
   const { x, y } = canvasPoint(e);
   const hit = hitTest(x, y);
+  hoveredHandle = handleAtPoint(x, y)?.handle ?? null;
   // Cursor cues: resize on the right edge, move on the body, grid on the ruler.
-  if (y < RULER_H) el.canvas.style.cursor = "ew-resize";
+  if (hoveredHandle) el.canvas.style.cursor = hoveredHandle.kind === "vibrato-start" || hoveredHandle.kind === "vibrato-period" ? "ew-resize" : "grab";
+  else if (y < RULER_H) el.canvas.style.cursor = "ew-resize";
   else if (hit) el.canvas.style.cursor = x >= hit.x + hit.w - RESIZE_GRAB_PX ? "ew-resize" : "grab";
   else el.canvas.style.cursor = "default";
 
@@ -1352,6 +1425,11 @@ function canvasPoint(e: MouseEvent): { x: number; y: number } {
 }
 
 function showSelectedTooltip(): void {
+  // While its pitch handles are on screen, the pinned tooltip would cover them.
+  if (el.showCurve.checked) {
+    el.tooltip.style.display = "none";
+    return;
+  }
   const box = noteHitboxes.find((b) => b.note === selectedNote);
   if (box) showTooltip(box.note, box.effective, box.x + box.w / 2, box.y);
 }
@@ -1480,6 +1558,21 @@ function autosave(): void {
 }
 
 /** Restore the last autosaved session on startup, if one exists. */
+/** Show the start screen's Resume card for an autosave, without loading it. */
+function offerResume(raw: string): void {
+  try {
+    const record: unknown = JSON.parse(raw);
+    if (typeof record !== "object" || record === null) return;
+    const r = record as { savedAt?: unknown; file?: { notes?: unknown } };
+    const notes = Array.isArray(r.file?.notes) ? r.file.notes.length : 0;
+    const when = typeof r.savedAt === "string" ? new Date(r.savedAt).toLocaleString() : "earlier";
+    el.startResumeDetail.textContent = `${notes} notes, saved ${when}. Re-open the stem to play it.`;
+    el.startResume.hidden = false;
+  } catch {
+    el.startResume.hidden = true;
+  }
+}
+
 function restoreAutosave(): void {
   let raw: string | null = null;
   try {
@@ -1697,8 +1790,91 @@ function renderNotes(from: EffectiveNote[]): RenderNote[] {
   return from.map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, tone: Math.round(e.pitch), expr: e.raw.expr }));
 }
 
+let hoveredHandle: Handle | null = null;
+const HANDLE_RADIUS = 5;
+const HANDLE_GRAB_PX = 9;
+
+/** The selected note as the handles see it: snapped span, tone, and a touching previous note. */
+function selectedSpan(): NoteSpan | null {
+  if (!selectedNote) return null;
+  const effs = [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s);
+  const i = effs.findIndex((e) => e.raw === selectedNote);
+  if (i < 0) return null;
+  const e = effs[i];
+  const prev = i > 0 && Math.abs(effs[i - 1].offset_s - e.onset_s) < 1e-6 ? Math.round(effs[i - 1].pitch) : null;
+  return { onset_s: e.onset_s, offset_s: e.offset_s, tone: Math.round(e.pitch), touchingPrevTone: prev };
+}
+
+function handleScreen(t: number, pitch: number): { x: number; y: number } {
+  return { x: scale!.timeToX(t), y: scale!.pitchToY(pitch) + scale!.rowHeight / 2 };
+}
+
+function handleAtPoint(px: number, py: number): { handle: Handle; span: NoteSpan } | null {
+  const span = selectedSpan();
+  if (!scale || !span || !el.showCurve.checked || !selectedNote) return null;
+  let best: { handle: Handle; d: number } | null = null;
+  for (const h of handlesFor(exprOf(selectedNote), span)) {
+    const p = handleScreen(h.t, h.pitch);
+    const d = Math.hypot(p.x - px, p.y - py);
+    if (d <= HANDLE_GRAB_PX && (!best || d < best.d)) best = { handle: h.handle, d };
+  }
+  return best ? { handle: best.handle, span } : null;
+}
+
+function sameHandle(a: Handle | null, b: Handle): boolean {
+  return !!a && a.kind === b.kind && (a.kind !== "point" || (b.kind === "point" && a.index === b.index));
+}
+
+function drawPitchHandles(): void {
+  const span = selectedSpan();
+  if (!scale || !span || !selectedNote) return;
+  const expr = exprOf(selectedNote);
+  const hs = handlesFor(expr, span);
+  ctx2d.save();
+  const v = expr.vibrato;
+  if (v && v.length > 0) {
+    const at = (k: string) => hs.find((h) => h.handle.kind === k)!;
+    const start = handleScreen(at("vibrato-start").t, span.tone);
+    const fin = handleScreen(at("vibrato-fade-in").t, at("vibrato-fade-in").pitch);
+    const fout = handleScreen(at("vibrato-fade-out").t, at("vibrato-fade-out").pitch);
+    const end = handleScreen(span.offset_s, span.tone);
+    ctx2d.setLineDash([4, 4]);
+    ctx2d.strokeStyle = "rgba(255,159,64,0.7)";
+    ctx2d.lineWidth = 1.5;
+    ctx2d.beginPath();
+    ctx2d.moveTo(start.x, start.y);
+    ctx2d.lineTo(fin.x, fin.y);
+    ctx2d.lineTo(fout.x, fout.y);
+    ctx2d.lineTo(end.x, end.y);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+  }
+  for (const h of hs) {
+    const p = handleScreen(h.t, h.pitch);
+    const hot = sameHandle(hoveredHandle, h.handle) || (drag?.mode === "handle" && sameHandle(drag.handle, h.handle));
+    const r = hot ? HANDLE_RADIUS + 2 : HANDLE_RADIUS;
+    ctx2d.beginPath();
+    if (h.handle.kind === "point") {
+      ctx2d.arc(p.x, p.y, r, 0, Math.PI * 2);
+    } else {
+      ctx2d.moveTo(p.x, p.y - r - 1);
+      ctx2d.lineTo(p.x + r + 1, p.y);
+      ctx2d.lineTo(p.x, p.y + r + 1);
+      ctx2d.lineTo(p.x - r - 1, p.y);
+      ctx2d.closePath();
+    }
+    const snapped = h.handle.kind === "point" && h.handle.index === 0 && expr.snapFirst;
+    ctx2d.fillStyle = snapped ? "#101010" : "#ffd29e";
+    ctx2d.strokeStyle = hot ? "#ffffff" : "#ff9f40";
+    ctx2d.lineWidth = 2;
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+  ctx2d.restore();
+}
+
 function drawExpressionCurve(): void {
-  if (!scale || !workingNotes.some((n) => n.expr)) return;
+  if (!scale || (!selectedNote && !workingNotes.some((n) => n.expr))) return;
   const effs = effectiveNotes().filter((e) => e.offset_s > viewT0 - 1 && e.onset_s < viewT1 + 1);
   if (!effs.length) return;
   const step = 0.005;
@@ -1759,7 +1935,12 @@ const exprBarHasFocus = (): boolean => el.exprBar.contains(document.activeElemen
 const OPENUTAU_VIBRATO_LIMITS = { depth: [5, 200], period: [5, 500], percent: [0, 100] } as const;
 const GLIDE_X_LIMITS_MS = { start: [-2000, 2000], end: [-2000, 5000] } as const;
 
+function syncSelectionActions(): void {
+  for (const b of [el.editLyric, el.editVibrato, el.editDelete]) b.disabled = !selectedNote;
+}
+
 function syncExprBar(): void {
+  syncSelectionActions();
   if (exprBarHasFocus()) return;
   const n = selectedNote;
   noteShownInExprBar = n;
@@ -1823,6 +2004,91 @@ el.exprReset.addEventListener("click", () => {
   markDirty();
   redraw();
 });
+
+let openMenu: HTMLElement | null = null;
+
+const menuItems = (menu: HTMLElement): HTMLButtonElement[] =>
+  Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).filter((b) => !b.disabled);
+
+function closeMenu(focusButton = false): void {
+  if (!openMenu) return;
+  const btn = openMenu.querySelector<HTMLButtonElement>(".menu-btn");
+  openMenu.querySelector<HTMLElement>(".menu-list")!.hidden = true;
+  btn?.setAttribute("aria-expanded", "false");
+  if (focusButton) btn?.focus();
+  openMenu = null;
+}
+
+function showMenu(menu: HTMLElement, focusFirst: boolean): void {
+  closeMenu();
+  menu.querySelector<HTMLElement>(".menu-list")!.hidden = false;
+  menu.querySelector(".menu-btn")?.setAttribute("aria-expanded", "true");
+  openMenu = menu;
+  if (focusFirst) menuItems(menu)[0]?.focus();
+}
+
+for (const menu of Array.from(document.querySelectorAll<HTMLElement>(".menu"))) {
+  const btn = menu.querySelector<HTMLButtonElement>(".menu-btn")!;
+  btn.addEventListener("click", () => (openMenu === menu ? closeMenu() : showMenu(menu, false)));
+  btn.addEventListener("pointerenter", () => openMenu && openMenu !== menu && showMenu(menu, false));
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      showMenu(menu, true);
+    }
+  });
+  menu.querySelector(".menu-list")!.addEventListener("click", (e) => {
+    if ((e.target as Element).closest('[role="menuitem"]')) closeMenu();
+  });
+  menu.addEventListener("keydown", (e) => {
+    if (openMenu !== menu) return;
+    const items = menuItems(menu);
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const go = (k: number) => items[(k + items.length) % items.length]?.focus();
+    if (e.key === "ArrowDown") go(i + 1);
+    else if (e.key === "ArrowUp") go(i < 0 ? -1 : i - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(-1);
+    else if (e.key === "Escape") closeMenu(true);
+    else if (e.key === "Tab") closeMenu();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+}
+document.addEventListener("pointerdown", (e) => {
+  if (openMenu && !openMenu.contains(e.target as Node)) closeMenu();
+});
+
+function deleteSelectedNote(): void {
+  if (!selectedNote) return;
+  workingNotes = workingNotes.filter((n) => n !== selectedNote);
+  selectedNote = null;
+  el.tooltip.style.display = "none";
+  invalidateEffective();
+  markDirty();
+  redraw();
+}
+
+el.openAnnotation.addEventListener("click", () => el.json.click());
+el.openStem.addEventListener("click", () => el.audio.click());
+el.editLyric.addEventListener("click", () => selectedNote && openLyricEditor(selectedNote));
+el.editVibrato.addEventListener("click", () => selectedNote && toggleVibrato(selectedNote));
+el.editDelete.addEventListener("click", deleteSelectedNote);
+el.startGenerate.addEventListener("click", () => void openGenerate());
+el.startOpen.addEventListener("click", () => el.json.click());
+el.startResume.addEventListener("click", () => {
+  restoreAutosave();
+  el.startResume.hidden = true;
+});
+void fetchCapabilities()
+  .then((caps) => {
+    el.startGenerateNote.textContent = caps.separation.lead ? "" : "Separation isn't set up: stems only.";
+  })
+  .catch(() => {
+    el.startGenerateNote.textContent = "Needs the app opened from `sona serve`.";
+  });
 
 let activeJob: string | null = null;
 let pollTimer: number | null = null;
@@ -2127,7 +2393,7 @@ function attemptRestore(tries = 0): void {
   } catch {
     return; // storage unavailable
   }
-  if (raw) restoreAutosave();
+  if (raw) offerResume(raw);
   else if (tries < 8) setTimeout(() => attemptRestore(tries + 1), 120);
 }
 // setTimeout, not requestAnimationFrame: rAF is paused while the tab is
