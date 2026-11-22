@@ -265,12 +265,53 @@ GAME's boundaries are unbiased against Pifuyuu's, so no fixed shift or fill help
 
 Octave errors concentrate in amaten, where 104 of its 131 octave-error cells follow `low.ust`, an octave-down double Pifuyuu wrote as a separate voice. Premise check: the stems are the **original** songs and the USTs are Pifuyuu's transcriptions (`Song::original_url`). The residual is therefore the transcriber's conventions (when a note ends, when to rest, which doubled voice is the lead), which no off-the-shelf model is trained on.
 
-**Learned cell stage (in progress).**
+**Octave rule** (`sona_core::game::correct_octaves`, `oct=1`).
+- **What it catches:** in 3 of 28 songs (cinema-mitaina, lady-bug, moumoku-shabon), about 60% of GAME's notes sit exactly 12 semitones under the UST. These are high melodies, and GAME tracks the subharmonic.
+- **The test:** a note placed an octave low has almost no energy at its odd harmonics. The rule computes the log ratio of odd to even harmonic energy per note:
+  - if the song's median ratio is below −0.25, raise each note whose ratio is below 0;
+  - in other songs, raise only notes below −1.5.
+- **Per note alone it is weak:** +0.9 at best, and 4 songs get worse.
+- **The song-level split is clean:** the 3 octave-low songs have median −0.33 to −0.58; every other song is ≥ −0.13.
+- **Result:** 28 songs, GAME-lead 79.50% → **83.72%**. The 3 songs go from 32–48% to 69–79%, and dev is unchanged (87.4% in the Rust harness).
+- **Caveat:** fit on only 3 positive songs; holdout3 must confirm.
+
+**Learned cell stage** (prototype; `tmp/scripts/build_cells.py`, `train_cells.py`).
 - **What it does:** a BiGRU over grid cells picks rest or one of these candidate pitches: GAME-lead, GAME-vocals, sona, GAME-lead ±12.
-- **Features:** GAME encoder embeddings (x_seg, x_est; both stems) averaged per cell, each system's note position and length, sona's f0 and energy, and whether the systems agree.
+- **Features:**
+  - GAME encoder embeddings (x_seg, x_est; both stems), averaged per cell;
+  - each system's note position and length;
+  - sona's f0 and energy;
+  - whether the systems agree;
+  - the octave ratio.
 - **Oracles:** perfect sung-vs-rest decisions with GAME-lead's pitch give 91.4%; also choosing among the three systems' pitches gives 95.6%.
-- **Result so far:** leave-one-song-out on the 9 dev songs, 86.70% → **87.60%**, with 7 of 9 songs improving.
-- **Training data:** the spent holdout and holdout2 songs, logged in the ledger as training use, so confirmation needs a fresh holdout3.
+- **Training data:** dev plus the spent holdout and holdout2 songs. They are logged in the ledger as training use; holdout3 confirms.
+
+| learned stage, 28 songs, 7-fold by song | GAME-lead | learned |
+|---|---|---|
+| without the octave rule | 79.50% | 82.28% (+2.8) |
+| on octave-corrected candidates | 83.72% | **84.91%** (+1.2; 14 songs > +1 point, 4 < −1) |
+
+**Lyric path with TiFA** (published lyrics, fetched locally → MeCab G2P → TiFA forced alignment → GAME known boundaries; no ASR, lines placed into ≤ 30 s chunks by a mora-count DP refined by TiFA's path score).
+- On lead stems its ceiling (UST onsets plus pauses) is 90.8%, against a GAME-lead baseline of 86.8%.
+- Real alignment captures none of that. On 7 dev songs every variant scores below the baseline:
+
+| variant (7 dev songs) | cells |
+|---|---|
+| GAME-lead + octave rule | **85.6%** |
+| TiFA pauses | 84.8% |
+| TiFA pauses + rest forcing + grid snap | 85.5% |
+| TiFA onsets + grid snap | 85.0% |
+| TiFA pauses + grid snap | 85.1% |
+
+- **Why it doesn't help:** TiFA's syllable starts sit within ½ cell of Pifuyuu's for 61–94% of syllables. It helps clean songs (innocent-addict +1.4–1.8) and hurts fast, dense ones (amaten −2 to −3, kamaitachi −3 to −6).
+- As hard boundaries it is rejected.
+- As five soft per-cell features for the learned stage (distance to the nearest TiFA onset, onset in the cell, cell in a TiFA pause, lyric coverage, chunk similarity), it is also rejected: 28-song 7-fold CV 84.50% against 84.91% without (same folds and seed).
+- The lyric path is shelved. Published lyrics and the TiFA setup stay local.
+
+**D3PM steps 4 vs 8.** Upstream reports 4 as best on degraded audio.
+- Dev lead stems: 87.3% vs 86.7%.
+- All 28 songs: 84.0% vs 83.7% (2 songs up by more than a point, 1 down).
+- That's within noise, so we keep 8.
 
 ## Next
 
