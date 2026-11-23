@@ -46,11 +46,14 @@ pub struct GameParams {
     pub chunk_s: f64,
     /// ONNX Runtime intra-op threads.
     pub threads: usize,
+    /// Seed for the segmenter's boundary sampling. Each transcription starts from it, so a song always
+    /// gives the same notes (ADR-0023). 1.0 was fixed before any seeded result was looked at.
+    pub segmenter_seed: f32,
 }
 
 impl Default for GameParams {
     fn default() -> Self {
-        Self { steps: 8, boundary_threshold: 0.2, boundary_radius: 2, presence_threshold: 0.8, language: 2, chunk_s: 20.0, threads: 8 }
+        Self { steps: 8, boundary_threshold: 0.2, boundary_radius: 2, presence_threshold: 0.8, language: 2, chunk_s: 20.0, threads: 8, segmenter_seed: 1.0 }
     }
 }
 
@@ -87,6 +90,18 @@ impl std::fmt::Display for GameError {
 
 impl std::error::Error for GameError {}
 
+/// A session whose random generator starts at the graph's seed.
+fn segmenter_session(onnx: &[u8], threads: usize) -> Result<Session, GameError> {
+    Session::builder()
+        .map_err(ort_err)?
+        .with_intra_threads(threads)
+        .map_err(ort_err)?
+        .with_deterministic_compute(true)
+        .map_err(ort_err)?
+        .commit_from_memory(onnx)
+        .map_err(ort_err)
+}
+
 fn ort_err(e: impl std::fmt::Display) -> GameError {
     GameError::Ort(e.to_string())
 }
@@ -95,6 +110,8 @@ fn ort_err(e: impl std::fmt::Display) -> GameError {
 pub struct GameModel {
     encoder: Mutex<Session>,
     segmenter: Mutex<Session>,
+    /// The seeded segmenter graph, kept so each transcription can start a fresh session from the seed.
+    segmenter_onnx: Vec<u8>,
     estimator: Mutex<Session>,
     dur2bd: Mutex<Session>,
     bd2dur: Mutex<Session>,
@@ -127,13 +144,18 @@ impl GameModel {
                 .map_err(ort_err)?
                 .with_intra_threads(params.threads)
                 .map_err(ort_err)?
+                .with_deterministic_compute(true)
+                .map_err(ort_err)?
                 .commit_from_file(dir.join(format!("{name}.onnx")))
                 .map_err(ort_err)?;
             Ok(Mutex::new(s))
         };
+        let raw = std::fs::read(dir.join("segmenter.onnx")).map_err(ort_err)?;
+        let (segmenter_onnx, _) = crate::onnx_seed::seed_random_nodes(&raw, params.segmenter_seed).map_err(GameError::Ort)?;
         Ok(Self {
             encoder: open("encoder")?,
-            segmenter: open("segmenter")?,
+            segmenter: Mutex::new(segmenter_session(&segmenter_onnx, params.threads)?),
+            segmenter_onnx,
             estimator: open("estimator")?,
             dur2bd: open("dur2bd")?,
             bd2dur: open("bd2dur")?,
@@ -152,6 +174,7 @@ impl GameModel {
         if sample_rate != GAME_SAMPLE_RATE {
             return Err(GameError::SampleRate(sample_rate));
         }
+        *self.segmenter.lock().expect("segmenter lock") = segmenter_session(&self.segmenter_onnx, self.params.threads)?;
         let mut notes = Vec::new();
         let cuts = quiet_cuts(samples, sample_rate, params.chunk_s);
         for w in cuts.windows(2) {
@@ -516,5 +539,42 @@ mod tests {
         assert_eq!(cuts.first(), Some(&0));
         assert_eq!(cuts.last(), Some(&samples.len()));
         assert!(cuts.iter().any(|&c| (21_000..21_500).contains(&c)), "a cut lands in the silence: {cuts:?}");
+    }
+
+    /// A sung-like line: steps between pitches with vibrato and a little breath noise, at 44.1 kHz.
+    fn melody(pitches: &[f32], seconds_each: f32) -> Vec<f32> {
+        let sr = GAME_SAMPLE_RATE as f32;
+        let mut seed = 99u32;
+        let mut phase = 0.0f32;
+        let mut out = Vec::new();
+        for &m in pitches {
+            for i in 0..(seconds_each * sr) as usize {
+                let t = i as f32 / sr;
+                let f = 440.0 * 2f32.powf((m - 69.0 + 0.3 * (std::f32::consts::TAU * 5.5 * t).sin()) / 12.0);
+                phase += std::f32::consts::TAU * f / sr;
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let noise = ((seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * 0.02;
+                out.push(0.3 * (phase.sin() + 0.4 * (2.0 * phase).sin() + 0.2 * (3.0 * phase).sin()) + noise);
+            }
+        }
+        out
+    }
+
+    /// `ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo test -p sona-core --features game -- --ignored same_notes`
+    #[test]
+    #[ignore = "needs ONNX Runtime and a downloaded GAME release"]
+    fn same_notes_for_a_song_whatever_ran_before_it() {
+        let dir = std::env::var("SONA_GAME_DIR").expect("SONA_GAME_DIR");
+        let model = GameModel::load(Path::new(&dir), GameParams::default()).unwrap();
+        let a = melody(&[64.0, 67.0, 69.0, 67.0, 64.0, 62.0, 60.0, 62.0], 0.35);
+        let b = melody(&[72.0, 71.0, 69.0, 67.0], 0.5);
+        let key = |ns: Vec<GameNote>| ns.iter().map(|n| (n.onset_s.to_bits(), n.offset_s.to_bits(), n.midi.to_bits(), n.voiced)).collect::<Vec<_>>();
+        let first = key(model.transcribe(&a, GAME_SAMPLE_RATE).unwrap());
+        let _ = model.transcribe(&b, GAME_SAMPLE_RATE).unwrap();
+        let again = key(model.transcribe(&a, GAME_SAMPLE_RATE).unwrap());
+        assert!(first.len() > 2, "GAME heard a melody: {} notes", first.len());
+        assert_eq!(first, again);
+        let fresh = GameModel::load(Path::new(&dir), GameParams::default()).unwrap();
+        assert_eq!(key(fresh.transcribe(&a, GAME_SAMPLE_RATE).unwrap()), first);
     }
 }

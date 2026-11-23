@@ -22,6 +22,7 @@ pub mod game;
 pub mod grid;
 pub mod hmm;
 pub mod midi;
+pub mod onnx_seed;
 pub mod onset;
 pub mod pipeline;
 pub mod pitch;

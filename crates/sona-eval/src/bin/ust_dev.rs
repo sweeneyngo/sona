@@ -268,7 +268,8 @@ fn game_segments(it: &Item, pthr: f32, oct: bool, spacing: f64) -> Vec<sona_core
     let tag = std::path::Path::new(&dir).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     // The stem is part of the key: a cheap fingerprint of the audio itself.
     let print = it.samples.iter().step_by(997).fold(it.samples.len() as u64, |h, x| h.rotate_left(5) ^ u64::from(x.to_bits()));
-    let path = cache_dir().join(format!("{}.game-{tag}-p{pthr}-{print:016x}.json", it.id));
+    let seed = GameParams::default().segmenter_seed;
+    let path = cache_dir().join(format!("{}.game-{tag}-p{pthr}-seed{seed}-{print:016x}.json", it.id));
     let mut notes: Vec<GameNote> = match std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Vec<(f64, f64, f32, bool)>>(&t).ok()) {
         Some(v) => v.into_iter().map(|(a, b, m, v)| GameNote { onset_s: a, offset_s: b, midi: m, voiced: v }).collect(),
         None => {

@@ -83,5 +83,5 @@ fixed:
 ## Consequences
 
 - A slow song needs one ½× click. A better octave choice is a frontier (`docs/roadmap.md`).
-- GAME's segmenter is unseeded (see the fine-tune report), so the same song can give a slightly
-  different note count from run to run (69 and 67 notes on the sample).
+- GAME's segmenter was unseeded, so the same song gave slightly different note counts from run to run
+  (69 and 67 notes on the sample). Fixed in ADR-0023.

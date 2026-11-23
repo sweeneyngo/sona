@@ -45,7 +45,8 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
    every read in `crates/sona-eval/corpus/holdout-reads.jsonl`, and refuse a second read without
    `--reread`. All of today's splits are spent for cell accuracy; see roadmap item 1.2.
 5. **Explain the number.** List what else it could be measuring (leaked labels, a cache, one outlier
-   song, seed noise; GAME is random unless seeded) and rule each one out.
+   song) and rule each one out. GAME is deterministic since ADR-0023; a model with random nodes of its own
+   needs the same treatment before its numbers can be compared.
 6. **Record the result, positive or negative**, with its numbers: a report in `crates/sona-eval/reports/`
    or an ADR in `docs/adr/`, plus the README. New behaviour stays opt-in until a held-out read confirms
    it.
@@ -58,6 +59,7 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 | Output invariants | `crates/sona-core/tests/output_invariants.rs` | One sorted, non-overlapping voice on random stems |
 | Model checking (TLA+) | `verification/{grid-notes,lyric-editor,expr-bar,serve-jobs,start-flow}/check.sh` | Each runs its rules and **mutants that must be caught** |
 | Server | `crates/sona-cli/tests/serve.rs` | Drives the real binary with stub separators |
+| GAME determinism | `cargo test -p sona-core --features game -- --ignored same_notes`; `cargo test -p sona-cli --features game --test game_determinism -- --ignored` | Need `ORT_DYLIB_PATH`, `SONA_GAME_DIR` (and optionally `SONA_DETERMINISM_STEM`); not in CI |
 | Browser | `web/e2e/run_all.sh` | Playwright drivers that use the app as a person does ([README](../web/e2e/README.md)) |
 | Review passes | pstack: statechart, comment-sicko, typescript practices | Every bug a pass finds is replayed (a test or a driver) before it's fixed |
 

@@ -145,7 +145,9 @@ The metric is the share of grid cells that match the UST.
   adopted ([report](crates/sona-eval/reports/game-finetune.md)). Lyric-count decoding, vowel alignment
   and TiFA forced alignment were also measured and rejected
   ([report](crates/sona-eval/reports/grid-cell-decoder.md)).
-- **Run-to-run noise:** GAME's segmenter samples at random, so unseeded runs vary by 0.3–0.7 points.
+- **Reproducible:** GAME's random boundary sampling is seeded and its kernels are deterministic, so
+  the same song always gives the same notes; seeded dev is 87.1%
+  ([ADR-0023](docs/adr/0023-deterministic-game.md)).
 
 How grid mode got there, on the dev songs:
 
