@@ -26,3 +26,7 @@ UST (`bpm_from_ust`, the manifest). Every song has a single tempo.
 Ship the estimator as one-click generation's default tempo (shown to the user, editable) if, on the
 32 test songs, **exact accuracy ≥ 80%**. Otherwise ship it only as a suggestion in the BPM field, and
 keep BPM required.
+
+**Disclosure (dec0416 + 1):** while listing the dev tempos I also printed the test songs' UST tempos
+(labels only: range 92–204 BPM in test, 108–250 in dev). No estimate was made on any test song. Every
+choice of method, prior or range is made on dev alone.
