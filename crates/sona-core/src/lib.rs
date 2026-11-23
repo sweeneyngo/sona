@@ -28,6 +28,8 @@ pub mod pitch;
 pub mod prefilter;
 pub mod segment;
 pub mod timbre;
+#[cfg(feature = "spectral")]
+pub mod tempo;
 
 pub use annotation::{Annotation, EnergyFrame, F0Frame, Note, Producer, SubScores, SCHEMA_VERSION};
 pub use confidence::{soft_min, ConfidenceScorer};

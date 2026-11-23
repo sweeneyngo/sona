@@ -123,3 +123,7 @@ path = "src/bin/ust_gate.rs"
 [[bin]]
 name = "sona-eval-ust-dev"
 path = "src/bin/ust_dev.rs"
+
+[[bin]]
+name = "sona-eval-tempo"
+path = "src/bin/tempo.rs"
