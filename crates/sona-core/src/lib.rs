@@ -16,6 +16,7 @@
 //! raw, unquantized `.mid` convenience export derived from it.
 
 pub mod annotation;
+pub mod cellstage;
 pub mod confidence;
 #[cfg(feature = "game")]
 pub mod game;

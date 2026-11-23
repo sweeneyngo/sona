@@ -115,6 +115,125 @@ fn seeded_segmenter(onnx: &[u8], seed: f32) -> Result<Vec<u8>, GameError> {
     Ok(seeded)
 }
 
+/// The two GAME runs the learned cell stage reads (ADR-0026): the lead, octave-corrected, with the
+/// octave check's per-note ratios, and the vocals; each with its encoder frames.
+#[derive(Debug, Clone)]
+pub struct StageRuns {
+    pub lead_notes: Vec<crate::cellstage::StageNote>,
+    pub lead_ratios: Vec<f32>,
+    pub lead_frames: Vec<crate::cellstage::EncoderChunk>,
+    pub vocals_notes: Vec<crate::cellstage::StageNote>,
+    pub vocals_frames: Vec<crate::cellstage::EncoderChunk>,
+}
+
+impl StageRuns {
+    pub fn compute(game: &GameModel, lead: &[f32], vocals: &[f32], sample_rate: u32) -> Result<Self, GameError> {
+        let (mut lead_notes, lead_frames) = game.transcribe_with_frames(lead, sample_rate, game.params)?;
+        let lead_ratios = harmonic_ratios(&lead_notes, lead, sample_rate);
+        correct_octaves(&mut lead_notes, lead, sample_rate, OctaveRule::default());
+        let (vocals_notes, vocals_frames) = game.transcribe_with_frames(vocals, sample_rate, game.params)?;
+        let stage = |ns: &[GameNote]| ns.iter().map(|n| crate::cellstage::StageNote { onset_s: n.onset_s, offset_s: n.offset_s, midi: n.midi, voiced: n.voiced }).collect();
+        Ok(Self { lead_notes: stage(&lead_notes), lead_ratios, lead_frames, vocals_notes: stage(&vocals_notes), vocals_frames })
+    }
+}
+
+/// The learned cell stage: decide every cell from `k0` for `n` cells, from the GAME runs, sona's grid
+/// notes and the vocals' pitch track and energy; the result is notes on the grid (onset, offset, MIDI).
+#[allow(clippy::too_many_arguments)]
+pub fn cell_stage_notes(
+    model: &CellModel,
+    runs: &StageRuns,
+    sona_notes: &[(f64, f64, i32)],
+    f0: &[(f64, f64)],
+    rms: &[(f64, f64)],
+    spacing: f64,
+    anchor: f64,
+    cells: (i64, usize),
+) -> Result<Vec<(f64, f64, i32)>, GameError> {
+    use crate::cellstage::{cell_features_with_sources, cells_to_notes, choose_class, StageInputs};
+    let inputs = StageInputs {
+        spacing,
+        anchor,
+        lead_notes: &runs.lead_notes,
+        lead_ratios: &runs.lead_ratios,
+        vocals_notes: &runs.vocals_notes,
+        sona_notes,
+        lead_frames: &runs.lead_frames,
+        vocals_frames: &runs.vocals_frames,
+        f0,
+        rms,
+    };
+    let (k0, n) = cells;
+    let (x, cands, sources) = cell_features_with_sources(&inputs, k0, n);
+    if n > 0 && x.len() != n * model.width {
+        return Err(GameError::Ort(format!("the cell model expects {} features per cell, sona built {}", model.width, x.len() / n)));
+    }
+    let logits = model.logits(&x, n)?;
+    Ok(cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor))
+}
+
+/// The cells covering `[0, duration)` on a grid: the first starts at or before 0.
+pub fn cells_covering(duration_s: f64, spacing: f64, anchor: f64) -> (i64, usize) {
+    let k0 = ((0.0 - anchor) / spacing).floor() as i64;
+    let mut n = 0usize;
+    while anchor + ((k0 + n as i64) as f64 + 0.5) * spacing < duration_s {
+        n += 1;
+    }
+    (k0, n)
+}
+
+/// The frames where `mask` is set, each `x_seg ‖ x_est`, rounded to half precision.
+fn encoder_rows(x_seg: &(Vec<i64>, Vec<f32>), x_est: &(Vec<i64>, Vec<f32>), mask: &[bool]) -> (usize, usize, Vec<f32>) {
+    let (ds, de) = (*x_seg.0.last().unwrap_or(&0) as usize, *x_est.0.last().unwrap_or(&0) as usize);
+    let n = mask.iter().filter(|&&m| m).count();
+    let mut data = Vec::with_capacity(n * (ds + de));
+    for r in 0..n {
+        data.extend(x_seg.1[r * ds..(r + 1) * ds].iter().chain(&x_est.1[r * de..(r + 1) * de]).map(|&v| crate::cellstage::to_f16_and_back(v)));
+    }
+    (n, ds + de, data)
+}
+
+/// The learned cell stage's model (ADR-0026): `cellstage.onnx` and `cellstage.json` from
+/// `crates/sona-eval/scripts/cellstage/export_onnx.py`. Trained on Pifuyuu's USTs, so it is yours to
+/// build and keep locally, like GAME's weights.
+pub struct CellModel {
+    session: Mutex<Session>,
+    /// Features per cell the model expects.
+    pub width: usize,
+}
+
+impl std::fmt::Debug for CellModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CellModel").field("width", &self.width).finish_non_exhaustive()
+    }
+}
+
+impl CellModel {
+    pub fn load(dir: &Path, threads: usize) -> Result<Self, GameError> {
+        let path = dir.join("cellstage.json");
+        let meta: serde_json::Value = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+            .map_err(|e| GameError::Ort(format!("{}: {e}", path.display())))?;
+        let (format, choices, width) = (meta["format"].as_u64(), meta["choices"].as_u64(), meta["features"].as_u64());
+        let (Some(1), Some(6), Some(width)) = (format, choices, width) else {
+            return Err(GameError::Ort(format!("{}: not a cell model sona can run (format {format:?}, {choices:?} choices)", path.display())));
+        };
+        Ok(Self { session: Mutex::new(session(Graph::File(&dir.join("cellstage.onnx")), threads)?), width: width as usize })
+    }
+
+    /// Logits, `cells` × 6, for row-major features `cells` × [`width`](Self::width).
+    pub fn logits(&self, x: &[f32], cells: usize) -> Result<Vec<f32>, GameError> {
+        if cells == 0 {
+            return Ok(Vec::new());
+        }
+        let mut s = self.session.lock().expect("cell model lock");
+        let out = s.run(ort::inputs! { "x" => Tensor::from_array(([1usize, cells, self.width], x.to_vec())).map_err(ort_err)? }).map_err(ort_err)?;
+        let (_, d) = out["logits"].try_extract_tensor::<f32>().map_err(ort_err)?;
+        Ok(d.to_vec())
+    }
+}
+
 fn ort_err(e: impl std::fmt::Display) -> GameError {
     GameError::Ort(e.to_string())
 }
@@ -175,6 +294,18 @@ impl GameModel {
     /// thread count is fixed when the model loads). Safe to call from several threads at once: each call
     /// has its own segmenter session, so concurrent songs don't share random draws.
     pub fn transcribe_with(&self, samples: &[f32], sample_rate: u32, params: GameParams) -> Result<Vec<GameNote>, GameError> {
+        self.transcribe_inner(samples, sample_rate, params, None)
+    }
+
+    /// [`transcribe_with`](Self::transcribe_with), also returning each chunk's encoder frames, rounded to
+    /// half precision as the learned cell stage was trained on (ADR-0026).
+    pub fn transcribe_with_frames(&self, samples: &[f32], sample_rate: u32, params: GameParams) -> Result<(Vec<GameNote>, Vec<crate::cellstage::EncoderChunk>), GameError> {
+        let mut frames = Vec::new();
+        let notes = self.transcribe_inner(samples, sample_rate, params, Some(&mut frames))?;
+        Ok((notes, frames))
+    }
+
+    fn transcribe_inner(&self, samples: &[f32], sample_rate: u32, params: GameParams, mut frames: Option<&mut Vec<crate::cellstage::EncoderChunk>>) -> Result<Vec<GameNote>, GameError> {
         if sample_rate != GAME_SAMPLE_RATE {
             return Err(GameError::SampleRate(sample_rate));
         }
@@ -184,7 +315,11 @@ impl GameModel {
         for w in cuts.windows(2) {
             let t0 = w[0] as f64 / sample_rate as f64;
             let mut t = t0;
-            for (dur, midi, voiced) in self.run_chunk(&mut segmenter, &samples[w[0]..w[1]], sample_rate, params)? {
+            let (chunk_notes, chunk_frames) = self.run_chunk(&mut segmenter, &samples[w[0]..w[1]], sample_rate, params, frames.is_some())?;
+            if let (Some(out), Some((n, dim, data))) = (frames.as_deref_mut(), chunk_frames) {
+                out.push(crate::cellstage::EncoderChunk { t0, frames: n, dim, data });
+            }
+            for (dur, midi, voiced) in chunk_notes {
                 notes.push(GameNote { onset_s: t, offset_s: t + dur as f64, midi, voiced });
                 t += dur as f64;
             }
@@ -192,7 +327,8 @@ impl GameModel {
         Ok(notes)
     }
 
-    fn run_chunk(&self, segmenter: &mut Session, y: &[f32], sr: u32, p: GameParams) -> Result<Vec<(f32, f32, bool)>, GameError> {
+    #[allow(clippy::type_complexity)]
+    fn run_chunk(&self, segmenter: &mut Session, y: &[f32], sr: u32, p: GameParams, want_frames: bool) -> Result<(Vec<(f32, f32, bool)>, Option<(usize, usize, Vec<f32>)>), GameError> {
         let dur = y.len() as f32 / sr as f32;
         let scalar_f = |v: f32| Tensor::from_array((Vec::<i64>::new(), vec![v])).map_err(ort_err);
         let scalar_i = |v: i64| Tensor::from_array((Vec::<i64>::new(), vec![v])).map_err(ort_err);
@@ -270,7 +406,8 @@ impl GameModel {
             (pr.to_vec(), sc.to_vec())
         };
         let n = mask_n.1.iter().filter(|&&m| m).count();
-        Ok((0..n).map(|i| (durs[i], scores[i], presence[i])).collect())
+        let frames = want_frames.then(|| encoder_rows(&x_seg, &x_est, &mask_t.1));
+        Ok(((0..n).map(|i| (durs[i], scores[i], presence[i])).collect(), frames))
     }
 }
 

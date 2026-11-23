@@ -127,3 +127,8 @@ path = "src/bin/ust_dev.rs"
 [[bin]]
 name = "sona-eval-tempo"
 path = "src/bin/tempo.rs"
+
+[[bin]]
+name = "sona-eval-cellstage"
+path = "src/bin/cellstage.rs"
+required-features = ["game"]
