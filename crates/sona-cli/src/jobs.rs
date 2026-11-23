@@ -166,6 +166,10 @@ impl Queue {
         Ok(job)
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn get(&self, id: &str) -> Option<Arc<Job>> {
         lock(&self.jobs).get(id).cloned()
     }
@@ -323,7 +327,17 @@ fn to_mono_wav(job: &Job, tools: &Tools, src: &Path, dst: &Path) -> Result<(), S
     run_child(job, cmd, "ffmpeg")
 }
 
-fn downmix_wav<R: std::io::Read>(mut reader: hound::WavReader<R>, dst: &Path) -> Result<(), String> {
+fn downmix_wav<R: std::io::Read>(reader: hound::WavReader<R>, dst: &Path) -> Result<(), String> {
+    let (mono, sample_rate) = read_mono(reader)?;
+    let out_spec = hound::WavSpec { channels: 1, sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+    let mut w = hound::WavWriter::create(dst, out_spec).map_err(|e| e.to_string())?;
+    for v in mono {
+        w.write_sample(v).map_err(|e| e.to_string())?;
+    }
+    w.finalize().map_err(|e| e.to_string())
+}
+
+fn read_mono<R: std::io::Read>(mut reader: hound::WavReader<R>) -> Result<(Vec<f32>, u32), String> {
     let spec = reader.spec();
     let samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>().map_err(|e| e.to_string())?,
@@ -333,10 +347,37 @@ fn downmix_wav<R: std::io::Read>(mut reader: hound::WavReader<R>, dst: &Path) ->
         }
     };
     let ch = spec.channels.max(1) as usize;
-    let out_spec = hound::WavSpec { channels: 1, sample_rate: spec.sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-    let mut w = hound::WavWriter::create(dst, out_spec).map_err(|e| e.to_string())?;
-    for frame in samples.chunks(ch) {
-        w.write_sample(frame.iter().sum::<f32>() / frame.len() as f32).map_err(|e| e.to_string())?;
-    }
-    w.finalize().map_err(|e| e.to_string())
+    Ok((samples.chunks(ch).map(|f| f.iter().sum::<f32>() / f.len() as f32).collect(), spec.sample_rate))
 }
+
+#[cfg(feature = "spectral")]
+pub fn song_tempo(tools: &Tools, scratch: &Path, ext: &str, audio: &[u8]) -> Result<Option<f64>, String> {
+    let (mono, sr) = match hound::WavReader::new(std::io::Cursor::new(audio)) {
+        Ok(reader) => read_mono(reader)?,
+        Err(_) => {
+            fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
+            let tag = format!("tempo-{}-{}", std::process::id(), NEXT_TEMPO.fetch_add(1, Ordering::Relaxed));
+            let src = scratch.join(format!("{tag}.{ext}"));
+            let wav = scratch.join(format!("{tag}.wav"));
+            fs::write(&src, audio).map_err(|e| e.to_string())?;
+            let out = Command::new(&tools.ffmpeg)
+                .args(["-nostdin", "-loglevel", "error", "-y", "-i"])
+                .arg(&src)
+                .args(["-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le"])
+                .arg(&wav)
+                .output();
+            let decoded = match out {
+                Ok(o) if o.status.success() => hound::WavReader::open(&wav).map_err(|e| e.to_string()).and_then(read_mono),
+                Ok(o) => Err(format!("ffmpeg could not read the file: {}", String::from_utf8_lossy(&o.stderr).trim())),
+                Err(e) => Err(format!("running ffmpeg: {e}")),
+            };
+            let _ = fs::remove_file(&src);
+            let _ = fs::remove_file(&wav);
+            decoded?
+        }
+    };
+    Ok(sona_core::tempo::estimate_bpm(&mono, sr))
+}
+
+#[cfg(feature = "spectral")]
+static NEXT_TEMPO: AtomicU64 = AtomicU64::new(0);

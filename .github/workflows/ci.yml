@@ -82,3 +82,5 @@ jobs:
       - run: verification/expr-bar/check.sh
       # TLA+ model of sona serve's job queue (verification/serve-jobs, ADR-0020).
       - run: verification/serve-jobs/check.sh
+      # TLA+ model of the start screen (verification/start-flow, ADR-0022).
+      - run: verification/start-flow/check.sh

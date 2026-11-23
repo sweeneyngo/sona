@@ -39,7 +39,8 @@ import { packContour, unpackContour } from "./lib/contourStore";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
-import { PHASE_LABEL, cancelJob, fetchCapabilities, fetchJob, fetchResults, isFinal, submitJob, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
+import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJob, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
+import { phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
 import type { Annotation, Note, WorkingNote } from "./lib/annotation";
@@ -61,7 +62,6 @@ const el = {
   json: document.getElementById("json-input") as HTMLInputElement,
   audio: document.getElementById("audio-input") as HTMLInputElement,
   play: document.getElementById("play") as HTMLButtonElement,
-  stop: document.getElementById("stop") as HTMLButtonElement,
   muteStem: document.getElementById("mute-stem") as HTMLInputElement,
   muteSynth: document.getElementById("mute-synth") as HTMLInputElement,
   bpm: document.getElementById("bpm") as HTMLInputElement,
@@ -115,29 +115,49 @@ const el = {
   exprFit: document.getElementById("expr-fit") as HTMLButtonElement,
   exprReset: document.getElementById("expr-reset") as HTMLButtonElement,
   generate: document.getElementById("generate") as HTMLButtonElement,
-  generateOverlay: document.getElementById("generate-overlay") as HTMLDivElement,
-  generateClose: document.getElementById("generate-close") as HTMLButtonElement,
-  generateFile: document.getElementById("generate-file") as HTMLInputElement,
-  generateBpm: document.getElementById("generate-bpm") as HTMLInputElement,
-  generateGrid: document.getElementById("generate-grid") as HTMLSelectElement,
-  generateSeparation: document.getElementById("generate-separation") as HTMLSelectElement,
-  generateEngine: document.getElementById("generate-engine") as HTMLSelectElement,
-  generateStart: document.getElementById("generate-start") as HTMLButtonElement,
-  generateCancel: document.getElementById("generate-cancel") as HTMLButtonElement,
-  generateProgress: document.getElementById("generate-progress") as HTMLParagraphElement,
-  generateLog: document.getElementById("generate-log") as HTMLPreElement,
   openAnnotation: document.getElementById("open-annotation") as HTMLButtonElement,
   openStem: document.getElementById("open-stem") as HTMLButtonElement,
   editLyric: document.getElementById("edit-lyric") as HTMLButtonElement,
   editVibrato: document.getElementById("edit-vibrato") as HTMLButtonElement,
   editDelete: document.getElementById("edit-delete") as HTMLButtonElement,
   start: document.getElementById("start") as HTMLDivElement,
-  startGenerate: document.getElementById("start-generate") as HTMLButtonElement,
-  startGenerateNote: document.getElementById("start-generate-note") as HTMLSpanElement,
   startOpen: document.getElementById("start-open") as HTMLButtonElement,
   startResume: document.getElementById("start-resume") as HTMLButtonElement,
   startResumeDetail: document.getElementById("start-resume-detail") as HTMLSpanElement,
+  startBack: document.getElementById("start-back") as HTMLButtonElement,
+  drop: document.getElementById("drop") as HTMLLabelElement,
+  songFile: document.getElementById("song-file") as HTMLInputElement,
+  dropTitle: document.getElementById("drop-title") as HTMLElement,
+  dropSub: document.getElementById("drop-sub") as HTMLSpanElement,
+  songReady: document.getElementById("song-ready") as HTMLDivElement,
+  songName: document.getElementById("song-name") as HTMLElement,
+  songChange: document.getElementById("song-change") as HTMLButtonElement,
+  songBpm: document.getElementById("song-bpm") as HTMLInputElement,
+  songHalf: document.getElementById("song-half") as HTMLButtonElement,
+  songDouble: document.getElementById("song-double") as HTMLButtonElement,
+  songTempoNote: document.getElementById("song-tempo-note") as HTMLParagraphElement,
+  songMore: document.getElementById("song-more") as HTMLDetailsElement,
+  songGrid: document.getElementById("song-grid") as HTMLSelectElement,
+  songSeparation: document.getElementById("song-separation") as HTMLSelectElement,
+  songEngine: document.getElementById("song-engine") as HTMLSelectElement,
+  songGo: document.getElementById("song-go") as HTMLButtonElement,
+  songError: document.getElementById("song-error") as HTMLParagraphElement,
+  songRunning: document.getElementById("song-running") as HTMLDivElement,
+  songRunningName: document.getElementById("song-running-name") as HTMLElement,
+  songCancel: document.getElementById("song-cancel") as HTMLButtonElement,
+  songBar: document.getElementById("song-bar") as HTMLDivElement,
+  songPhase: document.getElementById("song-phase") as HTMLParagraphElement,
+  songLog: document.getElementById("song-log") as HTMLPreElement,
+  tempoChip: document.getElementById("tempo-chip") as HTMLButtonElement,
+  tempoChipText: document.getElementById("tempo-chip-text") as HTMLSpanElement,
+  tempoPop: document.getElementById("tempo-pop") as HTMLDivElement,
+  bpmHalf: document.getElementById("bpm-half") as HTMLButtonElement,
+  bpmDouble: document.getElementById("bpm-double") as HTMLButtonElement,
+  exprVib: document.getElementById("expr-vib") as HTMLButtonElement,
+  exprExactToggle: document.getElementById("expr-exact-toggle") as HTMLButtonElement,
+  exprExact: document.getElementById("expr-exact") as HTMLSpanElement,
 };
+for (const [k, v] of Object.entries(el)) if (!v) throw new Error(`index.html is missing the element for ${k}`);
 const ctx2d = el.canvas.getContext("2d")!;
 
 // --- Types -----------------------------------------------------------------
@@ -258,13 +278,10 @@ let playback: Playback | null = null;
 
 // --- Loading ---------------------------------------------------------------
 
-function loadAnnotationJson(parsed: unknown, name: string): boolean {
+function loadAnnotationJson(parsed: unknown, stemFollows = false): boolean {
   try {
     const session = applyLoadedJson(parsed);
-    setStatus(
-      `Loaded ${session ? "session" : "annotation"}: ${workingNotes.length} notes from “${name}”.` +
-        (audioBuffer ? "" : " Next: File → Open stem audio… to hear it."),
-    );
+    setStatus(`${workingNotes.length} notes` + (session || audioBuffer || stemFollows ? "" : " · File → Open stem audio to hear them"));
     dirty = false; // a freshly loaded file is not unsaved work
     return true;
   } catch (err) {
@@ -286,7 +303,7 @@ el.json.addEventListener("change", async () => {
     setStatus(`Could not read annotation JSON: ${(err as Error).message}`, true);
     return;
   }
-  loadAnnotationJson(parsed, file.name);
+  loadAnnotationJson(parsed);
 });
 
 /**
@@ -339,10 +356,10 @@ function applyLoadedJson(parsed: any): boolean {
   return !!(session && typeof session === "object");
 }
 
-async function loadStemBytes(bytes: ArrayBuffer, name: string): Promise<void> {
+async function loadStemBytes(bytes: ArrayBuffer): Promise<void> {
   try {
     audioBuffer = await ensureAudioContext().decodeAudioData(bytes);
-    setStatus(`Loaded stem “${name}” (${audioBuffer.duration.toFixed(2)} s).`);
+    setStatus(`Audio loaded`);
     rebuild();
   } catch (err) {
     audioBuffer = null;
@@ -353,7 +370,7 @@ async function loadStemBytes(bytes: ArrayBuffer, name: string): Promise<void> {
 
 el.audio.addEventListener("change", async () => {
   const file = el.audio.files?.[0];
-  if (file) await loadStemBytes(await file.arrayBuffer(), file.name);
+  if (file) await loadStemBytes(await file.arrayBuffer());
 });
 
 /**
@@ -569,20 +586,54 @@ function resetView(): void {
 
 // --- Toolbar controls -------------------------------------------------------
 
-el.bpm.addEventListener("input", () => {
-  const v = Number(el.bpm.value);
-  if (v > 0 && Number.isFinite(v)) {
-    bpm = v;
-    invalidateEffective();
-    markDirty();
-    redraw();
-  }
-});
+function setBpm(v: number): void {
+  if (!(v > 0 && Number.isFinite(v))) return;
+  bpm = v;
+  invalidateEffective();
+  markDirty();
+  syncTempoChip();
+  redraw();
+}
+
+el.bpm.addEventListener("input", () => setBpm(Number(el.bpm.value)));
 el.division.addEventListener("change", () => {
   division = Number(el.division.value);
   invalidateEffective();
   markDirty();
+  syncTempoChip();
   redraw();
+});
+
+function syncTempoChip(): void {
+  const grid = el.division.selectedOptions[0]?.textContent ?? `1/${division}`;
+  el.tempoChipText.textContent = `${Math.round(bpm * 10) / 10} · ${grid}`;
+}
+
+function setTempoPop(open: boolean): void {
+  el.tempoPop.hidden = !open;
+  el.tempoChip.setAttribute("aria-expanded", String(open));
+  if (open) el.bpm.focus();
+}
+
+function scaleBpm(k: number): void {
+  const v = Math.round(bpm * k * 10) / 10;
+  if (!(v >= 20 && v <= 400)) return;
+  el.bpm.value = String(v);
+  setBpm(v);
+}
+
+el.tempoChip.addEventListener("click", () => setTempoPop(el.tempoPop.hidden));
+el.bpmHalf.addEventListener("click", () => scaleBpm(0.5));
+el.bpmDouble.addEventListener("click", () => scaleBpm(2));
+el.tempoPop.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    setTempoPop(false);
+    el.tempoChip.focus();
+  }
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!el.tempoPop.hidden && !(e.target as Element).closest(".tempo")) setTempoPop(false);
 });
 el.flag.addEventListener("input", () => {
   flagThreshold = Number(el.flag.value);
@@ -608,12 +659,11 @@ function setModal(overlay: HTMLElement, open: boolean): void {
     el.settingsOverlay.hidden = true;
     el.changesOverlay.hidden = true;
     el.lyricsOverlay.hidden = true;
-    el.generateOverlay.hidden = true;
   }
   overlay.hidden = !open;
 }
 function anyModalOpen(): boolean {
-  return [el.helpOverlay, el.settingsOverlay, el.changesOverlay, el.lyricsOverlay, el.generateOverlay].some((o) => !o.hidden);
+  return [el.helpOverlay, el.settingsOverlay, el.changesOverlay, el.lyricsOverlay].some((o) => !o.hidden);
 }
 
 el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
@@ -692,8 +742,13 @@ function rebuild(): void {
   updateKeyReadout();
   updateCorrectionReadout();
   draw();
-  el.play.disabled = !(annotation && audioBuffer) || !!playback;
-  el.stop.disabled = !playback;
+  syncPlayButton();
+  el.tempoChip.disabled = !annotation;
+  el.play.hidden = !annotation;
+  el.tempoChip.hidden = !annotation;
+  syncTempoChip();
+  el.start.hidden = !!annotation && !startShown;
+  el.startBack.hidden = !annotation;
   el.export.disabled = !annotation;
   el.exportUst.disabled = !annotation;
   el.exportUstx.disabled = !annotation;
@@ -702,7 +757,6 @@ function rebuild(): void {
   if (el.pitchPen.disabled) el.pitchPen.checked = false;
   el.lyrics.disabled = !annotation;
   el.fitPitch.disabled = !annotation || !annotation.f0_contour.length;
-  el.start.hidden = !!annotation;
   syncExprBar();
   el.save.disabled = !annotation;
 }
@@ -1331,7 +1385,6 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     setModal(el.settingsOverlay, false);
     setModal(el.changesOverlay, false);
     setModal(el.lyricsOverlay, false);
-    setModal(el.generateOverlay, false);
     e.preventDefault();
     return;
   }
@@ -1375,7 +1428,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     case "P":
       if (!annotation?.f0_contour.length) return;
       el.pitchPen.checked = !el.pitchPen.checked;
-      setStatus(el.pitchPen.checked ? "Pitch pen on: drag to redraw the white line, Alt-drag to erase it. P to turn it off." : "Pitch pen off.");
+      setStatus(el.pitchPen.checked ? "Pen: drag to draw · Alt-drag to erase" : "Pen off");
       e.preventDefault();
       break;
     case "v":
@@ -1567,7 +1620,7 @@ function saveSession(): void {
   if (!annotation) return;
   download(JSON.stringify(buildSessionFile()), "sona-session.json", "application/json");
   dirty = false;
-  setStatus(`Saved session: ${workingNotes.length} notes → sona-session.json.`);
+  setStatus("Saved");
 }
 
 // --- Autosave (localStorage) ------------------------------------------------
@@ -1598,7 +1651,7 @@ function autosave(): void {
     } catch {
       try {
         write({ savedAt, file: { ...file, f0_contour: [], energy_envelope: [] }, lite: true });
-        setStatus("Autosaved without the pitch line (browser storage is full): use File → Save session to keep pen edits.", true);
+        setStatus("Storage full: pen edits not autosaved · File → Save session", true);
         dirty = false;
         return;
       } catch {
@@ -1607,7 +1660,7 @@ function autosave(): void {
     }
   }
   dirty = false;
-  setStatus(`Autosaved ${new Date(savedAt).toLocaleTimeString()} · ${workingNotes.length} notes.`);
+  setStatus(`Autosaved ${new Date(savedAt).toLocaleTimeString()}`);
 }
 
 /** Restore the last autosaved session on startup, if one exists. */
@@ -1639,9 +1692,7 @@ function restoreAutosave(): void {
     applyLoadedJson(record.file);
     dirty = false;
     const when = record.savedAt ? new Date(record.savedAt).toLocaleString() : "earlier";
-    setStatus(
-      `Restored autosave (${workingNotes.length} notes) from ${when}. Re-load the stem to play.`,
-    );
+    setStatus(`Resumed (${when}) · File → Open stem audio to hear it`);
   } catch (err) {
     console.error("sona: could not restore autosave", err);
   }
@@ -1689,7 +1740,7 @@ function exportMidi(): void {
   if (!annotation) return;
   const notes = midiNotes();
   download(encodeMidiFile(notes, { bpm }) as BlobPart, "sona.mid", "audio/midi");
-  setStatus(`Exported ${notes.length} notes to sona.mid at ${bpm} BPM.`);
+  setStatus("Exported sona.mid");
 }
 
 function notesInTimeOrder(): WorkingNote[] {
@@ -1705,7 +1756,7 @@ function exportSequence() {
 }
 
 function shiftNote(shiftS: number): string {
-  return shiftS > 0.0005 ? ` Notes moved ${Math.round(shiftS * 1000)} ms earlier onto the editor's grid.` : "";
+  return shiftS > 0.0005 ? ` · shifted ${Math.round(shiftS * 1000)} ms onto the grid` : "";
 }
 
 function exportUst(): void {
@@ -1713,14 +1764,14 @@ function exportUst(): void {
   const seq = exportSequence();
   const { bytes, encoding } = encodeUst(seq, { bpm, projectName: "sona" });
   download(bytes as BlobPart, "sona.ust", "text/plain");
-  setStatus(`Exported ${seq.notes.length} notes to sona.ust (${encoding === "shift_jis" ? "Shift-JIS" : "UTF-8"}) at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ust${encoding === "shift_jis" ? "" : " (UTF-8)"}${shiftNote(seq.shiftS)}`);
 }
 
 function exportUstx(): void {
   if (!annotation) return;
   const seq = exportSequence();
   download(ustxText(seq, { bpm, name: "sona" }), "sona.ustx", "text/yaml");
-  setStatus(`Exported ${seq.notes.length} notes to sona.ustx at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ustx${shiftNote(seq.shiftS)}`);
 }
 
 el.exportUst.addEventListener("click", exportUst);
@@ -1735,7 +1786,7 @@ function exportUstxSung(): void {
     ticksPerSecond: (bpm / 60) * TICKS_PER_QUARTER,
   });
   download(ustxText(seq, { bpm, name: "sona", curves: [{ ...curve, abbr: "pitd" }] }), "sona.ustx", "text/yaml");
-  setStatus(`Exported ${seq.notes.length} notes to sona.ustx with the singer's pitch (${curve.xs.length} curve points) at ${bpm} BPM.${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ustx with the singer's pitch${shiftNote(seq.shiftS)}`);
 }
 
 let lyricTarget: WorkingNote | null = null;
@@ -1825,10 +1876,7 @@ function fillLyrics(from: WorkingNote | null): void {
   markDirty();
   setModal(el.lyricsOverlay, false);
   redraw();
-  setStatus(
-    `Filled ${assigned.size} notes with lyrics` +
-      (leftover ? `; ${leftover} token${leftover === 1 ? "" : "s"} left over (more tokens than notes).` : "."),
-  );
+  setStatus(`Lyrics on ${assigned.size} notes` + (leftover ? ` · ${leftover} left over` : ""));
 }
 
 el.lyrics.addEventListener("click", () => {
@@ -1848,7 +1896,7 @@ el.lyricsClear.addEventListener("click", () => {
   markDirty();
   setModal(el.lyricsOverlay, false);
   redraw();
-  setStatus("Cleared all lyrics.");
+  setStatus("Lyrics cleared");
 });
 
 function renderNotes(from: EffectiveNote[]): RenderNote[] {
@@ -2005,7 +2053,7 @@ function fitAll(only?: WorkingNote): void {
   });
   markDirty();
   redraw();
-  setStatus(only ? "Fitted the selected note's pitch." : `Fitted pitch: ${glides} glides, ${vibratos} vibratos across ${effs.length} notes.`);
+  setStatus(only ? "Pitch fitted" : `Pitch fitted · ${glides} glides · ${vibratos} vibratos`);
 }
 
 function exprOf(note: WorkingNote): Expression {
@@ -2042,6 +2090,7 @@ function syncExprBar(): void {
   el.glideEnd.value = String(ex.points[1]?.x ?? 0);
   const v = ex.vibrato;
   el.vibOn.checked = !!v;
+  el.exprVib.setAttribute("aria-pressed", String(!!v));
   const shown = v ?? DEFAULT_VIBRATO;
   el.vibDepth.value = String(shown.depth);
   el.vibPeriod.value = String(shown.period);
@@ -2088,6 +2137,11 @@ for (const input of [el.glideStart, el.glideEnd, el.vibOn, el.vibDepth, el.vibPe
 }
 el.fitPitch.addEventListener("click", () => fitAll());
 el.showCurve.addEventListener("change", () => redraw());
+el.exprVib.addEventListener("click", () => selectedNote && toggleVibrato(selectedNote));
+el.exprExactToggle.addEventListener("click", () => {
+  el.exprExact.hidden = !el.exprExact.hidden;
+  el.exprExactToggle.setAttribute("aria-expanded", String(!el.exprExact.hidden));
+});
 el.exprFit.addEventListener("click", () => selectedNote && fitAll(selectedNote));
 el.exprReset.addEventListener("click", () => {
   if (!selectedNote) return;
@@ -2098,8 +2152,10 @@ el.exprReset.addEventListener("click", () => {
 
 let openMenu: HTMLElement | null = null;
 
-const menuItems = (menu: HTMLElement): HTMLButtonElement[] =>
-  Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).filter((b) => !b.disabled);
+const menuItems = (menu: HTMLElement): HTMLElement[] =>
+  Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')).filter(
+    (b) => !(b instanceof HTMLButtonElement ? b.disabled : b.querySelector("input")?.disabled),
+  );
 
 function closeMenu(focusButton = false): void {
   if (!openMenu) return;
@@ -2135,7 +2191,14 @@ for (const menu of Array.from(document.querySelectorAll<HTMLElement>(".menu"))) 
   menu.addEventListener("keydown", (e) => {
     if (openMenu !== menu) return;
     const items = menuItems(menu);
-    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const active = document.activeElement as HTMLElement | null;
+    if ((e.key === "Enter" || e.key === " ") && active?.getAttribute("role") === "menuitemcheckbox") {
+      e.preventDefault();
+      e.stopPropagation();
+      active.querySelector("input")?.click();
+      return;
+    }
     const go = (k: number) => items[(k + items.length) % items.length]?.focus();
     if (e.key === "ArrowDown") go(i + 1);
     else if (e.key === "ArrowUp") go(i < 0 ? -1 : i - 1);
@@ -2167,100 +2230,139 @@ el.openStem.addEventListener("click", () => el.audio.click());
 el.editLyric.addEventListener("click", () => selectedNote && openLyricEditor(selectedNote));
 el.editVibrato.addEventListener("click", () => selectedNote && toggleVibrato(selectedNote));
 el.editDelete.addEventListener("click", deleteSelectedNote);
-el.startGenerate.addEventListener("click", () => void openGenerate());
 el.startOpen.addEventListener("click", () => el.json.click());
 el.startResume.addEventListener("click", () => {
   restoreAutosave();
   el.startResume.hidden = true;
 });
-void fetchCapabilities()
-  .then((caps) => {
-    el.startGenerateNote.textContent = caps.separation.lead ? "" : "Separation isn't set up: stems only.";
-  })
-  .catch(() => {
-    el.startGenerateNote.textContent = "Needs the app opened from `sona serve`.";
-  });
 
-let activeJob: string | null = null;
+let startShown = false;
+let startState: StartState = { kind: "idle", error: null };
+let serveCaps: Capabilities | null = null;
+let songBlob: File | null = null;
+let songCounter = 0;
 let pollTimer: number | null = null;
 
-function setGenerating(running: boolean): void {
-  el.generateStart.disabled = running;
-  el.generateCancel.disabled = !running;
-  for (const c of [el.generateFile, el.generateBpm, el.generateGrid, el.generateSeparation, el.generateEngine]) c.disabled = running;
+function dispatchStart(e: StartEvent): void {
+  startState = startStep(startState, e);
+  renderStart();
 }
 
-function showJob(s: JobStatus): void {
-  el.generateProgress.textContent = `${PHASE_LABEL[s.phase]} · ${Math.round(s.elapsedS)} s` + (s.error ? ` — ${s.error}` : "");
-  el.generateLog.hidden = s.log.length === 0;
-  el.generateLog.textContent = s.log.join("\n");
+function renderStart(): void {
+  const s = startState;
+  const unavailable = s.kind === "unavailable";
+  el.drop.hidden = s.kind === "ready" || s.kind === "running";
+  el.drop.classList.toggle("disabled", unavailable);
+  el.songFile.disabled = unavailable;
+  el.dropTitle.textContent = unavailable ? "Start sona serve to transcribe" : s.kind === "detecting" ? s.name : "Drop a song";
+  el.dropSub.textContent = unavailable ? "" : s.kind === "detecting" ? "Finding the tempo…" : s.kind === "idle" && s.error ? s.error : "or click to choose";
+  el.songReady.hidden = s.kind !== "ready";
+  if (s.kind === "ready") {
+    el.songName.textContent = s.name;
+    if (document.activeElement !== el.songBpm) el.songBpm.value = s.bpm === null ? "" : String(s.bpm);
+    el.songHalf.disabled = el.songDouble.disabled = !usableBpm(s.bpm);
+    el.songTempoNote.hidden = s.detected !== null;
+    el.songTempoNote.textContent = "No steady beat found: type the tempo.";
+    el.songError.hidden = !s.error;
+    el.songError.textContent = s.error ?? "";
+  }
+  el.songRunning.hidden = s.kind !== "running";
+  if (s.kind === "running") {
+    el.songRunningName.textContent = s.name;
+    el.songPhase.textContent = s.job === null ? "Uploading…" : `${PHASE_LABEL[s.phase]} · ${Math.round(s.elapsedS)} s`;
+    el.songBpm.blur();
+    el.songBar.style.width = `${Math.max(4, phaseProgress(s.phase, el.songSeparation.value as Separation) * 100)}%`;
+    el.songLog.textContent = s.log.join("\n") || "Nothing logged yet.";
+  }
 }
 
-async function openGenerate(): Promise<void> {
-  setModal(el.generateOverlay, true);
-  if (activeJob) return;
-  el.generateBpm.value = String(bpm);
-  try {
-    const caps = await fetchCapabilities();
-    for (const opt of Array.from(el.generateSeparation.options)) opt.disabled = !caps.separation[opt.value as Separation];
-    for (const opt of Array.from(el.generateEngine.options)) opt.disabled = !caps.engines[opt.value as Engine];
-    for (const sel of [el.generateSeparation, el.generateEngine]) {
-      if (sel.selectedOptions[0]?.disabled) sel.value = Array.from(sel.options).find((o) => !o.disabled)?.value ?? sel.value;
+function showStart(show: boolean): void {
+  startShown = show;
+  if (show && startState.kind === "loaded") dispatchStart({ type: "start-over" });
+  rebuild();
+}
+
+function applyCapabilities(caps: Capabilities): void {
+  serveCaps = caps;
+  const d = defaultJob(caps);
+  for (const opt of Array.from(el.songSeparation.options)) opt.disabled = !caps.separation[opt.value as Separation];
+  for (const opt of Array.from(el.songEngine.options)) opt.disabled = !caps.engines[opt.value as Engine];
+  el.songSeparation.value = d.separation;
+  el.songEngine.value = d.engine;
+  dispatchStart({ type: "serve-found" });
+}
+
+async function chooseSong(file: File): Promise<void> {
+  if (startState.kind === "running" || startState.kind === "unavailable") return;
+  const song = ++songCounter;
+  songBlob = file;
+  dispatchStart({ type: "choose", song, name: file.name });
+  let found: number | null = null;
+  if (serveCaps?.tempo) {
+    try {
+      found = await fetchTempo(file, file.name);
+    } catch {
+      found = null;
     }
-    el.generateStart.disabled = false;
-    el.generateProgress.textContent = caps.separation.lead ? "" : "Separation isn't set up on this server: only stems can be transcribed.";
+  }
+  dispatchStart({ type: "tempo", song, bpm: found });
+}
+
+let attempts = 0;
+
+const awaitingJob = (attempt: number): boolean => startState.kind === "running" && startState.attempt === attempt && startState.job === null;
+const watching = (job: string): boolean => startState.kind === "running" && startState.job === job;
+
+async function transcribeSong(): Promise<void> {
+  const attempt = ++attempts;
+  dispatchStart({ type: "transcribe", attempt });
+  const s = startState;
+  if (!awaitingJob(attempt) || s.kind !== "running" || !songBlob) return;
+  const grid = el.songGrid.value === "24" ? 24 : 16;
+  try {
+    const job = await submitJob({ bpm: s.bpm, grid, separation: el.songSeparation.value as Separation, engine: el.songEngine.value as Engine, name: s.name }, songBlob);
+    if (!awaitingJob(attempt)) {
+      await cancelJob(job.id).catch(() => undefined);
+      return;
+    }
+    dispatchStart({ type: "submitted", attempt, job: job.id });
+    showJobProgress(job);
+    pollJob(job.id, s.bpm, grid);
   } catch (err) {
-    el.generateStart.disabled = true;
-    el.generateProgress.textContent = (err as Error).message;
+    dispatchStart({ type: "failed-to-submit", attempt, message: (err as Error).message });
   }
 }
 
-async function startGenerate(): Promise<void> {
-  const file = el.generateFile.files?.[0];
-  const bpmIn = Number(el.generateBpm.value);
-  if (!file) return void (el.generateProgress.textContent = "Pick an audio file first.");
-  if (!(bpmIn > 0 && bpmIn <= 400)) return void (el.generateProgress.textContent = "Set the song's BPM (it fixes the grid).");
-  const grid = el.generateGrid.value === "24" ? 24 : 16;
-  setGenerating(true);
-  try {
-    const job = await submitJob(
-      { bpm: bpmIn, grid, separation: el.generateSeparation.value as Separation, engine: el.generateEngine.value as Engine, name: file.name },
-      file,
-    );
-    activeJob = job.id;
-    showJob(job);
-    pollJob(job.id, bpmIn, grid);
-  } catch (err) {
-    setGenerating(false);
-    el.generateProgress.textContent = (err as Error).message;
-  }
+function showJobProgress(j: JobStatus): void {
+  dispatchStart({ type: "progress", job: j.id, phase: j.phase, elapsedS: j.elapsedS, log: j.log, error: j.error });
 }
 
 function pollJob(id: string, jobBpm: number, grid: number): void {
   pollTimer = window.setTimeout(async () => {
-    if (activeJob !== id) return;
+    if (startState.kind !== "running" || startState.job !== id) return;
     try {
-      const s = await fetchJob(id);
-      showJob(s);
-      if (!isFinal(s.phase)) return pollJob(id, jobBpm, grid);
-      activeJob = null;
-      setGenerating(false);
-      if (s.phase === "done") await loadJobResults(s, jobBpm, grid);
+      const j = await fetchJob(id);
+      if (!watching(id)) return;
+      showJobProgress(j);
+      if (!isFinal(j.phase)) return pollJob(id, jobBpm, grid);
+      if (j.phase === "done") await loadJobResults(j, jobBpm, grid);
     } catch (err) {
-      activeJob = null;
-      setGenerating(false);
-      el.generateProgress.textContent = (err as Error).message;
+      dispatchStart({ type: "progress", job: id, phase: "failed", elapsedS: 0, log: [], error: (err as Error).message });
     }
   }, 1000);
 }
 
-async function loadJobResults(s: JobStatus, jobBpm: number, grid: number): Promise<void> {
-  if (dirty && !window.confirm(`Replace the current notes with the ones generated from “${s.name}”? Your unsaved edits stay in the autosave.`)) {
-    el.generateProgress.textContent = "Done. The results are on the server; start the job again to load them.";
+async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promise<void> {
+  if (dirty && !window.confirm(`Replace the current notes with the ones from “${j.name}”? Your unsaved edits stay in the autosave.`)) {
+    dispatchStart({ type: "progress", job: j.id, phase: "cancelled", elapsedS: j.elapsedS, log: j.log, error: null });
     return;
   }
-  const { annotation: ann, stem } = await fetchResults(s.id);
-  if (!loadAnnotationJson(ann, s.name)) return;
+  const { annotation: ann, stem } = await fetchResults(j.id);
+  if (!watching(j.id)) return;
+  if (!loadAnnotationJson(ann, true)) {
+    dispatchStart({ type: "progress", job: j.id, phase: "failed", elapsedS: j.elapsedS, log: j.log, error: "the result couldn't be read" });
+    return;
+  }
   bpm = jobBpm;
   el.bpm.value = String(jobBpm);
   if (Array.from(el.division.options).some((o) => o.value === String(grid))) {
@@ -2268,29 +2370,59 @@ async function loadJobResults(s: JobStatus, jobBpm: number, grid: number): Promi
     el.division.value = String(grid);
   }
   invalidateEffective();
-  await loadStemBytes(stem, s.name);
-  setModal(el.generateOverlay, false);
-  setStatus(`Generated from “${s.name}”: ${workingNotes.length} notes and the stem are loaded.`);
+  await loadStemBytes(stem);
+  fitAll();
+  dispatchStart({ type: "results-loaded", job: j.id });
+  startShown = false;
+  rebuild();
+  setStatus(`${workingNotes.length} notes`);
 }
 
-el.generate.addEventListener("click", () => void openGenerate());
-el.generateClose.addEventListener("click", () => setModal(el.generateOverlay, false));
-el.generateOverlay.addEventListener("click", (e) => {
-  if (e.target === el.generateOverlay) setModal(el.generateOverlay, false);
+el.songFile.addEventListener("change", () => {
+  const f = el.songFile.files?.[0];
+  el.songFile.value = "";
+  if (f) void chooseSong(f);
 });
-el.generateStart.addEventListener("click", () => void startGenerate());
-el.generateCancel.addEventListener("click", async () => {
-  if (!activeJob) return;
-  const id = activeJob;
-  activeJob = null;
-  if (pollTimer !== null) window.clearTimeout(pollTimer);
-  setGenerating(false);
-  try {
-    showJob(await cancelJob(id));
-  } catch (err) {
-    el.generateProgress.textContent = (err as Error).message;
+for (const t of ["dragenter", "dragover"] as const) {
+  el.drop.addEventListener(t, (e) => {
+    e.preventDefault();
+    if (startState.kind !== "unavailable") el.drop.classList.add("over");
+  });
+}
+for (const t of ["dragleave", "drop"] as const) el.drop.addEventListener(t, () => el.drop.classList.remove("over"));
+el.drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer?.files[0];
+  if (f) void chooseSong(f);
+});
+el.drop.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && !el.songFile.disabled) {
+    e.preventDefault();
+    el.songFile.click();
   }
 });
+el.songChange.addEventListener("click", () => dispatchStart({ type: "start-over" }));
+el.songBpm.addEventListener("input", () => dispatchStart({ type: "set-bpm", bpm: el.songBpm.value === "" ? null : Number(el.songBpm.value) }));
+el.songHalf.addEventListener("click", () => dispatchStart({ type: "halve" }));
+el.songDouble.addEventListener("click", () => dispatchStart({ type: "double" }));
+el.songGo.addEventListener("click", () => void transcribeSong());
+el.songBpm.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") void transcribeSong();
+});
+el.songCancel.addEventListener("click", async () => {
+  const s = startState;
+  if (s.kind !== "running") return;
+  if (pollTimer !== null) window.clearTimeout(pollTimer);
+  dispatchStart({ type: "cancel" });
+  if (s.job) await cancelJob(s.job).catch(() => undefined);
+});
+el.generate.addEventListener("click", () => showStart(true));
+el.startBack.addEventListener("click", () => showStart(false));
+
+void fetchCapabilities()
+  .then(applyCapabilities)
+  .catch(() => dispatchStart({ type: "serve-missing", reason: "no sona serve" }));
+renderStart();
 
 // --- Playback ---------------------------------------------------------------
 
@@ -2299,13 +2431,14 @@ function ensureAudioContext(): AudioContext {
   return audioCtx;
 }
 
-el.play.addEventListener("click", () => {
-  if (!annotation || !audioBuffer || playback) return;
-  startPlayback();
-});
-// The transport's "stop" is a pause: it halts audio and leaves the playhead
-// where it was, so the next Play resumes from there.
-el.stop.addEventListener("click", () => stopPlayback());
+el.play.addEventListener("click", () => togglePlay());
+
+function syncPlayButton(): void {
+  el.play.disabled = !(annotation && audioBuffer);
+  el.play.textContent = playback ? "⏸" : "▶";
+  el.play.setAttribute("aria-label", playback ? "Pause" : "Play");
+  el.play.title = playback ? "Pause (Space)" : "Play (Space)";
+}
 
 /** Space toggles play/pause. */
 function togglePlay(): void {
@@ -2355,8 +2488,7 @@ function startPlayback(): void {
     if (playback && playback.stemSource === stemSource) stopPlayback(true);
   };
 
-  el.play.disabled = true;
-  el.stop.disabled = false;
+  syncPlayButton();
   tickPlayhead();
 }
 
@@ -2424,8 +2556,7 @@ function stopPlayback(resetSeek = false): void {
   }
   cancelAnimationFrame(p.raf);
   seekOffset = resetSeek ? 0 : Math.min(pos, totalDuration());
-  el.play.disabled = !(annotation && audioBuffer);
-  el.stop.disabled = true;
+  syncPlayButton();
   draw();
 }
 

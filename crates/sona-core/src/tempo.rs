@@ -18,15 +18,14 @@ const TREND_FRAMES: usize = 16;
 const SEARCH_STEPS: usize = 1200;
 const REFINE_SPAN: f64 = 0.015;
 const REFINE_STEPS: usize = 61;
-/// Long songs are read from 20 s to 140 s: past the intro, long enough for a stable pulse.
-const SKIP_S: f64 = 20.0;
+const INTRO_S: f64 = 20.0;
 const READ_S: f64 = 120.0;
 
 /// The tempo in BPM, or `None` when there is too little audio to hear a pulse.
 pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> Option<f64> {
     let sr = f64::from(sample_rate);
-    let excerpt = if samples.len() as f64 > (SKIP_S + READ_S) * sr {
-        let a = (SKIP_S * sr) as usize;
+    let excerpt = if samples.len() as f64 > (INTRO_S + READ_S) * sr {
+        let a = (INTRO_S * sr) as usize;
         &samples[a..a + (READ_S * sr) as usize]
     } else {
         samples
@@ -58,7 +57,6 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> Option<f64> {
         .map(|(bpm, _)| bpm)
 }
 
-/// Half-wave-rectified log-magnitude flux, with its slow trend removed.
 fn novelty(x: &[f32]) -> Vec<f64> {
     if x.len() < N_FFT + HOP {
         return Vec::new();
@@ -83,15 +81,20 @@ fn novelty(x: &[f32]) -> Vec<f64> {
         }
         prev = log;
     }
-    // A centred moving mean over TREND_FRAMES frames (zero beyond the edges), as numpy's `convolve(..., "same")`.
-    let n = flux.len();
-    let half = TREND_FRAMES / 2;
-    (0..n)
+    let trend = moving_mean(&flux, TREND_FRAMES);
+    flux.iter().zip(trend).map(|(f, t)| (f - t).max(0.0)).collect()
+}
+
+/// The mean over a `width`-frame window from `i - width/2 + 1` to `i + width/2`, counting frames past
+/// either end as zero. (numpy's `convolve(x, ones(w)/w, "same")` centres one frame earlier; the measured
+/// numbers in ADR-0022 are for this window.)
+fn moving_mean(x: &[f64], width: usize) -> Vec<f64> {
+    let half = width / 2;
+    (0..x.len())
         .map(|i| {
             let a = i.saturating_sub(half - 1);
-            let b = (i + half).min(n - 1);
-            let mean = flux[a..=b].iter().sum::<f64>() / TREND_FRAMES as f64;
-            (flux[i] - mean).max(0.0)
+            let b = (i + half).min(x.len() - 1);
+            x[a..=b].iter().sum::<f64>() / width as f64
         })
         .collect()
 }
@@ -119,7 +122,6 @@ fn interp(ac: &[f64], at: f64) -> f64 {
 mod tests {
     use super::*;
 
-    /// Kick on every beat, hat on every 8th, at `bpm`, with a little noise.
     fn click_track(bpm: f64, seconds: f64, sr: u32) -> Vec<f32> {
         let n = (seconds * f64::from(sr)) as usize;
         let mut x = vec![0.0f32; n];

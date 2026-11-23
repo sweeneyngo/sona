@@ -5,6 +5,7 @@ export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-le
 export interface Capabilities {
   separation: Record<Separation, boolean>;
   engines: Record<Engine, boolean>;
+  tempo: boolean;
 }
 
 export interface JobStatus {
@@ -32,11 +33,11 @@ const FINAL: readonly Phase[] = ["done", "failed", "cancelled"];
 export const isFinal = (p: Phase): boolean => FINAL.includes(p);
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  queued: "Waiting for the previous job",
-  decoding: "Reading the audio",
-  "separating-vocals": "Separating the vocals (demucs)",
-  "separating-lead": "Separating the lead vocal (UVR karaoke)",
-  transcribing: "Transcribing notes",
+  queued: "Waiting",
+  decoding: "Reading audio",
+  "separating-vocals": "Separating vocals",
+  "separating-lead": "Isolating the lead",
+  transcribing: "Writing notes",
   done: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -54,7 +55,7 @@ function bools<K extends string>(v: unknown, keys: readonly K[]): Record<K, bool
 
 export function parseCapabilities(v: unknown): Capabilities {
   const o = record(v);
-  return { separation: bools(o.separation, ["none", "vocals", "lead"] as const), engines: bools(o.engines, ["pyin", "game"] as const) };
+  return { separation: bools(o.separation, ["none", "vocals", "lead"] as const), engines: bools(o.engines, ["pyin", "game"] as const), tempo: o.tempo === true };
 }
 
 export function parseJobStatus(v: unknown): JobStatus {
@@ -95,6 +96,16 @@ export const fetchCapabilities = async (): Promise<Capabilities> => parseCapabil
 export const fetchJob = async (id: string): Promise<JobStatus> => parseJobStatus(await call(`/api/jobs/${encodeURIComponent(id)}`));
 export const cancelJob = async (id: string): Promise<JobStatus> => parseJobStatus(await call(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }));
 export const submitJob = async (r: JobRequest, audio: Blob): Promise<JobStatus> => parseJobStatus(await call(jobQuery(r), { method: "POST", body: audio }));
+
+export async function fetchTempo(audio: Blob, name: string): Promise<number | null> {
+  const o = record(await call(`/api/tempo?${new URLSearchParams({ name }).toString()}`, { method: "POST", body: audio }));
+  return typeof o.bpm === "number" && Number.isFinite(o.bpm) ? o.bpm : null;
+}
+
+export function defaultJob(caps: Capabilities): { separation: Separation; engine: Engine } {
+  const separation: Separation = caps.separation.lead ? "lead" : caps.separation.vocals ? "vocals" : "none";
+  return { separation, engine: caps.engines.game ? "game" : "pyin" };
+}
 
 export async function fetchResults(id: string): Promise<{ annotation: unknown; stem: ArrayBuffer }> {
   const base = `/api/jobs/${encodeURIComponent(id)}`;

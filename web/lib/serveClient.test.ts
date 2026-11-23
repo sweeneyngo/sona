@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { ServeError, isFinal, jobQuery, parseCapabilities, parseJobStatus } from "./serveClient";
+import { ServeError, defaultJob, isFinal, jobQuery, parseCapabilities, parseJobStatus } from "./serveClient";
 
 describe("serve client boundary", () => {
   it("parses capabilities, treating anything but true as unavailable", () => {
     expect(parseCapabilities({ separation: { none: true, vocals: true, lead: "yes" }, engines: { pyin: true } })).toEqual({
       separation: { none: true, vocals: true, lead: false },
       engines: { pyin: true, game: false },
+      tempo: false,
     });
+    expect(parseCapabilities({ separation: {}, engines: {}, tempo: true }).tempo).toBe(true);
     expect(() => parseCapabilities(null)).toThrow(ServeError);
+  });
+
+  it("defaults a job to the best separation and engine the server has", () => {
+    const caps = (lead: boolean, vocals: boolean, game: boolean) => ({ separation: { none: true, vocals, lead }, engines: { pyin: true, game }, tempo: true });
+    expect(defaultJob(caps(true, true, true))).toEqual({ separation: "lead", engine: "game" });
+    expect(defaultJob(caps(false, true, false))).toEqual({ separation: "vocals", engine: "pyin" });
+    expect(defaultJob(caps(false, false, false))).toEqual({ separation: "none", engine: "pyin" });
   });
 
   it("parses a job status and rejects unknown phases", () => {

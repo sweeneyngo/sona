@@ -104,6 +104,7 @@ impl Server {
         serde_json::json!({
             "separation": { "none": true, "vocals": demucs, "lead": lead },
             "engines": { "pyin": true, "game": game },
+            "tempo": cfg!(feature = "spectral"),
         })
     }
 
@@ -117,6 +118,7 @@ impl Server {
         match (req.method.as_str(), parts.as_slice()) {
             ("GET", ["api", "capabilities"]) => Ok(Response::json(200, &self.capabilities())),
             ("POST", ["api", "jobs"]) => self.create_job(req),
+            ("POST", ["api", "tempo"]) => self.tempo(req),
             ("GET", ["api", "jobs", id]) => {
                 let job = self.job(id)?;
                 Ok(Response::json(200, &job_status(&job)))
@@ -164,9 +166,24 @@ impl Server {
         if req.body.is_empty() {
             return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
         }
-        let ext = Path::new(&spec.name).extension().and_then(|e| e.to_str()).filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("bin").to_ascii_lowercase();
+        let ext = upload_ext(&spec.name);
         let job = self.queue.submit(spec, &ext, &req.body).map_err(|e| HttpError { status: 500, message: e.to_string() })?;
         Ok(Response::json(201, &job_status(&job)))
+    }
+
+    #[cfg(feature = "spectral")]
+    fn tempo(&self, req: &Request) -> Result<Response, HttpError> {
+        if req.body.is_empty() {
+            return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
+        }
+        let ext = upload_ext(req.param("name").unwrap_or("upload.wav"));
+        let bpm = crate::jobs::song_tempo(&self.tools, &self.queue.root().join("scratch"), &ext, &req.body).map_err(|message| HttpError { status: 422, message })?;
+        Ok(Response::json(200, &serde_json::json!({ "bpm": bpm.map(|b| (b * 10.0).round() / 10.0) })))
+    }
+
+    #[cfg(not(feature = "spectral"))]
+    fn tempo(&self, _: &Request) -> Result<Response, HttpError> {
+        Err(HttpError { status: 409, message: "tempo estimation needs a build with the spectral feature".into() })
     }
 
     fn static_file(&self, path: &str) -> Result<Response, HttpError> {
@@ -181,6 +198,10 @@ impl Server {
         let body = std::fs::read(&full).map_err(|_| not_found())?;
         Ok(Response { status: 200, content_type: content_type(&full), body })
     }
+}
+
+fn upload_ext(name: &str) -> String {
+    Path::new(name).extension().and_then(|e| e.to_str()).filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("bin").to_ascii_lowercase()
 }
 
 fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {

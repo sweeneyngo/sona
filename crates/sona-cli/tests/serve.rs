@@ -186,3 +186,52 @@ fn refuses_foreign_hosts_bad_input_and_paths_outside_the_web_build() {
     let (status, page) = request(srv.port, "GET", "/", None, b"");
     assert_eq!((status, String::from_utf8_lossy(&page).contains("<title>sona</title>")), (200, true));
 }
+
+fn click_wav(bpm: f64, seconds: f64) -> Vec<u8> {
+    let sr = 22_050u32;
+    let spec = hound::WavSpec { channels: 1, sample_rate: sr, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    let mut w = hound::WavWriter::new(&mut cursor, spec).unwrap();
+    let eighth = 30.0 / bpm;
+    for i in 0..(seconds * f64::from(sr)) as usize {
+        let t = i as f64 / f64::from(sr);
+        let since = t % eighth;
+        let beat = ((t / eighth).floor() as i64) % 2 == 0;
+        let f = if beat { 60.0 } else { 7000.0 };
+        let v = if since < 0.03 { (-since * 120.0).exp() * (std::f64::consts::TAU * f * t).sin() * if beat { 0.8 } else { 0.3 } } else { 0.0 };
+        w.write_sample((v * f64::from(i16::MAX)) as i16).unwrap();
+    }
+    w.finalize().unwrap();
+    cursor.into_inner()
+}
+
+#[test]
+fn estimates_a_songs_tempo_from_wav_and_through_ffmpeg() {
+    let s = start("tempo", "");
+    let (status, caps) = json(s.port, "GET", "/api/capabilities", b"");
+    assert_eq!(status, 200);
+    if caps["tempo"] != true {
+        return;
+    }
+    let wav = click_wav(180.0, 25.0);
+    let (status, body) = json(s.port, "POST", "/api/tempo?name=clicks.wav", &wav);
+    assert_eq!(status, 200, "{body}");
+    let bpm = body["bpm"].as_f64().unwrap();
+    assert!((bpm - 180.0).abs() / 180.0 <= 0.02, "{bpm}");
+
+    if std::process::Command::new("ffmpeg").arg("-version").output().is_ok() {
+        let dir = temp_dir("tempo-flac");
+        let src = dir.0.join("clicks.wav");
+        let flac = dir.0.join("clicks.flac");
+        std::fs::write(&src, &wav).unwrap();
+        assert!(std::process::Command::new("ffmpeg").args(["-nostdin", "-loglevel", "error", "-y", "-i"]).arg(&src).arg(&flac).status().unwrap().success());
+        let (status, body) = json(s.port, "POST", "/api/tempo?name=clicks.flac", &std::fs::read(&flac).unwrap());
+        assert_eq!(status, 200, "{body}");
+        assert!((body["bpm"].as_f64().unwrap() - 180.0).abs() / 180.0 <= 0.02, "{body}");
+    }
+
+    let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"");
+    assert_eq!(status, 400);
+    let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"not audio at all");
+    assert_eq!(status, 422);
+}

@@ -72,17 +72,6 @@
         gap: 10px 14px;
         flex: 1 1 auto;
       }
-      .cluster {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .divider {
-        width: 1px;
-        align-self: stretch;
-        min-height: 26px;
-        background: var(--line);
-      }
       .field {
         display: flex;
         align-items: center;
@@ -94,9 +83,6 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--muted);
-      }
-      .spacer {
-        flex: 1 1 auto;
       }
       .visually-hidden {
         position: absolute;
@@ -226,7 +212,7 @@
         font-size: 11px;
         flex: 1 1 0;
         min-width: 6ch;
-        max-width: 42ch;
+        max-width: none;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -413,7 +399,7 @@
         display: none;
       }
       .start-inner {
-        max-width: 860px;
+        width: min(880px, 100%);
         text-align: center;
       }
       .start h1 {
@@ -428,74 +414,289 @@
         color: var(--muted);
         line-height: 1.5;
       }
-      .start-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 14px;
-      }
-      .start-card {
+      .drop {
+        position: relative;
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: 6px;
-        padding: 18px;
-        text-align: left;
-        line-height: 1.45;
-        border-radius: 12px;
-        background: var(--panel);
+        align-items: center;
+        gap: 10px;
+        width: min(880px, 100%);
+        margin: 0 auto;
+        padding: 72px 32px;
+        border: 2px dashed #4a4740;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.02);
+        cursor: pointer;
+        transition: border-color 0.16s, background 0.16s, transform 0.16s;
       }
-      .start-card[hidden] {
+      .drop[hidden] {
         display: none;
       }
-      .start-card b {
-        font-size: 16px;
+      .drop:hover,
+      .drop:focus-visible,
+      .drop.over {
+        border-color: var(--accent);
+        background: rgba(189, 181, 145, 0.07);
+      }
+      .drop.over {
+        transform: scale(1.01);
+      }
+      .drop.disabled {
+        cursor: default;
+        border-style: solid;
+        border-color: var(--line);
+        background: transparent;
+      }
+      .drop input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .drop.disabled input[type="file"] {
+        display: none;
+      }
+      .drop b {
+        font-size: 18px;
         color: #fff;
       }
-      .start-card span {
+      .drop span {
         color: var(--muted);
         font-size: 13px;
       }
-      .start-card:hover:not(:disabled) {
-        transform: translateY(-1px);
+      .drop code {
+        font-family: var(--mono);
+        color: var(--ink);
       }
-      .start-icon {
+      .drop-icon {
         display: grid;
         place-items: center;
-        width: 34px;
-        height: 34px;
-        border-radius: 9px;
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
         background: #2d2c29;
-        color: var(--accent) !important;
-        font-size: 17px !important;
+        color: var(--accent);
+        font-size: 24px;
       }
-      .start-note {
-        font-family: var(--mono);
-        font-size: 11px !important;
+      .drop-icon.small {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        font-size: 15px;
       }
-      .start-steps {
+      .song-panel {
         display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 8px 22px;
-        margin: 26px 0 0;
-        padding: 0;
-        list-style: none;
-        counter-reset: step;
+        flex-direction: column;
+        gap: 14px;
+        width: min(880px, 100%);
+        margin: 0 auto;
+        padding: 22px 26px;
+        border-radius: 16px;
+        background: var(--panel);
+        text-align: left;
+      }
+      .song-panel[hidden] {
+        display: none;
+      }
+      .song-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .song-head b {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 15px;
+        color: #fff;
+      }
+      .tempo-row,
+      .pop-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tempo-row label,
+      .pop-row label,
+      .pop-row .label {
+        min-width: 54px;
+        color: var(--muted);
+      }
+      .tempo-row input {
+        width: 92px;
+        font-size: 18px;
+      }
+      .unit {
         color: var(--muted);
         font-size: 12px;
       }
-      .start-steps li::before {
-        counter-increment: step;
-        content: counter(step);
-        display: inline-grid;
-        place-items: center;
-        width: 18px;
-        height: 18px;
-        margin-right: 7px;
-        border-radius: 50%;
+      .hint-line {
+        margin: -6px 0 0;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .error-line {
+        margin: 0;
+        color: var(--danger);
+        font-size: 13px;
+      }
+      .error-line[hidden] {
+        display: none;
+      }
+      .more summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .more summary:hover {
+        color: var(--ink);
+      }
+      .more-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        margin-top: 10px;
+      }
+      .big-btn {
+        padding: 12px 18px;
+        border: none;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #161616;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .big-btn:hover:not(:disabled) {
+        filter: brightness(1.08);
+      }
+      .chip {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12.5px;
+      }
+      .link {
+        padding: 2px 4px;
+        border: none;
+        background: none;
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        font-size: 13px;
+      }
+      .link:hover:not(:disabled) {
+        color: var(--ink);
+        background: none;
+      }
+      .icon-btn[hidden],
+      .chip[hidden],
+      .link[hidden] {
+        display: none;
+      }
+      .start-alt {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        margin-top: 22px;
+      }
+      .progress {
+        height: 6px;
+        border-radius: 3px;
+        background: #2a2a2a;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: var(--accent);
+        transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      @keyframes sona-spin {
+        to { transform: rotate(360deg); }
+      }
+      .spin {
+        animation: sona-spin 2.4s linear infinite;
+      }
+      .tempo {
+        position: relative;
+      }
+      .popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 300px;
+        padding: 14px;
         border: 1px solid var(--line);
-        font-family: var(--mono);
-        font-size: 10px;
+        border-radius: 12px;
+        background: var(--panel-2);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+      }
+      .popover[hidden] {
+        display: none;
+      }
+      .popover:not([hidden]) {
+        animation: sona-drop 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .pop-row input {
+        width: 80px;
+      }
+      .pop-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .menu-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .menu-check:hover,
+      .menu-check:focus-visible {
+        background: #2e2e2e;
+        outline: none;
+      }
+      .menu-check kbd {
+        margin-left: auto;
+      }
+      .help-steps {
+        margin: 0;
+        padding-left: 20px;
+        line-height: 1.6;
+      }
+      .expr-hint {
+        color: var(--muted);
+        font-size: 12.5px;
+        flex: 1 1 auto;
+      }
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: #fff;
+        background: #2d2c29;
+      }
+      .hint-line[hidden] {
+        display: none;
+      }
+      .expr-exact {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 14px;
+        flex-basis: 100%;
+      }
+      .expr-exact[hidden] {
+        display: none;
       }
 
       /* --- Expression bar (selected note's pitch) --- */
@@ -552,66 +753,7 @@
       .legend .swatch.out-of-key {
         border: 2px dashed #c8a2ff;
       }
-      /* Push the derived readouts (key + fixes) to the right end of the bar. */
-      .legend-spacer {
-        flex: 1 1 auto;
-      }
-      .legend .readout {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .legend .rlabel {
-        font-family: var(--mono);
-        font-size: 10px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-      /* Fixes: an icon button carrying a notification badge with the count. */
-      .fixes-btn {
-        position: relative;
-        display: inline-grid;
-        place-items: center;
-        width: 30px;
-        height: 30px;
-        padding: 0;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel-2);
-        color: var(--muted);
-        cursor: pointer;
-        transition: border-color 0.12s, color 0.12s;
-      }
-      .fixes-btn:hover:not(:disabled) {
-        border-color: var(--accent);
-        color: #fff;
-      }
-      .fixes-btn:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-      .fixes-btn svg {
-        width: 15px;
-        height: 15px;
-      }
-      .badge {
-        position: absolute;
-        top: -6px;
-        right: -6px;
-        min-width: 16px;
-        height: 16px;
-        padding: 0 4px;
-        border-radius: 8px;
-        background: var(--accent);
-        color: #161616;
-        font-family: var(--mono);
-        font-size: 10px;
-        font-weight: 700;
-        line-height: 16px;
-        text-align: center;
-      }
-      .badge[hidden] {
+      .hint[hidden] {
         display: none;
       }
 
@@ -824,17 +966,8 @@
       .start:not([hidden]) .start-inner {
         animation: sona-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
       }
-      .start:not([hidden]) .start-card {
-        animation: sona-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-      }
-      .start:not([hidden]) .start-card:nth-child(2) { animation-delay: 0.06s; }
-      .start:not([hidden]) .start-card:nth-child(3) { animation-delay: 0.12s; }
-      .start-card {
-        transition: transform 0.16s ease-out, border-color 0.16s, background 0.16s, box-shadow 0.16s;
-      }
-      .start-card:hover:not(:disabled) {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      .song-panel:not([hidden]) {
+        animation: sona-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
       }
       .expr-bar:not([hidden]) {
         animation: sona-rise 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -859,7 +992,7 @@
           transition: none !important;
         }
         button:active:not(:disabled),
-        .start-card:hover:not(:disabled) {
+        .drop.over {
           transform: none;
         }
       }
@@ -886,7 +1019,7 @@
         <div class="menu">
           <button class="menu-btn" aria-haspopup="menu" aria-expanded="false">File</button>
           <div class="menu-list" role="menu" hidden>
-            <button role="menuitem" id="generate">New from audio…<span class="hint">sona serve</span></button>
+            <button role="menuitem" id="generate">New song…</button>
             <button role="menuitem" id="open-annotation">Open annotation or session…</button>
             <button role="menuitem" id="open-stem">Open stem audio…</button>
             <div class="menu-sep" role="separator"></div>
@@ -905,6 +1038,18 @@
             <button role="menuitem" id="edit-vibrato" disabled>Vibrato on the selected note<kbd>V</kbd></button>
             <div class="menu-sep" role="separator"></div>
             <button role="menuitem" id="edit-delete" disabled>Delete the selected note<kbd>Del</kbd></button>
+            <div class="menu-sep" role="separator"></div>
+            <button role="menuitem" id="correction-open" disabled>Your corrections…<span id="correction-badge" class="hint" hidden>0</span></button>
+          </div>
+        </div>
+        <div class="menu">
+          <button class="menu-btn" aria-haspopup="menu" aria-expanded="false">View</button>
+          <div class="menu-list" role="menu" hidden>
+            <label role="menuitemcheckbox" tabindex="-1" class="menu-check"><input id="show-curve" type="checkbox" checked tabindex="-1" /> Pitch curve</label>
+            <label role="menuitemcheckbox" tabindex="-1" class="menu-check" title="Drag on the roll to redraw the singer's pitch (the white line); Alt-drag erases it"><input id="pitch-pen" type="checkbox" tabindex="-1" /> Pitch pen<kbd>P</kbd></label>
+            <div class="menu-sep" role="separator"></div>
+            <label role="menuitemcheckbox" tabindex="-1" class="menu-check"><input id="mute-stem" type="checkbox" tabindex="-1" /> Mute voice</label>
+            <label role="menuitemcheckbox" tabindex="-1" class="menu-check"><input id="mute-synth" type="checkbox" tabindex="-1" /> Mute notes</label>
           </div>
         </div>
         <div class="menu">
@@ -919,40 +1064,34 @@
       </nav>
 
       <div class="controls">
-        <div class="cluster" aria-label="Playback">
-          <button id="play" class="icon-btn primary" title="Play (Space)" aria-label="Play" disabled>▶</button>
-          <button id="stop" class="icon-btn" title="Pause (Space)" aria-label="Pause" disabled>⏸</button>
-          <label class="toggle" title="Mute the stem"><input id="mute-stem" type="checkbox" /> mute stem</label>
-          <label class="toggle" title="Mute the synth"><input id="mute-synth" type="checkbox" /> mute synth</label>
+        <button id="play" class="icon-btn primary" title="Play (Space)" aria-label="Play" disabled>▶</button>
+        <div class="tempo">
+          <button id="tempo-chip" class="chip" aria-haspopup="dialog" aria-expanded="false" title="Tempo, grid and key" disabled>♩ <span id="tempo-chip-text">120 · 1/16</span></button>
+          <div id="tempo-pop" class="popover" role="dialog" aria-label="Tempo, grid and key" hidden>
+            <div class="pop-row">
+              <label for="bpm">Tempo</label>
+              <input id="bpm" type="number" min="20" max="400" step="0.1" value="120" />
+              <span class="unit">BPM</span>
+              <button id="bpm-half" class="chip" title="Half the tempo">½×</button>
+              <button id="bpm-double" class="chip" title="Double the tempo">2×</button>
+            </div>
+            <div class="pop-row">
+              <label for="division">Grid</label>
+              <select id="division">
+                <option value="4">1/4</option>
+                <option value="8">1/8</option>
+                <option value="16" selected>1/16</option>
+                <option value="24">1/16T</option>
+                <option value="32">1/32</option>
+              </select>
+            </div>
+            <div class="pop-row">
+              <span class="label">Key</span>
+              <output id="key-readout" title="Detected from the notes (Krumhansl–Schmuckler). Snapping is in File → Settings.">—</output>
+            </div>
+          </div>
         </div>
-
-        <div class="divider" aria-hidden="true"></div>
-
-        <div class="cluster" aria-label="Tempo and grid">
-          <span class="field">
-            <label for="bpm">BPM</label>
-            <input id="bpm" type="number" min="20" max="400" step="0.1" value="120" />
-          </span>
-          <span class="field">
-            <label for="division">Grid</label>
-            <select id="division">
-              <option value="4">1/4</option>
-              <option value="8">1/8</option>
-              <option value="16" selected>1/16</option>
-              <option value="24">1/16T</option>
-              <option value="32">1/32</option>
-            </select>
-          </span>
-        </div>
-
-        <div class="divider" aria-hidden="true"></div>
-
-        <label class="toggle" title="Show the pitch curve the exported notes will sing"><input id="show-curve" type="checkbox" checked /> pitch curve</label>
-        <label class="toggle" title="Pitch pen (P): drag on the roll to redraw the singer's pitch (the white line) that “USTX with the singer's pitch” exports; Alt-drag erases it back to the notes"><input id="pitch-pen" type="checkbox" /> pen</label>
-
-        <div class="spacer"></div>
-
-        <span id="status" role="status">Start a project, or open files from the File menu.</span>
+        <span id="status" role="status"></span>
         <button id="help" class="round" title="Help &amp; keyboard shortcuts" aria-label="Help">?</button>
       </div>
     </header>
@@ -962,42 +1101,79 @@
         <canvas id="roll"></canvas>
         <div id="start" class="start">
           <div class="start-inner">
-            <h1>Start a project</h1>
-            <p class="start-lede">
-              Turn a sung vocal into notes you can correct, give them lyrics and expression, and
-              export them to OpenUtau or UTAU.
-            </p>
-            <div class="start-cards">
-              <button class="start-card" id="start-generate">
-                <span class="start-icon" aria-hidden="true">♪</span>
-                <b>From a song</b>
-                <span>Separate the vocal and transcribe it, all on this computer.</span>
-                <span class="start-note" id="start-generate-note"></span>
-              </button>
-              <button class="start-card" id="start-open">
-                <span class="start-icon" aria-hidden="true">⤒</span>
-                <b>Open files</b>
-                <span>An annotation from <code>sona transcribe</code> or a saved session, then its stem.</span>
-              </button>
-              <button class="start-card" id="start-resume" hidden>
-                <span class="start-icon" aria-hidden="true">↺</span>
-                <b>Resume</b>
-                <span id="start-resume-detail">Your last autosaved session.</span>
-              </button>
+            <label id="drop" class="drop" tabindex="0">
+              <input id="song-file" type="file" accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg" />
+              <span class="drop-icon" aria-hidden="true">♪</span>
+              <b id="drop-title">Drop a song</b>
+              <span id="drop-sub">or click to choose</span>
+            </label>
+
+            <div id="song-ready" class="song-panel" hidden>
+              <div class="song-head">
+                <span class="drop-icon small" aria-hidden="true">♪</span>
+                <b id="song-name"></b>
+                <button id="song-change" class="link">Choose another</button>
+              </div>
+              <div class="tempo-row">
+                <label for="song-bpm">Tempo</label>
+                <input id="song-bpm" type="number" min="20" max="400" step="0.1" />
+                <span class="unit">BPM</span>
+                <button id="song-half" class="chip" title="Half the tempo">½×</button>
+                <button id="song-double" class="chip" title="Double the tempo">2×</button>
+              </div>
+              <p id="song-tempo-note" class="hint-line" hidden></p>
+              <details id="song-more" class="more">
+                <summary>Options</summary>
+                <div class="more-grid">
+                  <span class="field"><label for="song-grid">Grid</label><select id="song-grid"><option value="16" selected>1/16</option><option value="24">1/16T</option></select></span>
+                  <span class="field">
+                    <label for="song-separation">Vocal</label>
+                    <select id="song-separation">
+                      <option value="lead">Lead only</option>
+                      <option value="vocals">All vocals</option>
+                      <option value="none">Already a stem</option>
+                    </select>
+                  </span>
+                  <span class="field">
+                    <label for="song-engine">Notes by</label>
+                    <select id="song-engine"><option value="game">GAME</option><option value="pyin">pYIN</option></select>
+                  </span>
+                </div>
+              </details>
+              <button id="song-go" class="big-btn">Transcribe</button>
+              <p id="song-error" class="error-line" role="alert" hidden></p>
             </div>
-            <ol class="start-steps">
-              <li>Generate or open</li>
-              <li>Fix the notes</li>
-              <li>Lyrics &amp; pitch</li>
-              <li>Export USTX / UST</li>
-            </ol>
+
+            <div id="song-running" class="song-panel" hidden>
+              <div class="song-head">
+                <span class="drop-icon small spin" aria-hidden="true">♪</span>
+                <b id="song-running-name"></b>
+                <button id="song-cancel" class="link">Cancel</button>
+              </div>
+              <div class="progress" aria-hidden="true"><div id="song-bar" class="progress-fill"></div></div>
+              <p id="song-phase" class="hint-line" role="status"></p>
+              <details class="more">
+                <summary>Details</summary>
+                <pre id="song-log" class="generate-log"></pre>
+              </details>
+            </div>
+
+            <div class="start-alt">
+              <button id="start-open" class="link">Open files</button>
+              <button id="start-resume" class="link" hidden>Resume<span id="start-resume-detail" class="visually-hidden"></span></button>
+              <button id="start-back" class="link" hidden>Back</button>
+            </div>
           </div>
         </div>
         <div id="tooltip"></div>
         <input id="lyric-editor" type="text" autocomplete="off" spellcheck="false" aria-label="Lyric for the selected note" hidden />
       </div>
       <div id="expr-bar" class="expr-bar" hidden>
-        <span class="expr-title">Pitch of the selected note</span>
+        <button id="expr-vib" aria-pressed="false" title="V">Vibrato</button>
+        <button id="expr-fit" title="Fit this note to the singer's pitch">Fit</button>
+        <button id="expr-reset">Reset</button>
+        <button id="expr-exact-toggle" class="link" aria-expanded="false" aria-controls="expr-exact">Values</button>
+        <span id="expr-exact" class="expr-exact" hidden>
         <span class="field"><label for="glide-start">glide from</label><input id="glide-start" type="number" step="5" /> ms</span>
         <span class="field"><label for="glide-end">to</label><input id="glide-end" type="number" step="5" /> ms</span>
         <label class="toggle"><input id="vib-on" type="checkbox" /> vibrato</label>
@@ -1006,30 +1182,7 @@
         <span class="field"><label for="vib-length">length</label><input id="vib-length" type="number" min="0" max="100" step="1" /> %</span>
         <span class="field"><label for="vib-in">fade in</label><input id="vib-in" type="number" min="0" max="100" step="1" /> %</span>
         <span class="field"><label for="vib-out">fade out</label><input id="vib-out" type="number" min="0" max="100" step="1" /> %</span>
-        <button id="expr-fit" title="Fit this note from the stem's pitch">Fit note</button>
-        <button id="expr-reset" title="Back to OpenUtau's neutral defaults">Reset</button>
-      </div>
-      <div class="legend">
-        <span class="grp">low <span class="bar" aria-hidden="true"></span> high confidence</span>
-        <span class="grp"><span class="swatch flagged"></span> flagged</span>
-        <span class="grp"><span class="swatch escaped"></span> off-grid (escaped)</span>
-        <span class="grp"><span class="swatch out-of-key"></span> out of key</span>
-
-        <span class="legend-spacer"></span>
-
-        <!-- Derived readouts: the detected key and the correction count. -->
-        <span class="readout">
-          <span class="rlabel">Key</span>
-          <output id="key-readout" title="Auto-detected key (Krumhansl–Schmuckler). Toggle snapping in ⚙.">—</output>
         </span>
-        <button id="correction-open" class="fixes-btn" title="Manual corrections vs. the producer's original notes — click to list them." disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25z" fill="currentColor" />
-            <path d="M20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor" />
-          </svg>
-          <span id="correction-badge" class="badge" hidden>0</span>
-          <span class="visually-hidden">corrections</span>
-        </button>
       </div>
     </main>
 
@@ -1042,15 +1195,25 @@
         <div class="modal-body">
           <section>
             <h3>Workflow</h3>
-            <p>
-              Load an annotation JSON and its vocal stem, then play the stem against the
-              synthesized notes. Notes hard-snap to the grid live (set BPM · division ·
-              drag the ruler for phase); a confident off-grid note escapes snapping and is
-              flagged. Fix flagged notes, add lyrics, then export MIDI, UST or USTX.
-              <b>Save</b> writes a session JSON — reload it through the annotation
-              input to resume editing exactly where you left off (MIDI can't do
-              that: it keeps only the snapped notes).
-            </p>
+            <ol class="help-steps">
+              <li><b>Drop a song</b> on the start screen. sona suggests its tempo; check it (½× if it
+                sounds twice too fast), then press <b>Transcribe</b>.</li>
+              <li><b>Play</b> (Space) to hear the singer against the notes, and fix what's wrong.</li>
+              <li>Add lyrics (<b>Edit → Lyrics…</b>) and shape the pitch (below).</li>
+              <li><b>Export</b> to OpenUtau (USTX), UTAU (UST) or MIDI. <b>File → Save session</b>
+                keeps everything for later; the page also autosaves.</li>
+            </ol>
+          </section>
+
+          <section>
+            <h3>What the colours mean</h3>
+            <div class="legend">
+              <span class="grp">low <span class="bar" aria-hidden="true"></span> high confidence</span>
+              <span class="grp"><span class="swatch flagged"></span> flagged: worth checking</span>
+              <span class="grp"><span class="swatch escaped"></span> kept off the grid</span>
+              <span class="grp"><span class="swatch out-of-key"></span> out of key</span>
+            </div>
+            <p>The white line is the singer's pitch; the orange curve is what the export will sing.</p>
           </section>
 
           <section>
@@ -1076,9 +1239,10 @@
           <section>
             <h3>From a song</h3>
             <p>
-              <b>File → Generate from audio</b> turns a song into a stem and an annotation and loads both
-              here. It needs the app opened from <code>sona serve</code> (which also runs the
-              separators); the dialog says which separations and note engines it has.
+              Transcribing a song needs the page opened from <code>sona serve</code>, which runs
+              the vocal separators and the note engines on this computer. <b>More options</b> on
+              the start screen picks the separation, the note engine and a triplet grid.
+              The tempo and grid of a loaded song are under the <b>♩</b> button.
             </p>
           </section>
 
@@ -1188,51 +1352,6 @@
             <button id="lyrics-from-start">Fill from the first note</button>
             <button id="lyrics-clear">Clear all lyrics</button>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="generate-overlay" class="overlay" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="generate-title">
-        <div class="modal-head">
-          <h2 id="generate-title">New from audio</h2>
-          <button id="generate-close" class="icon-btn" aria-label="Close">✕</button>
-        </div>
-        <div class="modal-body">
-          <p>
-            Pick a song (or a vocal stem). sona separates the vocal, transcribes it on the
-            grid, and loads the notes and the stem here. It all runs on this computer through
-            <code>sona serve</code>; separation takes a few minutes per song.
-          </p>
-          <div class="setting">
-            <h3>Audio</h3>
-            <input id="generate-file" type="file" accept="audio/*" />
-          </div>
-          <div class="generate-options">
-            <span class="field"><label for="generate-bpm">BPM</label><input id="generate-bpm" type="number" min="20" max="400" step="0.1" value="120" /></span>
-            <span class="field">
-              <label for="generate-grid">Grid</label>
-              <select id="generate-grid"><option value="16" selected>1/16</option><option value="24">1/16T</option></select>
-            </span>
-            <span class="field">
-              <label for="generate-separation">Separation</label>
-              <select id="generate-separation">
-                <option value="lead" selected>Lead vocal (song)</option>
-                <option value="vocals">All vocals (song)</option>
-                <option value="none">None (already a stem)</option>
-              </select>
-            </span>
-            <span class="field">
-              <label for="generate-engine">Notes</label>
-              <select id="generate-engine"><option value="game">GAME</option><option value="pyin" selected>sona (pYIN)</option></select>
-            </span>
-          </div>
-          <div class="lyrics-actions">
-            <button id="generate-start">Start</button>
-            <button id="generate-cancel" disabled>Cancel</button>
-          </div>
-          <p id="generate-progress" class="generate-progress"></p>
-          <pre id="generate-log" class="generate-log" hidden></pre>
         </div>
       </div>
     </div>
