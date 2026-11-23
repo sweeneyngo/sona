@@ -21,7 +21,9 @@ does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, a
 ## Using the app
 
 - **Hear and fix.** ▶ or Space plays the singer against the notes. Drag a note to move it, drag its right
-  edge to resize it, double-click to add one, Delete to remove one. Colours flag the notes worth
+  edge to resize it, double-click to add one, Delete to remove one. **Ctrl+Z** undoes and
+  **Ctrl+Shift+Z** redoes any edit: a drag, a lyric, a pen stroke or a tempo change is one step each
+  ([ADR-0025](docs/adr/0025-undo-redo.md)). Colours flag the notes worth
   checking (Help explains them).
 - **Tempo, grid and key** are under the **♩** button. **View** holds the pitch curve, the pitch pen and
   the mutes.

@@ -42,9 +42,10 @@ import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
 import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJob, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
 import { phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
+import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
-import type { Annotation, Note, WorkingNote } from "./lib/annotation";
+import type { Annotation, F0Frame, Note, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
@@ -158,6 +159,8 @@ const el = {
   exprExactToggle: document.getElementById("expr-exact-toggle") as HTMLButtonElement,
   exprExact: document.getElementById("expr-exact") as HTMLSpanElement,
   details: document.getElementById("details") as HTMLButtonElement,
+  editUndo: document.getElementById("edit-undo") as HTMLButtonElement,
+  editRedo: document.getElementById("edit-redo") as HTMLButtonElement,
   detailsOverlay: document.getElementById("details-overlay") as HTMLDivElement,
   detailsClose: document.getElementById("details-close") as HTMLButtonElement,
   detailsBody: document.getElementById("details-body") as HTMLDivElement,
@@ -295,12 +298,16 @@ function loadAnnotationJson(parsed: unknown, stemFollows = false): boolean {
     workingNotes = [];
     setStatus(`Could not read annotation JSON: ${(err as Error).message}`, true);
     rebuild();
+    edits.reset();
+    syncUndoMenu();
     return false;
   }
 }
 
 el.json.addEventListener("change", async () => {
   const file = el.json.files?.[0];
+  // Cleared so choosing the same file again still fires `change` (reopening means starting over).
+  el.json.value = "";
   if (!file) return;
   let parsed: unknown;
   try {
@@ -359,6 +366,8 @@ function applyLoadedJson(parsed: any): boolean {
   }
   resetView(); // zoomed-in default + 2-octave window centred on the notes.
   rebuild();
+  edits.reset();
+  syncUndoMenu();
   return !!(session && typeof session === "object");
 }
 
@@ -376,6 +385,7 @@ async function loadStemBytes(bytes: ArrayBuffer): Promise<void> {
 
 el.audio.addEventListener("change", async () => {
   const file = el.audio.files?.[0];
+  el.audio.value = "";
   if (file) await loadStemBytes(await file.arrayBuffer());
 });
 
@@ -602,7 +612,7 @@ function setBpm(v: number): void {
   if (!(v > 0 && Number.isFinite(v))) return;
   bpm = v;
   invalidateEffective();
-  markDirty();
+  markDirty("bpm");
   syncTempoChip();
   redraw();
 }
@@ -651,7 +661,7 @@ el.flag.addEventListener("input", () => {
   flagThreshold = Number(el.flag.value);
   el.flagVal.textContent = flagThreshold.toFixed(2);
   invalidateEffective();
-  markDirty();
+  markDirty("flag");
   redraw();
 });
 el.snapKey.addEventListener("change", () => {
@@ -1170,6 +1180,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
 
   // The top ruler: a click seeks the playhead, a drag shifts the grid phase.
   if (y < RULER_H) {
+    edits.beginGesture();
     drag = { mode: "offset", startX: x, startY: y, origAnchor: gridAnchor, moved: false };
     return;
   }
@@ -1177,6 +1188,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
   if (el.pitchPen.checked && annotation?.f0_contour.length) {
     const t = scale.xToTime(x);
     const c = scale.yToPitchExact(y) * 100;
+    edits.beginGesture();
     drag = { mode: "pen", lastT: t, lastCents: c, erase: e.altKey, startX: x, startY: y, moved: false };
     if (e.altKey) penErase(annotation.f0_contour, t, t);
     else penStroke(annotation.f0_contour, t, c, t, c);
@@ -1197,6 +1209,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
       redraw();
       return;
     }
+    edits.beginGesture();
     drag = { mode: "handle", note: selectedNote, handle: h.handle, origExpr: exprOf(selectedNote), span: h.span, startX: x, startY: y, moved: false };
     el.canvas.style.cursor = "grabbing";
     return;
@@ -1206,6 +1219,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
   if (hit) {
     selectedNote = hit.note;
     const onRightEdge = x >= hit.x + hit.w - RESIZE_GRAB_PX;
+    edits.beginGesture();
     drag = {
       mode: onRightEdge ? "resize" : "move",
       note: hit.note,
@@ -1292,6 +1306,10 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
 window.addEventListener("mouseup", () => {
   const d = drag;
   drag = null;
+  if (d) {
+    edits.endGesture();
+    syncUndoMenu();
+  }
   // A click on the ruler that never became a drag is a seek. (The grid phase is
   // only written once a drag passes the move threshold, so a click leaves it be.)
   if (d && d.mode === "offset" && !d.moved && scale) {
@@ -1409,6 +1427,13 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   }
   const tag = document.activeElement?.tagName;
   const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && !editsText(document.activeElement) && !anyModalOpen() && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+    if (e.key === "y" || e.shiftKey) redoEdit();
+    else undoEdit();
+    e.preventDefault();
+    return;
+  }
   if (e.key === "?" && !inField) {
     setModal(el.helpOverlay, el.helpOverlay.hidden);
     e.preventDefault();
@@ -1643,8 +1668,71 @@ function saveSession(): void {
 const AUTOSAVE_KEY = "sona.autosave.v1";
 const AUTOSAVE_MS = 20_000;
 
-function markDirty(): void {
+function markDirty(source?: string): void {
   dirty = true;
+  edits.changed(source);
+  syncUndoMenu();
+}
+
+interface DocState {
+  doc: string;
+  contour: F0Frame[] | null;
+}
+
+const contourShare = new SharedSnapshot<F0Frame>();
+
+function captureDoc(): DocState {
+  const doc = JSON.stringify({ notes: workingNotes, bpm, division, gridAnchor, flagThreshold, snapKey });
+  return { doc, contour: annotation ? contourShare.capture(annotation.f0_contour) : null };
+}
+
+function restoreDoc(s: DocState): void {
+  // The bar holds on to the note it shows while it has focus; that note is about to be replaced.
+  if (exprBarHasFocus()) (document.activeElement as HTMLElement).blur();
+  noteShownInExprBar = null;
+  const d = JSON.parse(s.doc);
+  workingNotes = d.notes;
+  bpm = d.bpm;
+  division = d.division;
+  gridAnchor = d.gridAnchor;
+  flagThreshold = d.flagThreshold;
+  snapKey = d.snapKey;
+  el.bpm.value = String(bpm);
+  el.division.value = String(division);
+  el.flag.value = String(flagThreshold);
+  el.flagVal.textContent = flagThreshold.toFixed(2);
+  el.snapKey.checked = snapKey;
+  if (annotation && s.contour) annotation.f0_contour = contourShare.restore(s.contour);
+  selectedNote = null;
+  closeLyricEditor();
+  el.tooltip.style.display = "none";
+  dirty = true;
+  invalidateEffective();
+  rebuild();
+}
+
+const edits = new Undo<DocState>({ capture: captureDoc, restore: restoreDoc, equal: (a, b) => a.doc === b.doc && a.contour === b.contour });
+
+/** A field with its own text undo (the browser's): everything else gets the document's undo. */
+function editsText(el: Element | null): boolean {
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (!(el instanceof HTMLInputElement)) return false;
+  return ["text", "number", "search", "url", "email", "tel", "password"].includes(el.type);
+}
+
+function syncUndoMenu(): void {
+  el.editUndo.disabled = !edits.canUndo;
+  el.editRedo.disabled = !edits.canRedo;
+}
+
+function undoEdit(): void {
+  if (edits.undo()) setStatus("Undone");
+  syncUndoMenu();
+}
+
+function redoEdit(): void {
+  if (edits.redo()) setStatus("Redone");
+  syncUndoMenu();
 }
 
 /**
@@ -1710,6 +1798,8 @@ function restoreAutosave(): void {
     setStatus(`Resumed (${when}) · File → Open stem audio to hear it`);
   } catch (err) {
     console.error("sona: could not restore autosave", err);
+    edits.reset();
+    syncUndoMenu();
   }
 }
 
@@ -2281,6 +2371,8 @@ el.openStem.addEventListener("click", () => el.audio.click());
 el.editLyric.addEventListener("click", () => selectedNote && openLyricEditor(selectedNote));
 el.editVibrato.addEventListener("click", () => selectedNote && toggleVibrato(selectedNote));
 el.editDelete.addEventListener("click", deleteSelectedNote);
+el.editUndo.addEventListener("click", undoEdit);
+el.editRedo.addEventListener("click", redoEdit);
 el.startOpen.addEventListener("click", () => el.json.click());
 el.startResume.addEventListener("click", () => {
   restoreAutosave();
@@ -2423,6 +2515,8 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   invalidateEffective();
   await loadStemBytes(stem);
   fitAll();
+  edits.reset();
+  syncUndoMenu();
   dispatchStart({ type: "results-loaded", job: j.id });
   startShown = false;
   rebuild();

@@ -52,7 +52,7 @@ top three overall are at the end.
 
 | # | Frontier | Evidence | Cost | How to tell |
 |---|---|---|---|---|
-| 4.1 | **Undo/redo** for every edit | There is none: a mis-drag is permanent until a reload | M | Property test: undo after any edit sequence restores the state exactly |
+| 4.1 | ✅ **Done (ADR-0025).** **Undo/redo** for every edit | There is none: a mis-drag is permanent until a reload | M | Property test: undo after any edit sequence restores the state exactly |
 | 4.2 | **Box-select and multi-note edits** (move, transpose, delete) | Edits are one note at a time | M | Browser drivers |
 | 4.3 | **A packaged app**: one download with `sona serve`, the separators and a model picker; no Python setup | Setup needs two Python venvs, ffmpeg and ORT today | L | A clean machine goes from install to transcription without a terminal |
 | 4.4 | **Live audio preview with a singing synth voice** instead of the sine synth | The notes are heard as a plain tone | M | — |
@@ -82,4 +82,4 @@ top three overall are at the end.
 2. ~~6.1 + 6.2, seed GAME and log provenance~~: done (ADR-0023, ADR-0024).
 3. **1.2, holdout4**: nothing else in section 1 can be confirmed without it.
 
-After those: 4.1 (undo) for usability, then 2.1 (tempo octave) to remove the remaining manual step.
+After those: ~~4.1 (undo)~~ (done), then 2.1 (tempo octave) to remove the remaining manual step.

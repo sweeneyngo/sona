@@ -12,6 +12,7 @@ how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
 | `lyrics_export.py` | Paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
 | `fit_and_export.py` | Fit pitch, edit a vibrato, export UST/USTX; a session reload exports the same UST. |
 | `cancel_and_retry.py` | Cancel stops the server job, keeps the song and tempo, and a retry starts at once. Needs `sona serve`. |
+| `undo_redo.py` | A tempo burst, a note drag, a lyric and a pen stroke undo one step each and redo exactly; Ctrl+Z in a text field leaves the document alone; reopening a file starts a fresh history. |
 | `stale_hover.py` | Delete after a scroll acts on what is under the mouse now. |
 | `lite_autosave.py` | With storage forced full, pen edits survive a reload and resume. |
 | `motion.py` | Animations run, and are off under `prefers-reduced-motion`. |

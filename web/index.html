@@ -1048,6 +1048,9 @@
         <div class="menu">
           <button class="menu-btn" aria-haspopup="menu" aria-expanded="false">Edit</button>
           <div class="menu-list" role="menu" hidden>
+            <button role="menuitem" id="edit-undo" disabled>Undo<kbd>Ctrl Z</kbd></button>
+            <button role="menuitem" id="edit-redo" disabled>Redo<kbd>Ctrl ⇧ Z</kbd></button>
+            <div class="menu-sep" role="separator"></div>
             <button role="menuitem" id="lyrics" disabled>Lyrics…<span class="hint">paste a text</span></button>
             <button role="menuitem" id="edit-lyric" disabled>Type the selected note's lyric<kbd>L</kbd></button>
             <div class="menu-sep" role="separator"></div>
@@ -1301,6 +1304,8 @@
             <h3>Keyboard</h3>
             <div class="shortcuts">
               <div><span class="kbd">Space</span> play / pause</div>
+              <div><span class="kbd">Ctrl</span> + <span class="kbd">Z</span> undo</div>
+              <div><span class="kbd">Ctrl</span> + <span class="kbd">⇧</span> + <span class="kbd">Z</span> redo</div>
               <div><span class="kbd">←</span><span class="kbd">→</span> seek a beat</div>
               <div><span class="kbd">Shift</span> + <span class="kbd">←</span><span class="kbd">→</span> seek a bar</div>
               <div><span class="kbd">↑</span><span class="kbd">↓</span> move pitch a semitone</div>

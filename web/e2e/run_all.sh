@@ -3,7 +3,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 py="${SONA_E2E_PYTHON:-python3}"
-editor=(pitch_handles pitch_pen sung_pitch_export lyrics_export fit_and_export stale_hover lite_autosave motion)
+editor=(pitch_handles pitch_pen sung_pitch_export lyrics_export fit_and_export stale_hover lite_autosave motion undo_redo)
 serve=(song_to_notes cancel_and_retry)
 fail=0
 run() {
