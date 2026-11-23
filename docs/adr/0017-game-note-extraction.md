@@ -58,5 +58,9 @@ After ADR-0016, grid mode reached 79.5% dev cell accuracy. The Vocal2Midi projec
 
 - **holdout3 is spent.** A further confirmation needs holdout4, which needs a BowlRoll fetcher: the OneDrive share holds only part of Pifuyuu's USTs.
 - **90% is not reached.** holdout3's best is 78.8%. The ceilings: perfect sung-vs-rest decisions give 91.4%; choosing the best available pitch per cell gives 95.6%.
-- **Next lever:** fine-tuning GAME on the labelled songs. GAME was trained on human singing only, and its training code (MIT) and v1.0.0 checkpoints are public. The licence permits private non-commercial fine-tuning.
+- **Fine-tuning GAME on the labelled songs was tried (2026-11-22) and is not adopted.**
+  - **Setup:** trained on the 30 spent-holdout songs, scored on dev over 5 fixed segmenter seeds.
+  - **Cells:** +0.80 (95% CI −0.53 to +1.91), against a pre-registered +2.0 bar.
+  - **Report:** [`game-finetune.md`](../../crates/sona-eval/reports/game-finetune.md).
+- **Run-to-run noise:** GAME's D3PM segmenter samples boundaries at random, so this ADR's unseeded GAME runs carry about ±0.2–0.4 points of run-to-run noise.
 - **Port:** porting the learned stage to Rust (ONNX via `ort`) is still to do.

@@ -65,3 +65,10 @@ encoder frozen). The checkpoint is the one with the lowest validation `total_los
 that checkpoint; no other checkpoint is scored on dev.
 
 The decision rule itself is unchanged.
+
+## Result (2026-11-22): not adopted
+
+Step 600 (lowest validation loss) against official GAME-1.0.3-medium, 5 seeds each, 9 dev songs. Cells
+87.18% → 87.98%, +0.80 (95% CI −0.53 to +1.91): **rule 1 fails**. One song lost more than 2 points
+(telescope-nevermore, −4.2): rule 2 passes. COnP F1 0.7732 → 0.7920: rule 3 passes. Recorded as a
+negative result: [`crates/sona-eval/reports/game-finetune.md`](../../crates/sona-eval/reports/game-finetune.md).

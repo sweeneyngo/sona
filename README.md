@@ -54,6 +54,7 @@ Items 2 and 3 ([ADR-0016](docs/adr/0016-grid-evidence-salience-and-spectral-cue.
   - a learned per-cell stage trained on Pifuyuu's USTs, +2.2 (95% interval +0.8 to +3.5).
 - **Full stack on holdout3:** **78.8%** against 72.5% for today's default.
 - **Licence:** GAME's weights are CC BY-NC-SA 4.0 (non-commercial), so you download them yourself; they are never bundled. The learned stage's weights stay local.
+- **Fine-tuning GAME on Pifuyuu's USTs** was measured and not adopted: +0.8 cells on dev (95% CI −0.5 to +1.9) against a +2.0 bar ([report](crates/sona-eval/reports/game-finetune.md)). GAME's segmenter is random from run to run; that report shows how big the effect is.
 
 Three uses of lyrics (note counts, count-constrained decoding, vowel alignment) were tried and measured, and none beat grid mode yet. Forced alignment of published lyrics with openvpi TiFA (Vocal2Midi's lyric path) was also measured and rejected. All findings, ceilings and negative results: [`crates/sona-eval/reports/grid-cell-decoder.md`](crates/sona-eval/reports/grid-cell-decoder.md).
 
