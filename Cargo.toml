@@ -20,6 +20,8 @@ serde_json = "1"
 # WAV decode for the CLI (ticket 07): a stem is I/O the core doesn't do — it takes
 # mono `&[f32]`. `hound` is pure-Rust, no system codec.
 hound = "3.5"
+# SHA-256 for provenance (ADR-0024): pure Rust, and the digests match `sha256sum`.
+sha2 = "0.10"
 # CREPE backend (ONNX) — feature-gated, wired now, used in a later ticket.
 # `load-dynamic` (no default `download-binaries`) keeps scaffolding free of a
 # network fetch + openssl toolchain; the ONNX runtime is resolved at load time

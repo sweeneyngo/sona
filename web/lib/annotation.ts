@@ -1,4 +1,5 @@
 import type { Expression } from "./expression";
+import type { Provenance } from "./provenance";
 
 /**
  * The **annotation JSON** — sona's primary artifact and the core↔UI contract
@@ -94,6 +95,8 @@ export interface Annotation {
   f0_contour: F0Frame[];
   /** Per-frame energy/RMS envelope (display aid). */
   energy_envelope: EnergyFrame[];
+  /** What produced it (ADR-0024); absent in older annotations. */
+  provenance?: Provenance;
 }
 
 /**

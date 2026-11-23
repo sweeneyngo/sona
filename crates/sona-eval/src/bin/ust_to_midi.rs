@@ -66,6 +66,7 @@ fn main() -> ExitCode {
             .collect(),
         f0_contour: Vec::new(),
         energy_envelope: Vec::new(),
+        provenance: None,
     };
     let result = File::create(output).and_then(|f| sona_core::write_midi(&annotation, BufWriter::new(f)));
     match result {

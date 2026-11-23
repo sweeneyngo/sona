@@ -36,6 +36,7 @@ import { ustxText } from "./lib/ustx";
 import { sungPitchCurve } from "./lib/sungPitch";
 import { penErase, penStroke } from "./lib/pitchPen";
 import { packContour, unpackContour } from "./lib/contourStore";
+import { detailSections, parseProvenance, type Provenance } from "./lib/provenance";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
@@ -156,6 +157,11 @@ const el = {
   exprVib: document.getElementById("expr-vib") as HTMLButtonElement,
   exprExactToggle: document.getElementById("expr-exact-toggle") as HTMLButtonElement,
   exprExact: document.getElementById("expr-exact") as HTMLSpanElement,
+  details: document.getElementById("details") as HTMLButtonElement,
+  detailsOverlay: document.getElementById("details-overlay") as HTMLDivElement,
+  detailsClose: document.getElementById("details-close") as HTMLButtonElement,
+  detailsBody: document.getElementById("details-body") as HTMLDivElement,
+  detailsDownload: document.getElementById("details-download") as HTMLButtonElement,
 };
 for (const [k, v] of Object.entries(el)) if (!v) throw new Error(`index.html is missing the element for ${k}`);
 const ctx2d = el.canvas.getContext("2d")!;
@@ -396,7 +402,13 @@ function normalizeAnnotation(raw: any): Annotation {
     })),
     f0_contour: unpackContour(raw.f0_contour),
     energy_envelope: Array.isArray(raw.energy_envelope) ? raw.energy_envelope : [],
+    ...withProvenance(raw.provenance),
   };
+}
+
+function withProvenance(raw: unknown): { provenance?: Provenance } {
+  const p = parseProvenance(raw);
+  return p ? { provenance: p } : {};
 }
 
 // --- Musical interpretation (grid) -----------------------------------------
@@ -659,11 +671,12 @@ function setModal(overlay: HTMLElement, open: boolean): void {
     el.settingsOverlay.hidden = true;
     el.changesOverlay.hidden = true;
     el.lyricsOverlay.hidden = true;
+    el.detailsOverlay.hidden = true;
   }
   overlay.hidden = !open;
 }
 function anyModalOpen(): boolean {
-  return [el.helpOverlay, el.settingsOverlay, el.changesOverlay, el.lyricsOverlay].some((o) => !o.hidden);
+  return [el.helpOverlay, el.settingsOverlay, el.changesOverlay, el.lyricsOverlay, el.detailsOverlay].some((o) => !o.hidden);
 }
 
 el.help.addEventListener("click", () => setModal(el.helpOverlay, el.helpOverlay.hidden));
@@ -759,6 +772,7 @@ function rebuild(): void {
   el.fitPitch.disabled = !annotation || !annotation.f0_contour.length;
   syncExprBar();
   el.save.disabled = !annotation;
+  el.details.disabled = !annotation;
 }
 
 /** Redraw after a view/grid/edit change: rebuild the scale (not the canvas). */
@@ -1385,6 +1399,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     setModal(el.settingsOverlay, false);
     setModal(el.changesOverlay, false);
     setModal(el.lyricsOverlay, false);
+    setModal(el.detailsOverlay, false);
     e.preventDefault();
     return;
   }
@@ -2226,6 +2241,42 @@ function deleteSelectedNote(): void {
 }
 
 el.openAnnotation.addEventListener("click", () => el.json.click());
+
+function openDetails(): void {
+  const p = annotation?.provenance;
+  el.detailsBody.replaceChildren();
+  el.detailsDownload.hidden = !p;
+  if (!p) {
+    const none = document.createElement("p");
+    none.textContent = "This annotation doesn't record what produced it.";
+    el.detailsBody.append(none);
+  } else {
+    for (const section of detailSections(p)) {
+      const h = document.createElement("h3");
+      h.textContent = section.title;
+      const dl = document.createElement("dl");
+      dl.className = "details-list";
+      for (const [k, v] of section.rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = k;
+        const dd = document.createElement("dd");
+        dd.textContent = v;
+        dl.append(dt, dd);
+      }
+      el.detailsBody.append(h, dl);
+    }
+  }
+  setModal(el.detailsOverlay, true);
+}
+
+el.details.addEventListener("click", openDetails);
+el.detailsClose.addEventListener("click", () => setModal(el.detailsOverlay, false));
+el.detailsOverlay.addEventListener("click", (e) => {
+  if (e.target === el.detailsOverlay) setModal(el.detailsOverlay, false);
+});
+el.detailsDownload.addEventListener("click", () => {
+  if (annotation?.provenance) download(JSON.stringify(annotation.provenance, null, 2), "sona-provenance.json", "application/json");
+});
 el.openStem.addEventListener("click", () => el.audio.click());
 el.editLyric.addEventListener("click", () => selectedNote && openLyricEditor(selectedNote));
 el.editVibrato.addEventListener("click", () => selectedNote && toggleVibrato(selectedNote));

@@ -44,10 +44,12 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 4. **Read the held-out songs once.** The tools refuse to read a held-out split without `--reason`, log
    every read in `crates/sona-eval/corpus/holdout-reads.jsonl`, and refuse a second read without
    `--reread`. All of today's splits are spent for cell accuracy; see roadmap item 1.2.
-5. **Explain the number.** List what else it could be measuring (leaked labels, a cache, one outlier
+5. **Know what produced it.** Every annotation carries its provenance (ADR-0024): the build, input and
+   model hashes, settings and seed. Compare two results setting by setting before comparing scores.
+6. **Explain the number.** List what else it could be measuring (leaked labels, a cache, one outlier
    song) and rule each one out. GAME is deterministic since ADR-0023; a model with random nodes of its own
    needs the same treatment before its numbers can be compared.
-6. **Record the result, positive or negative**, with its numbers: a report in `crates/sona-eval/reports/`
+7. **Record the result, positive or negative**, with its numbers: a report in `crates/sona-eval/reports/`
    or an ADR in `docs/adr/`, plus the README. New behaviour stays opt-in until a held-out read confirms
    it.
 

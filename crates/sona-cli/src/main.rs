@@ -18,6 +18,7 @@ use sona_core::{CueModel, GridMode, PYin, Producer, Transcriber};
 
 mod http;
 mod jobs;
+mod provenance;
 mod serve;
 
 const USAGE: &str = "\
@@ -145,7 +146,52 @@ fn transcribe(parsed: &TranscribeArgs) -> Result<sona_core::Annotation, String> 
     if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
         game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
     }
+    annotation.provenance = Some(transcribe_provenance(parsed)?);
     Ok(annotation)
+}
+
+fn transcribe_provenance(parsed: &TranscribeArgs) -> Result<sona_core::Provenance, String> {
+    let input = provenance::fingerprint_file("input", Path::new(&parsed.stem))?;
+    let mut settings = std::collections::BTreeMap::new();
+    let mut set = |k: &str, v: String| settings.insert(k.to_string(), v);
+    set("bpm", parsed.bpm.to_string());
+    set("grid", parsed.grid.map_or("none".into(), |g| g.to_string()));
+    set("engine", if parsed.game.is_some() { "game" } else { "pyin" }.into());
+    if parsed.grid.is_some() && parsed.game.is_none() {
+        set("salience", parsed.salience.to_string());
+        set("spectral_cue", parsed.spectral_cue.to_string());
+    }
+    let mut models = Vec::new();
+    if let Some(dir) = &parsed.game {
+        set("octave_check", parsed.octave_check.to_string());
+        for (k, v) in game_settings() {
+            set(&k, v);
+        }
+        if let Some(lib) = std::env::var_os("ORT_DYLIB_PATH") {
+            set("onnxruntime", Path::new(&lib).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+        for graph in ["encoder", "segmenter", "estimator", "dur2bd", "bd2dur"] {
+            models.push(provenance::fingerprint_file(&format!("game/{graph}"), &Path::new(dir).join(format!("{graph}.onnx")))?);
+        }
+    }
+    Ok(provenance::provenance(input, settings, models))
+}
+
+#[cfg(feature = "game")]
+fn game_settings() -> Vec<(String, String)> {
+    let p = sona_core::game::GameParams::default();
+    vec![
+        ("game_presence_threshold".into(), p.presence_threshold.to_string()),
+        ("game_segmenter_seed".into(), p.segmenter_seed.to_string()),
+        ("game_steps".into(), p.steps.to_string()),
+        ("game_boundary_threshold".into(), p.boundary_threshold.to_string()),
+        ("game_deterministic_kernels".into(), "true".into()),
+    ]
+}
+
+#[cfg(not(feature = "game"))]
+fn game_settings() -> Vec<(String, String)> {
+    Vec::new()
 }
 
 /// Replace the annotation's notes with GAME's, snapped to the grid (ADR-0017).

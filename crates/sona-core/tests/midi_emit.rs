@@ -32,6 +32,7 @@ fn annotation(bpm: f64, notes: Vec<Note>) -> Annotation {
         notes,
         f0_contour: vec![],
         energy_envelope: vec![],
+        provenance: None,
     }
 }
 

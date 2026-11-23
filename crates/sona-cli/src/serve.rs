@@ -130,6 +130,7 @@ impl Server {
             }
             ("GET", ["api", "jobs", id, "annotation"]) => self.job_file(id, |j| j.annotation_path(), "application/json"),
             ("GET", ["api", "jobs", id, "stem"]) => self.job_file(id, |j| j.stem_path(), "audio/wav"),
+            ("GET", ["api", "jobs", id, "provenance"]) => self.job_record(id),
             (_, ["api", ..]) => Err(HttpError { status: 404, message: "no such endpoint".into() }),
             ("GET", _) => self.static_file(&req.path),
             _ => Err(HttpError { status: 405, message: "method not allowed".into() }),
@@ -147,6 +148,16 @@ impl Server {
         }
         let body = std::fs::read(path(&job)).map_err(|e| HttpError { status: 500, message: e.to_string() })?;
         Ok(Response { status: 200, content_type, body })
+    }
+
+    /// The job's record (ADR-0024), for a failed or cancelled job too, once it has finished.
+    fn job_record(&self, id: &str) -> Result<Response, HttpError> {
+        let job = self.job(id)?;
+        if !job.phase().is_final() {
+            return Err(HttpError { status: 409, message: format!("the job is {}", job.phase().label()) });
+        }
+        let body = std::fs::read(job.provenance_path()).map_err(|_| HttpError { status: 404, message: "this job left no record".into() })?;
+        Ok(Response { status: 200, content_type: "application/json", body })
     }
 
     fn create_job(&self, req: &Request) -> Result<Response, HttpError> {

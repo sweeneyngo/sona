@@ -26,6 +26,9 @@ does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, a
 - **Tempo, grid and key** are under the **♩** button. **View** holds the pitch curve, the pitch pen and
   the mutes.
 - **Export → USTX / UST / MIDI.** The page autosaves; **File → Save session** keeps a copy.
+  **File → Details…** shows what produced the notes: the sona build, the input's and models' SHA-256,
+  every setting, and, for a song, each step's time and the separator versions
+  ([ADR-0024](docs/adr/0024-provenance.md)).
   **File → Open files** loads an annotation from `sona transcribe` and its stem.
 
 **Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):

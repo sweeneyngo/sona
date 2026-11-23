@@ -71,7 +71,7 @@ top three overall are at the end.
 | # | Frontier | Evidence | Cost | How to tell |
 |---|---|---|---|---|
 | 6.1 | ✅ **Done (ADR-0023).** **Seed GAME's segmenter** in sona (fixed `seed` on its random node at load) so a song always gives the same notes | Unseeded runs vary by about 2 notes in 70, and by 0.3–0.7 points of cell accuracy | S | Same notes on reruns; seeded dev numbers recorded |
-| 6.2 | **Structured job logs**: per-phase timings, tool versions, model hashes and the seed in each job, with a log download in the app | The job log is a tail of child output | S | Every job's log answers "what produced this?" |
+| 6.2 | ✅ **Done (ADR-0024).** **Structured job logs**: per-phase timings, tool versions, model hashes and the seed in each job, with a log download in the app | The job log is a tail of child output | S | Every job's log answers "what produced this?" |
 | 6.3 | **Errors a user can act on**: a missing separator or model, an unreadable file, out of disk, each with the fix | Some errors still surface as raw tool output | S | Fault-injection tests in `tests/serve.rs` |
 | 6.4 | **Browser drivers in CI** (Playwright against `sona serve` with stub separators) | They run locally only (`web/e2e/`) | M | Green in CI |
 | 6.5 | **Eval dashboards**: per-song history across commits for cells, tempo and curve error | Numbers live in reports and commit messages | M | — |
@@ -79,7 +79,7 @@ top three overall are at the end.
 ## Top three overall
 
 1. **1.1, port the learned stage**: it puts the confirmed 78.8% stack into the app.
-2. **6.2, log provenance** (6.1, seeding GAME, is done): cheap, and every later measurement depends on it.
+2. ~~6.1 + 6.2, seed GAME and log provenance~~: done (ADR-0023, ADR-0024).
 3. **1.2, holdout4**: nothing else in section 1 can be confirmed without it.
 
 After those: 4.1 (undo) for usability, then 2.1 (tempo octave) to remove the remaining manual step.

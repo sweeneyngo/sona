@@ -1,11 +1,11 @@
 """The one-click path a newcomer takes: drop a song, check the tempo, transcribe, play; then the secondary controls."""
-import pathlib, time
+import hashlib, json, pathlib, time
 from playwright.sync_api import sync_playwright
 from _env import *  # noqa: F403
 D = OUT; S = OUT / "shots"; errors = []
 SONG = SONG
 with sync_playwright() as p:
-    b = p.chromium.launch(args=["--no-sandbox"]); page = b.new_context(viewport={"width": 1440, "height": 860}).new_page()
+    b = p.chromium.launch(args=["--no-sandbox"]); page = b.new_context(viewport={"width": 1440, "height": 860}, accept_downloads=True).new_page()
     page.on("pageerror", lambda e: errors.append(str(e))); page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.goto(SERVE_URL); page.evaluate("localStorage.clear()"); page.reload(); time.sleep(0.6)
     page.screenshot(path=str(S / "U1-start.png"))
@@ -22,6 +22,14 @@ with sync_playwright() as p:
     print(f"loaded after {time.time() - t0:.0f} s; status: {page.inner_text('#status')!r}; tempo chip: {page.inner_text('#tempo-chip')!r}")
     time.sleep(0.5); page.screenshot(path=str(S / "U4-loaded.png"))
     print("visible inputs in the editor:", page.evaluate("Array.from(document.querySelectorAll('input,select,textarea')).filter(e => e.offsetParent && e.type !== 'file').map(e => e.id)"))
+    mclick(page, "#details"); time.sleep(0.3)
+    sections = page.eval_on_selector_all("#details-body h3", "hs => hs.map(h => h.textContent)")
+    body = page.inner_text("#details-body")
+    print("details sections:", sections, "| engine game:", "game" in body, "| steps listed:", "separating-vocals" in body)
+    with page.expect_download() as dl: page.click("#details-download")
+    prov = json.load(open(dl.value.path()))
+    print("downloaded provenance: upload", prov["job"]["upload"]["name"], prov["job"]["upload"]["sha256"][:12], "| sha256sum of the song:", hashlib.sha256(SONG.read_bytes()).hexdigest()[:12])
+    page.keyboard.press("Escape")
     page.click("#play"); time.sleep(1.2); print("play button while playing:", page.inner_text("#play"), page.get_attribute("#play", "aria-label"))
     page.keyboard.press("Space"); time.sleep(0.3); print("after Space:", page.inner_text("#play"))
     page.click("#tempo-chip"); time.sleep(0.3); page.screenshot(path=str(S / "U5-tempo-pop.png"))

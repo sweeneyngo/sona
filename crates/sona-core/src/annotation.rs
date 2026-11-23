@@ -40,6 +40,55 @@ pub struct Annotation {
     pub f0_contour: Vec<F0Frame>,
     /// Per-frame energy/RMS envelope (display aid).
     pub energy_envelope: Vec<EnergyFrame>,
+    /// What produced this annotation (ADR-0024). Optional, so older annotations still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
+}
+
+/// Everything needed to answer "what produced this?": the build, the exact input and model files, the
+/// settings, and, for `sona serve`, the job that ran it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Provenance {
+    pub sona_version: String,
+    /// `git describe` of the build, with `-dirty` for uncommitted changes; `None` outside a checkout.
+    pub sona_commit: Option<String>,
+    pub created_unix_s: u64,
+    pub input: FileFingerprint,
+    /// Every setting that changes the notes, by name, in a stable order.
+    pub settings: std::collections::BTreeMap<String, String>,
+    /// Model files the notes came from (empty for the pure-DSP path).
+    #[serde(default)]
+    pub models: Vec<FileFingerprint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job: Option<JobRecord>,
+}
+
+/// A file by name, size and SHA-256 (hex), so it can be checked with `sha256sum`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileFingerprint {
+    /// What the file is for, e.g. `input`, `game/segmenter`, `separator/lead`.
+    pub role: String,
+    pub name: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+/// A `sona serve` job: the uploaded file, how long each step took, and the external tools it used.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobRecord {
+    pub id: String,
+    pub upload: FileFingerprint,
+    pub steps: Vec<StepTime>,
+    /// Tool name → version, e.g. `demucs` → `4.0.1`; `unknown` when it couldn't be read.
+    pub tools: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub models: Vec<FileFingerprint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepTime {
+    pub step: String,
+    pub seconds: f64,
 }
 
 /// A single detected note. Onset/offset are raw seconds; the UI hard-snaps them
@@ -145,6 +194,7 @@ mod tests {
                 EnergyFrame { time_s: 0.25, rms: 0.12 },
                 EnergyFrame { time_s: 0.26, rms: 0.14 },
             ],
+            provenance: None,
         }
     }
 

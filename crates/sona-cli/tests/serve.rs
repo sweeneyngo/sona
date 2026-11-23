@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+use sha2::Digest;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::fs::PermissionsExt;
@@ -137,8 +138,24 @@ fn a_song_goes_through_lead_separation_to_an_annotation_and_stem() {
     assert!(pitches.contains(&69) && pitches.contains(&71), "A4 and B4 expected, got {pitches:?}");
     let (status, stem) = request(srv.port, "GET", &format!("/api/jobs/{id}/stem"), None, b"");
     assert_eq!(status, 200);
-    let reader = hound::WavReader::new(std::io::Cursor::new(stem)).unwrap();
+    let reader = hound::WavReader::new(std::io::Cursor::new(stem.clone())).unwrap();
     assert_eq!((reader.spec().channels, reader.spec().sample_rate), (1, 44_100), "the stem is mono at the song's rate");
+
+    let sha = |b: &[u8]| -> String { sha2::Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect() };
+    let p = &ann["provenance"];
+    assert_eq!(p["input"]["sha256"], sha(&stem), "the annotation names the exact stem it came from");
+    assert_eq!(p["settings"]["engine"], "pyin");
+    assert_eq!(p["settings"]["grid"], "16");
+    assert_eq!(p["job"]["upload"]["sha256"], sha(&song_wav()), "and the exact upload");
+    assert_eq!(p["job"]["upload"]["name"], "song.wav");
+    let steps: Vec<&str> = p["job"]["steps"].as_array().unwrap().iter().map(|s| s["step"].as_str().unwrap()).collect();
+    assert_eq!(steps, ["queued", "separating-vocals", "separating-lead", "transcribing"]);
+    assert!(p["job"]["steps"].as_array().unwrap().iter().all(|s| s["seconds"].as_f64().unwrap() >= 0.0));
+    assert_eq!(p["job"]["tools"]["demucs"], "unknown", "the stub has no demucs package, and says so rather than guessing");
+    let (status, record) = json(srv.port, "GET", &format!("/api/jobs/{id}/provenance"), b"");
+    assert_eq!(status, 200);
+    assert_eq!(record["outcome"], "done");
+    assert_eq!(record["job"]["upload"], p["job"]["upload"]);
 }
 
 #[test]
@@ -150,6 +167,12 @@ fn a_failing_separator_fails_the_job_with_its_message() {
     assert!(fin["error"].as_str().unwrap().contains("out of memory"), "{fin}");
     let (status, _) = json(srv.port, "GET", &format!("/api/jobs/{}/annotation", job["id"].as_str().unwrap()), b"");
     assert_eq!(status, 409, "no annotation from a failed job");
+    let (status, record) = json(srv.port, "GET", &format!("/api/jobs/{}/provenance", job["id"].as_str().unwrap()), b"");
+    assert_eq!(status, 200, "a failed job still leaves its record");
+    assert_eq!(record["outcome"], "failed");
+    assert!(record["error"].as_str().unwrap().contains("out of memory"), "{record}");
+    let steps: Vec<&str> = record["job"]["steps"].as_array().unwrap().iter().map(|s| s["step"].as_str().unwrap()).collect();
+    assert_eq!(steps, ["queued", "separating-vocals"]);
 }
 
 #[test]

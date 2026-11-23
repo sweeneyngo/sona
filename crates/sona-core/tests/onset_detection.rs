@@ -119,6 +119,7 @@ fn onsets_and_envelope_on_a_stem_with_bleed() {
         notes: vec![],
         f0_contour: vec![],
         energy_envelope: result.energy_envelope,
+        provenance: None,
     };
     let json = serde_json::to_string(&annotation).expect("serialize");
     let round_tripped: Annotation = serde_json::from_str(&json).expect("deserialize");

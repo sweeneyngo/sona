@@ -670,6 +670,22 @@
       .menu-check kbd {
         margin-left: auto;
       }
+      .details-list {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 4px 16px;
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+      .details-list dt {
+        color: var(--muted);
+      }
+      .details-list dd {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
       .help-steps {
         margin: 0;
         padding-left: 20px;
@@ -1024,6 +1040,7 @@
             <button role="menuitem" id="open-stem">Open stem audio…</button>
             <div class="menu-sep" role="separator"></div>
             <button role="menuitem" id="save" disabled>Save session<span class="hint">.json</span></button>
+            <button role="menuitem" id="details" disabled>Details…</button>
             <div class="menu-sep" role="separator"></div>
             <button role="menuitem" id="settings">Settings…</button>
           </div>
@@ -1352,6 +1369,19 @@
             <button id="lyrics-from-start">Fill from the first note</button>
             <button id="lyrics-clear">Clear all lyrics</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="details-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="details-title">
+        <div class="modal-head">
+          <h2 id="details-title">Details</h2>
+          <button id="details-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="details-body"></div>
+          <div class="lyrics-actions"><button id="details-download">Download</button></div>
         </div>
       </div>
     </div>

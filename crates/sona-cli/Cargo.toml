@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Records the git commit of the build for provenance (ADR-0024).
+build = "build.rs"
 
 [[bin]]
 name = "sona"
@@ -17,6 +19,7 @@ serde_json.workspace = true
 # WAV decoding is a CLI (I/O) concern; the core takes mono `&[f32]`. `hound` is
 # pure-Rust, no system codec — a stem is decoded and downmixed to mono here.
 hound.workspace = true
+sha2.workspace = true
 
 [features]
 default = ["spectral"]
