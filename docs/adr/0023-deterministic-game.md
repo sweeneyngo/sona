@@ -50,12 +50,30 @@ before this work:
     even with every core busy-looping, didn't flip a boundary. The evidence is the natural experiment
     above: the same binary under the dev evaluation's load gave four different results without the
     flag (68/69 notes), and four identical results matching idle with it (71 notes).
-- **Dev baseline, seeded and deterministic:** cells **87.1%**, COnP F1 0.770 (9 songs, lead stems,
-  `game=0.8,oct=1`). This is inside the 87.0–87.4 range of the five seeds measured for the fine-tune,
-  so the fix is accuracy-neutral and the 87% dev figure stands.
+- **Dev baseline, seeded and deterministic** (re-measured after the concurrency fix below): cells
+  **87.1%**, COnP F1 0.770, COnPOff 0.579 (9 songs, lead stems, `game=0.8,oct=1`).
+  - The first, timing-dependent run had COnPOff 0.584.
+  - Two cold runs of the fixed harness wrote byte-identical GAME output for 9/9 songs, and identical
+    reports.
+  - The result is inside the 87.0–87.4 range of the five seeds measured for the fine-tune, so the fix
+    is accuracy-neutral and the 87% dev figure stands.
 
 The two determinism tests need ONNX Runtime and a downloaded GAME release, so they are `#[ignore]` in CI.
-Run them with `ORT_DYLIB_PATH` and `SONA_GAME_DIR` set (commands are in their headers).
+Run them with `ORT_DYLIB_PATH` and `SONA_GAME_DIR` set; the commands are in `docs/dev-workflow.md`.
+
+**Review (comment-sicko pass) found a gap, now fixed.** The first version kept one segmenter session per
+model and restarted it at the start of each transcription. Two songs transcribed *at the same time* on
+one model therefore shared its random stream; the reviewer reproduced different notes 2 times in 4. The
+harness runs songs in parallel on one model, so its first seeded dev number (87.1%) was
+timing-dependent.
+
+Each transcription now opens its own segmenter session, seeded from that call's
+`GameParams::segmenter_seed` (the per-call seed used to be ignored). The in-process test runs A next to B
+on two threads four times, and A always matches A alone. That test fails on the old code. The same pass
+also fixed three smaller issues:
+- each random node now gets its own seed;
+- an attribute's name is read the way protobuf reads it (the last value wins);
+- a model whose random op sits inside a subgraph is refused at load, instead of loading unseeded.
 
 ## Consequences
 

@@ -1,7 +1,3 @@
-//! The same stem gives the same GAME notes in every process, even with several running at once (ADR-0023).
-//! `ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo test -p sona-cli --features game --test game_determinism -- --ignored`
-//! A synthetic melody is clean enough that thread-dependent rounding rarely flips a boundary; set
-//! `SONA_DETERMINISM_STEM` to a real 44.1 kHz vocal stem (local, never committed) to test that too.
 use std::process::Command;
 
 fn melody_wav(path: &std::path::Path) {

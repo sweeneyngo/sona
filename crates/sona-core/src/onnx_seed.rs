@@ -1,10 +1,8 @@
 //! Give an ONNX model's random nodes a fixed `seed` attribute, in memory. GAME's
 //! D3PM segmenter samples with an unseeded `RandomUniformLike`, so without this
-//! the same song gives different notes from run to run (ADR-0023). A minimal
-//! protobuf walk (ModelProto → GraphProto → NodeProto): no ONNX dependency, and
-//! no ONNX Runtime needed to test it.
+//! the same song gives different notes from run to run (ADR-0023).
 
-const RANDOM_OPS: [&[u8]; 4] = [b"RandomUniformLike", b"RandomUniform", b"RandomNormalLike", b"RandomNormal"];
+pub const RANDOM_OPS: [&[u8]; 4] = [b"RandomUniformLike", b"RandomUniform", b"RandomNormalLike", b"RandomNormal"];
 const MODEL_GRAPH: u32 = 7;
 const GRAPH_NODE: u32 = 1;
 const NODE_OP_TYPE: u32 = 4;
@@ -26,8 +24,10 @@ pub fn seed_random_nodes(model: &[u8], seed: f32) -> Result<(Vec<u8>, usize), St
             if field != GRAPH_NODE || !is_random(node)? {
                 return Ok(None);
             }
+            // Each node its own seed: two same-shaped random nodes with one seed would draw identical streams.
+            let node_seed = seed + seeded as f32;
             seeded += 1;
-            Ok(Some(with_seed(node, seed)?))
+            Ok(Some(with_seed(node, node_seed)?))
         })?;
         Ok(Some(graph))
     })?;
@@ -45,7 +45,6 @@ fn is_random(node: &[u8]) -> Result<bool, String> {
     Ok(op.is_some_and(|op| RANDOM_OPS.contains(&op)))
 }
 
-/// The node without any `seed` attribute, plus `seed` as a FLOAT attribute.
 fn with_seed(node: &[u8], seed: f32) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(node.len() + 16);
     for f in fields(node) {
@@ -65,17 +64,18 @@ fn with_seed(node: &[u8], seed: f32) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// The attribute's name; like protobuf parsers, the last value of a repeated scalar field wins.
 fn attr_name(attr: &[u8]) -> Result<Option<&[u8]>, String> {
+    let mut name = None;
     for f in fields(attr) {
         let f = f?;
         if f.number == ATTR_NAME && f.wire == LEN {
-            return Ok(Some(f.body));
+            name = Some(f.body);
         }
     }
-    Ok(None)
+    Ok(name)
 }
 
-/// Copy `msg`, replacing the body of any length-delimited field for which `edit` returns new bytes.
 fn rewrite(msg: &[u8], mut edit: impl FnMut(u32, &[u8]) -> Result<Option<Vec<u8>>, String>) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(msg.len() + 64);
     for f in fields(msg) {
@@ -91,9 +91,7 @@ fn rewrite(msg: &[u8], mut edit: impl FnMut(u32, &[u8]) -> Result<Option<Vec<u8>
 struct Field<'a> {
     number: u32,
     wire: u8,
-    /// The payload of a length-delimited field (empty for the other wire types).
     body: &'a [u8],
-    /// The whole field, key included, as it appears in the message.
     raw: &'a [u8],
 }
 
@@ -121,7 +119,7 @@ fn fields(msg: &[u8]) -> impl Iterator<Item = Result<Field<'_>, String>> {
                 5 => skip(msg, &mut pos, 4)?,
                 w => return Err(format!("unsupported protobuf wire type {w}")),
             };
-            Ok(Field { number, wire, body: if wire == LEN { body } else { &msg[pos..pos] }, raw: &msg[start..pos] })
+            Ok(Field { number, wire, body, raw: &msg[start..pos] })
         })();
         if parsed.is_err() {
             pos = msg.len();
@@ -239,6 +237,15 @@ mod tests {
     }
 
     #[test]
+    fn gives_each_random_node_its_own_seed() {
+        let m = model(&[node("RandomUniformLike", &[]), node("Add", &[]), node("RandomNormalLike", &[])]);
+        let (out, n) = seed_random_nodes(&m, 5.0).unwrap();
+        assert_eq!(n, 2);
+        let ns = nodes_of(&out);
+        assert_eq!((seeds_of(&ns[0]), seeds_of(&ns[2])), (vec![5.0], vec![6.0]));
+    }
+
+    #[test]
     fn replaces_an_existing_seed_rather_than_adding_a_second() {
         let m = model(&[node("RandomNormal", &[float_attr("seed", 3.0), float_attr("scale", 2.0)])]);
         let (out, n) = seed_random_nodes(&m, 1.0).unwrap();
@@ -262,8 +269,6 @@ mod tests {
 
 #[cfg(test)]
 mod real_model {
-    /// `SONA_GAME_DIR=… SONA_SEEDED_OUT=/tmp/x.onnx cargo test -p sona-core -- --ignored real_game`
-    /// writes the seeded segmenter, for checking with the `onnx` Python package.
     #[test]
     #[ignore = "needs a downloaded GAME release"]
     fn seeds_the_real_game_segmenter() {

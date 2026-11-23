@@ -47,7 +47,7 @@ pub struct GameParams {
     /// ONNX Runtime intra-op threads.
     pub threads: usize,
     /// Seed for the segmenter's boundary sampling. Each transcription starts from it, so a song always
-    /// gives the same notes (ADR-0023). 1.0 was fixed before any seeded result was looked at.
+    /// gives the same notes (ADR-0023).
     pub segmenter_seed: f32,
 }
 
@@ -90,16 +90,29 @@ impl std::fmt::Display for GameError {
 
 impl std::error::Error for GameError {}
 
-/// A session whose random generator starts at the graph's seed.
-fn segmenter_session(onnx: &[u8], threads: usize) -> Result<Session, GameError> {
-    Session::builder()
-        .map_err(ort_err)?
-        .with_intra_threads(threads)
-        .map_err(ort_err)?
-        .with_deterministic_compute(true)
-        .map_err(ort_err)?
-        .commit_from_memory(onnx)
-        .map_err(ort_err)
+enum Graph<'a> {
+    File(&'a Path),
+    Bytes(&'a [u8]),
+}
+
+fn session(graph: Graph<'_>, threads: usize) -> Result<Session, GameError> {
+    let b = Session::builder().map_err(ort_err)?.with_intra_threads(threads).map_err(ort_err)?.with_deterministic_compute(true).map_err(ort_err)?;
+    match graph {
+        Graph::File(p) => b.commit_from_file(p),
+        Graph::Bytes(m) => b.commit_from_memory(m),
+    }
+    .map_err(ort_err)
+}
+
+/// The segmenter with its random node seeded. Refuses a graph with random ops the patch can't reach
+/// (inside a subgraph or function): that model would load unseeded and silently vary from run to run.
+fn seeded_segmenter(onnx: &[u8], seed: f32) -> Result<Vec<u8>, GameError> {
+    let (seeded, n) = crate::onnx_seed::seed_random_nodes(onnx, seed).map_err(GameError::Ort)?;
+    let mentions = crate::onnx_seed::RANDOM_OPS.iter().map(|op| onnx.windows(op.len()).filter(|w| w == op).count()).sum::<usize>();
+    if n == 0 && mentions > 0 {
+        return Err(GameError::Ort("segmenter.onnx has a random op outside its main graph; sona can't seed it, so its notes would vary from run to run".into()));
+    }
+    Ok(seeded)
 }
 
 fn ort_err(e: impl std::fmt::Display) -> GameError {
@@ -109,8 +122,9 @@ fn ort_err(e: impl std::fmt::Display) -> GameError {
 /// The five GAME graphs, loaded once.
 pub struct GameModel {
     encoder: Mutex<Session>,
-    segmenter: Mutex<Session>,
-    /// The seeded segmenter graph, kept so each transcription can start a fresh session from the seed.
+    /// The segmenter graph as shipped. Each transcription seeds it and opens its own session: ONNX
+    /// Runtime creates a seeded generator when a session starts and advances it on every run, with no
+    /// reset, so a shared session would make a song's notes depend on what else ran.
     segmenter_onnx: Vec<u8>,
     estimator: Mutex<Session>,
     dur2bd: Mutex<Session>,
@@ -139,22 +153,11 @@ impl GameModel {
             Some(p) => return Err(GameError::Ort(format!("ORT_DYLIB_PATH={} is not a file", Path::new(&p).display()))),
             None => return Err(GameError::Ort("set ORT_DYLIB_PATH to an ONNX Runtime shared library (libonnxruntime.so / .dylib / onnxruntime.dll)".into())),
         }
-        let open = |name: &str| -> Result<Mutex<Session>, GameError> {
-            let s = Session::builder()
-                .map_err(ort_err)?
-                .with_intra_threads(params.threads)
-                .map_err(ort_err)?
-                .with_deterministic_compute(true)
-                .map_err(ort_err)?
-                .commit_from_file(dir.join(format!("{name}.onnx")))
-                .map_err(ort_err)?;
-            Ok(Mutex::new(s))
-        };
-        let raw = std::fs::read(dir.join("segmenter.onnx")).map_err(ort_err)?;
-        let (segmenter_onnx, _) = crate::onnx_seed::seed_random_nodes(&raw, params.segmenter_seed).map_err(GameError::Ort)?;
+        let open = |name: &str| session(Graph::File(&dir.join(format!("{name}.onnx"))), params.threads).map(Mutex::new);
+        let segmenter_onnx = std::fs::read(dir.join("segmenter.onnx")).map_err(ort_err)?;
+        seeded_segmenter(&segmenter_onnx, params.segmenter_seed)?;
         Ok(Self {
             encoder: open("encoder")?,
-            segmenter: Mutex::new(segmenter_session(&segmenter_onnx, params.threads)?),
             segmenter_onnx,
             estimator: open("estimator")?,
             dur2bd: open("dur2bd")?,
@@ -169,18 +172,19 @@ impl GameModel {
     }
 
     /// [`transcribe`](Self::transcribe) with other inference settings (the
-    /// thread count is fixed when the model loads).
+    /// thread count is fixed when the model loads). Safe to call from several threads at once: each call
+    /// has its own segmenter session, so concurrent songs don't share random draws.
     pub fn transcribe_with(&self, samples: &[f32], sample_rate: u32, params: GameParams) -> Result<Vec<GameNote>, GameError> {
         if sample_rate != GAME_SAMPLE_RATE {
             return Err(GameError::SampleRate(sample_rate));
         }
-        *self.segmenter.lock().expect("segmenter lock") = segmenter_session(&self.segmenter_onnx, self.params.threads)?;
+        let mut segmenter = session(Graph::Bytes(&seeded_segmenter(&self.segmenter_onnx, params.segmenter_seed)?), self.params.threads)?;
         let mut notes = Vec::new();
         let cuts = quiet_cuts(samples, sample_rate, params.chunk_s);
         for w in cuts.windows(2) {
             let t0 = w[0] as f64 / sample_rate as f64;
             let mut t = t0;
-            for (dur, midi, voiced) in self.run_chunk(&samples[w[0]..w[1]], sample_rate, params)? {
+            for (dur, midi, voiced) in self.run_chunk(&mut segmenter, &samples[w[0]..w[1]], sample_rate, params)? {
                 notes.push(GameNote { onset_s: t, offset_s: t + dur as f64, midi, voiced });
                 t += dur as f64;
             }
@@ -188,7 +192,7 @@ impl GameModel {
         Ok(notes)
     }
 
-    fn run_chunk(&self, y: &[f32], sr: u32, p: GameParams) -> Result<Vec<(f32, f32, bool)>, GameError> {
+    fn run_chunk(&self, segmenter: &mut Session, y: &[f32], sr: u32, p: GameParams) -> Result<Vec<(f32, f32, bool)>, GameError> {
         let dur = y.len() as f32 / sr as f32;
         let scalar_f = |v: f32| Tensor::from_array((Vec::<i64>::new(), vec![v])).map_err(ort_err);
         let scalar_i = |v: i64| Tensor::from_array((Vec::<i64>::new(), vec![v])).map_err(ort_err);
@@ -223,8 +227,7 @@ impl GameModel {
         };
         let mut prev = known.clone();
         for i in 0..p.steps {
-            let mut s = self.segmenter.lock().expect("segmenter lock");
-            let out = s
+            let out = segmenter
                 .run(ort::inputs! {
                     "x_seg" => Tensor::from_array((x_seg.0.clone(), x_seg.1.clone())).map_err(ort_err)?,
                     "language" => Tensor::from_array(([1usize], vec![p.language])).map_err(ort_err)?,
@@ -541,7 +544,6 @@ mod tests {
         assert!(cuts.iter().any(|&c| (21_000..21_500).contains(&c)), "a cut lands in the silence: {cuts:?}");
     }
 
-    /// A sung-like line: steps between pitches with vibrato and a little breath noise, at 44.1 kHz.
     fn melody(pitches: &[f32], seconds_each: f32) -> Vec<f32> {
         let sr = GAME_SAMPLE_RATE as f32;
         let mut seed = 99u32;
@@ -560,7 +562,6 @@ mod tests {
         out
     }
 
-    /// `ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo test -p sona-core --features game -- --ignored same_notes`
     #[test]
     #[ignore = "needs ONNX Runtime and a downloaded GAME release"]
     fn same_notes_for_a_song_whatever_ran_before_it() {
@@ -576,5 +577,18 @@ mod tests {
         assert_eq!(first, again);
         let fresh = GameModel::load(Path::new(&dir), GameParams::default()).unwrap();
         assert_eq!(key(fresh.transcribe(&a, GAME_SAMPLE_RATE).unwrap()), first);
+
+        for _ in 0..4 {
+            let (with_b, _) = std::thread::scope(|s| {
+                let ta = s.spawn(|| key(model.transcribe(&a, GAME_SAMPLE_RATE).unwrap()));
+                let tb = s.spawn(|| model.transcribe(&b, GAME_SAMPLE_RATE).unwrap());
+                (ta.join().unwrap(), tb.join().unwrap())
+            });
+            assert_eq!(with_b, first, "a song transcribed alongside another gets the same notes");
+        }
+
+        let seed2 = GameParams { segmenter_seed: 2.0, ..model.params };
+        let other = key(model.transcribe_with(&a, GAME_SAMPLE_RATE, seed2).unwrap());
+        assert_eq!(key(model.transcribe_with(&a, GAME_SAMPLE_RATE, seed2).unwrap()), other, "a per-call seed is honoured, and repeatable");
     }
 }
