@@ -1,81 +1,51 @@
 # sona
 
-A **monophonic vocal-to-MIDI transcriber**.
-Turn a single isolated vocal stem — ripped from a finished mix — into a clean MIDI melody, specialized for staccato, pitch-precise, grid-aligned singing (Vocaloid and the like).
+**Turn a song into notes you can sing with.** Drop a song: sona separates the singer, writes down their
+notes on the song's grid, reads their glides and vibrato, and exports the result to **OpenUtau (USTX)**,
+**UTAU (UST)** or **MIDI**, all on your computer. It is built for grid-locked, pitch-precise singing such
+as Vocaloid songs, and its accuracy is measured against hand-made USTs rather than eyeballed.
 
-sona splits the problem in two: a headless Rust **perception** core reads the audio and emits raw note events, per-note confidence, an f0 contour, and an energy envelope as a single JSON annotation; a web **interpretation** surface renders that JSON as a piano-roll, plays the stem against a synthesized version, snaps notes to a live grid and key, and exports the corrected MIDI. The core stays invariant to musical settings, so the UI can re-grid and re-audition freely without re-running any DSP.
-
-The pipeline is pure Rust with no ML runtime and no C dependency, and no FFT on the default (note-HMM) path: hand-rolled pYIN pitch tracking, energy-novelty onset detection, a Tony-style note-HMM (Viterbi) for segmentation, and a weakest-link confidence score that tells you *where to listen* instead of asking you to re-check the whole song. For grid-locked songs, an opt-in **grid mode** decodes notes per grid cell instead of per frame (see *In-domain* below).
-
-Accuracy is measured, not eyeballed. A separate `sona-eval` crate scores the pipeline against labeled vocal data (the Vocadito corpus + committed golden fixtures) with per-stage, `mir_eval`-style metrics. Replacing the original heuristic segmenter with the note-HMM was gated on these numbers:
-
-| Metric (Vocadito corpus)        | Heuristic baseline | Note-HMM | Δ     |
-|---------------------------------|--------------------|----------|-------|
-| Note F1 — COnP (onset + pitch)  | 0.515              | 0.646    | +25%  |
-| Note F1 — COnPOff (+ offset)    | 0.348              | 0.508    | +46%  |
-| Onset F1 (±50 ms)               | 0.565              | —        | —     |
-| Raw Pitch Accuracy              | 0.858              | —        | —     |
-
-**Notes:**
-
-- **COnP** = correct onset (±50 ms) and pitch (±50 cents); **COnPOff** additionally requires the offset within `max(20% of duration, 50 ms)`.
-- Metrics mirror `mir_eval` conventions and are reimplemented in pure Rust (cross-checked once, offline, against `mir_eval` 0.8.2).
-- Fixtures run in the normal `cargo test`; the corpus-backed run is opt-in (fetch script + `--corpus` flag).
-
-### In-domain: how close to a hand-made UST?
-
-Vocadito is general singing. sona's target is grid-locked Vocaloid songs, so it is also gated against **Pifuyuu's UTAU USTs**: 20 songs, 9 dev, 9 holdout, 2 watched or excluded. The USTs are fetched locally and never committed. Two findings changed how sona should be run on that material.
-
-1. **Decode on the grid.** Most frame-level misses come from consonants unvoicing a note's start, from pitch glides, and from the 100 ms prune floor. Grid mode decodes one state per grid cell instead (`--grid`, [ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) and estimates the grid phase from the stem. It was confirmed on the holdout, read once against a pre-registered rule: COnP F1 0.340 → **0.455**, COnPOff F1 0.158 → **0.303**, with no song regressing.
-2. **Follow the lead through other voices.** Two thirds of a UST's notes sit where harmony or doubling also sings, and two voices break pYIN.
-   - Harmonic-salience pitch evidence (on by default in grid mode) finds the lead's f0 in 63% of those frames, against pYIN's 32%.
-   - A lead-vocal stem from a UVR karaoke model helps too, and the two combine.
-3. **Split held pitches at syllable changes.** A spectral model (also on by default) separates a new syllable on a held pitch from a sustained note far better than voicing or energy (AUC 0.80 against 0.69).
-
-Items 2 and 3 ([ADR-0016](docs/adr/0016-grid-evidence-salience-and-spectral-cue.md)) were found by a 4-worker parallel search on the dev songs. A **fresh holdout** of 10 songs nothing was tuned on confirmed them: cell accuracy 52.8% → **70.0%** and note F1 0.330 → 0.514, with every song improving. Both are now grid mode's defaults. The holdout also showed that lead-vocal stems add nothing once salience is on, so a plain demucs vocal stem is enough.
-
-| dev split (9 songs), quantized, all notes | COnP F1 | COnPOff F1 | grid cells matching the UST |
-|---|---|---|---|
-| note-HMM, vocal stem | 0.341 | 0.133 | 53.3% |
-| grid mode, vocal stem | 0.474 | 0.256 | 67.0% |
-| grid mode, lead-vocal stem | 0.518 | 0.285 | 76.0% |
-| **grid mode (with salience + spectral cue, now the default), vocal stem** | **0.611** | **0.388** | **79.5%** |
-| grid mode (with salience + spectral cue), lead-vocal stem | 0.596 | 0.369 | 80.7% |
-
-**Where the rest goes.** With perfect note boundaries, sona's pitch contour would score 0.91 monophonic COnP F1, so the pitch information is there. What's left:
-- **Same-pitch repeated syllables:** no acoustic cue tried separates them well.
-- **Separation failures:** two songs whose stems are mostly bass or an octave double.
-
-**GAME note extraction (experimental, opt-in).** openvpi's GAME singing-transcription model, run through ONNX Runtime (`--features game`, [ADR-0017](docs/adr/0017-game-note-extraction.md)), is the biggest single gain found.
-- **Dev:** cells 79.5% → 87.4% on lead stems.
-- **Fresh holdout (holdout3, 10 songs, read once):** 72.5% → 76.3% (+3.8, 9 of 10 songs better). That is short of the pre-registered +5 bar, because one song where every system fails (ironication) loses 10 points. So it stays experimental.
-- **Two additions confirmed on that holdout:**
-  - a subharmonic octave check, +0.3 with no song worse;
-  - a learned per-cell stage trained on Pifuyuu's USTs, +2.2 (95% interval +0.8 to +3.5).
-- **Full stack on holdout3:** **78.8%** against 72.5% for today's default.
-- **Licence:** GAME's weights are CC BY-NC-SA 4.0 (non-commercial), so you download them yourself; they are never bundled. The learned stage's weights stay local.
-- **Fine-tuning GAME on Pifuyuu's USTs** was measured and not adopted: +0.8 cells on dev (95% CI −0.5 to +1.9) against a +2.0 bar ([report](crates/sona-eval/reports/game-finetune.md)). GAME's segmenter is random from run to run; that report shows how big the effect is.
-
-Three uses of lyrics (note counts, count-constrained decoding, vowel alignment) were tried and measured, and none beat grid mode yet. Forced alignment of published lyrics with openvpi TiFA (Vocal2Midi's lyric path) was also measured and rejected. All findings, ceilings and negative results: [`crates/sona-eval/reports/grid-cell-decoder.md`](crates/sona-eval/reports/grid-cell-decoder.md).
-
----
-
-## Installation
-
-Clone the repo and build both halves — the Rust workspace and the web review surface:
+## Quick start
 
 ```bash
-git clone https://github.com/sweeneyngo/sona.git
-cd sona
-cargo build                       # sona-core, sona-cli, sona-eval
-(cd web && npm install)           # the review surface
+git clone https://github.com/sweeneyngo/sona.git && cd sona
+cargo build --release                       # Rust, stable
+(cd web && npm install && npm run build)    # Node 22+
+scripts/setup-separators.sh                 # vocal separators (Python 3.10–3.12, ~4 GB, one-time)
+./target/release/sona serve                 # open http://127.0.0.1:8977
 ```
 
-## Usage
+Drop a song on the page. sona suggests its tempo (press **½×** if it's twice too fast), and **Transcribe**
+does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, add GAME (below).
 
-### Transcribe a stem (CLI)
+## Using the app
 
-The `sona` binary takes a **mono WAV vocal stem** and a **BPM**, and prints the annotation JSON to stdout:
+- **Hear and fix.** ▶ or Space plays the singer against the notes. Drag a note to move it, drag its right
+  edge to resize it, double-click to add one, Delete to remove one. Colours flag the notes worth
+  checking (Help explains them).
+- **Tempo, grid and key** are under the **♩** button. **View** holds the pitch curve, the pitch pen and
+  the mutes.
+- **Export → USTX / UST / MIDI.** The page autosaves; **File → Save session** keeps a copy.
+  **File → Open files** loads an annotation from `sona transcribe` and its stem.
+
+**Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
+- **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
+- **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
+- **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **Export → USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
+- **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
+- **Sessions.** Lyrics are saved in the session JSON.
+
+**Pitch: portamento, vibrato and the singer's own pitch** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md), [ADR-0021](docs/adr/0021-direct-pitch-editing-and-sung-pitch.md)):
+- **Fit.** After a transcription, and on **Edit → Fit pitch**, sona reads every note's glide and vibrato from the singer's pitch. The orange **curve** is what OpenUtau will sing, drawn over the singer's pitch (white).
+- **Edit on the roll.** Select a note and its pitch handles appear on the orange curve, as in OpenUtau. Circles are portamento points: drag to move, double-click the curve to add, Alt-click (or hover + Delete) to remove. Diamonds shape the vibrato: drag its start, the top corners for depth and fade-in/out, the lower one for its period. **V** toggles a note's vibrato; **Values** under the roll takes exact numbers.
+- **The singer's own pitch.** **Export → USTX with the singer's pitch** adds the white line as OpenUtau's drawn pitch curve (`pitd`), measured against the notes exactly as exported, so OpenUtau sings the singer's inflections and you can keep editing them with its pitch pen. Unvoiced frames, rests and octave slips (> 600 cents off) fall back to the notes. UST has no free curve, so the plain exports keep points and vibrato.
+- **Pitch pen.** Press **P** (or **View → Pitch pen**) and drag on the roll to redraw the white line; Alt-drag erases it back to the notes. Edits are saved in the session.
+- **Export.** UST and USTX carry points and vibrato in OpenUtau's own form: USTX pitch points and vibrato, UST `PBS/PBW/PBY/PBM` and `VBR`.
+- **How close it gets.** On songs the fitter was never tuned on, fitted curves sit 9–30% closer to the singer's pitch than flat notes; the per-song numbers are in the ADR.
+
+## Command line
+
+`sona transcribe` takes a **mono WAV vocal stem** and a **BPM**, and prints the annotation JSON:
 
 ```bash
 # print the annotation JSON
@@ -118,13 +88,20 @@ Options:
   --no-octave-check With --game: skip the subharmonic octave check (on by default).
 ```
 
-`--grid` is the mode to use for UST/Vocaloid-style material. Without it, sona stays on the grid-free perception path. Grid mode includes harmonic-salience pitch evidence and the spectral re-articulation cue by default (`--no-salience` and `--no-spectral-cue` turn them off). Grid cells matching the UST:
-- about 80% on the dev songs;
-- 70% on a fresh holdout, against 53% for plain grid mode.
+`--grid` is the mode for UST/Vocaloid-style material. It includes harmonic-salience pitch evidence and
+the spectral re-articulation cue by default. A plain demucs vocal stem is enough; on the holdout, a
+separate lead-vocal stem added nothing (it does help GAME).
 
-A plain demucs vocal stem is enough: on the holdout, a separate lead-vocal stem added nothing.
+`sona serve` hosts the app and runs jobs: demucs, then the UVR karaoke lead, then pYIN or GAME notes. It
+listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
+Options: `--port`, `--jobs-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`.
 
-The annotation JSON is the core↔UI contract — raw note events in *seconds*, a confidence scalar plus four sub-scores per note, and display aids:
+**GAME** (openvpi's singing-transcription model) gives the best notes. Its weights are CC BY-NC-SA 4.0
+(non-commercial), so you download them yourself. Build with `--features game`, set `ORT_DYLIB_PATH` to
+an ONNX Runtime library, and pass `--game ~/models/GAME-1.0.3-medium-onnx`.
+
+The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
+score with four sub-scores per note, the f0 contour and the energy envelope.
 
 ```jsonc
 {
@@ -148,106 +125,99 @@ The annotation JSON is the core↔UI contract — raw note events in *seconds*, 
 }
 ```
 
-### From a song, in one click (`sona serve`)
+## How well it works
 
-`sona serve` runs the review surface together with a local job runner ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)). Open the address it prints, press **＋ From audio**, pick a song, set its BPM, and choose the separation and the note engine. sona then:
-1. separates the vocals (demucs);
-2. separates the lead (the UVR karaoke model);
-3. transcribes the notes, with pYIN or GAME;
-4. loads the notes and the stem for you.
+All numbers come from pre-registered rules, read once on songs nothing was tuned on. The process is in
+[`docs/dev-workflow.md`](docs/dev-workflow.md).
 
-```bash
-(cd web && npm run build)                  # once: the app sona serve hosts
-cargo run --release -p sona-cli -- serve   # http://127.0.0.1:8977
-# with GAME notes: --features game, ORT_DYLIB_PATH, and --game ~/models/GAME-1.0.3-medium-onnx
-```
+**Notes against Pifuyuu's hand-made USTs** (42 Vocaloid songs; the USTs stay local, never committed).
+The metric is the share of grid cells that match the UST.
 
-- **Separators:** separation uses the same venvs as the corpus scripts (`~/.local/share/sona/demucs-venv`, `~/.local/share/sona/separator-venv`, or `--demucs-venv` / `--separator-venv`). The dialog shows what's available; an existing stem always works with "None".
-- **Privacy and safety:** everything runs on this computer. The server listens on 127.0.0.1 only and refuses requests for any other host name.
-- **Speed:** a 25 s song excerpt took 46 s from upload to loaded notes on a CPU.
+| | dev (9 songs, tuned on) | fresh test |
+|---|---|---|
+| grid mode, pYIN (the default) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
+| GAME + octave check | 87.4% | 76.3% (holdout3) |
+| + learned per-cell stage (Python prototype, not yet in the app) | — | **78.8%** (holdout3) |
 
-### Review, correct, and export (web)
+- **Ceilings** (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch per
+  cell 95.6%.
+- **Negative results:** GAME fine-tuned on 30 songs gave +0.8 (95% CI −0.5 to +1.9), so it is not
+  adopted ([report](crates/sona-eval/reports/game-finetune.md)). Lyric-count decoding, vowel alignment
+  and TiFA forced alignment were also measured and rejected
+  ([report](crates/sona-eval/reports/grid-cell-decoder.md)).
+- **Run-to-run noise:** GAME's segmenter samples at random, so unseeded runs vary by 0.3–0.7 points.
 
-Run the Vite dev server, then load the annotation JSON alongside its stem:
+How grid mode got there, on the dev songs:
 
-```bash
-cd web
-npm run dev        # http://localhost:5173 (HMR)
-```
+| dev split (9 songs), quantized, all notes | COnP F1 | COnPOff F1 | grid cells matching the UST |
+|---|---|---|---|
+| note-HMM, vocal stem | 0.341 | 0.133 | 53.3% |
+| grid mode, vocal stem | 0.474 | 0.256 | 67.0% |
+| grid mode, lead-vocal stem | 0.518 | 0.285 | 76.0% |
+| **grid mode (with salience + spectral cue, now the default), vocal stem** | **0.611** | **0.388** | **79.5%** |
+| grid mode (with salience + spectral cue), lead-vocal stem | 0.596 | 0.369 | 80.7% |
 
-Open the app and start from its start screen: **Generate from audio** (with `sona serve`), or **File → Open annotation…** and **Open stem audio…**. Then set the BPM and grid division, and press **Play** to hear the stem against the synthesized notes. Notes are colored by a confidence heatmap (red → green); low-confidence and off-grid notes are outlined and flagged. Drag to move, resize, double-click to add, Delete to remove, then **Export → MIDI** to write the authoritative file. Use **File → Save session** to keep a session JSON if you want to resume editing later.
+**Tempo** from the full mix ([ADR-0022](docs/adr/0022-tempo-estimation-and-one-step-start.md)): exact on
+24/32 fresh songs (75%), within an octave on 31/32, and never at half tempo. Slow songs read at double, so
+the app pre-fills the estimate with ½× beside it.
 
-**Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
-- **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
-- **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
-- **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **Export → USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
-- **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
-- **Sessions.** Lyrics are saved in the session JSON.
+**Pitch:** fitted glides and vibrato sit 9–30% closer to the singer's pitch than flat notes
+([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md)).
 
-**Pitch: portamento, vibrato and the singer's own pitch** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md), [ADR-0021](docs/adr/0021-direct-pitch-editing-and-sung-pitch.md)):
-- **Fit.** **Edit → Fit pitch** reads every note's glide and vibrato from the stem's pitch track. The orange **curve** is what OpenUtau will sing, drawn over the singer's pitch (white).
-- **Edit on the roll.** Select a note and its pitch handles appear on the orange curve, as in OpenUtau. Circles are portamento points: drag to move, double-click the curve to add, Alt-click (or hover + Delete) to remove. Diamonds shape the vibrato: drag its start, the top corners for depth and fade-in/out, the lower one for its period. **V** toggles a note's vibrato; the bar under the roll takes exact numbers.
-- **The singer's own pitch.** **Export → USTX with the singer's pitch** adds the white line as OpenUtau's drawn pitch curve (`pitd`), measured against the notes exactly as exported, so OpenUtau sings the singer's inflections and you can keep editing them with its pitch pen. Unvoiced frames, rests and octave slips (> 600 cents off) fall back to the notes. UST has no free curve, so the plain exports keep points and vibrato.
-- **Pitch pen.** Press **P** (or tick **pen**) and drag on the roll to redraw the white line; Alt-drag erases it back to the notes. Edits are saved in the session.
-- **Export.** UST and USTX carry points and vibrato in OpenUtau's own form: USTX pitch points and vibrato, UST `PBS/PBW/PBY/PBM` and `VBR`.
-- **How close it gets.** On songs the fitter was never tuned on, fitted curves sit 9–30% closer to the singer's pitch than flat notes; the per-song numbers are in the ADR.
+**General singing (Vocadito)**, for the grid-free path. Replacing the heuristic segmenter with the
+note-HMM was gated on these numbers:
 
-### Evaluate (optional)
+| Metric (Vocadito corpus)        | Heuristic baseline | Note-HMM | Δ     |
+|---------------------------------|--------------------|----------|-------|
+| Note F1 — COnP (onset + pitch)  | 0.515              | 0.646    | +25%  |
+| Note F1 — COnPOff (+ offset)    | 0.348              | 0.508    | +46%  |
+| Onset F1 (±50 ms)               | 0.565              | —        | —     |
+| Raw Pitch Accuracy              | 0.858              | —        | —     |
 
-```bash
-# fast, offline: the committed golden fixtures
-cargo run -p sona-eval --bin sona-eval-report
+COnP means a correct onset (±50 ms) and pitch (±50 cents); COnPOff also requires the offset. The metrics
+follow `mir_eval` and are reimplemented in Rust.
 
-# against the real Vocadito corpus
-crates/sona-eval/scripts/fetch-vocadito.sh
-cargo run -p sona-eval --bin sona-eval-report -- --corpus
-cargo run --release -p sona-eval --bin sona-eval-sweep -- --corpus
+## How it works
 
-# against the UST corpus (fetch USTs + audio, then separate; see the scripts' headers)
-cargo run --release -p sona-eval --bin sona-eval-ust-gate -- --grid        # the gate, dev split
-cargo run --release -p sona-eval --bin sona-eval-ust-dev -- --stem lead --cfg base:grid=est --cfg try:grid=est,g.change_cost=6 --per-song
-```
+1. **Separation** (`sona serve`): demucs, then the UVR karaoke model for the lead. Both run in their own
+   Python environments, never inside the crates.
+2. **Tempo:** spectral flux, then autocorrelation, then a comb searched in 140–280 BPM (ADR-0022).
+3. **Notes**, in the Rust core:
+   - the default is grid mode, which decodes one state per grid cell with pYIN pitch, harmonic salience
+     and a spectral syllable cue (ADR-0015, ADR-0016);
+   - optionally GAME notes with an octave check (ADR-0017);
+   - the original note-HMM path serves grid-free material (ADR-0010).
+4. **Interpretation**, in the browser: snapping to a live grid and key, per-note confidence, lyrics,
+   pitch fitting, handles and the pen (ADR-0003/0004, ADR-0018 to ADR-0021).
+5. **Export:**
+   - UST in Shift-JIS, or UTF-8 when a lyric needs it;
+   - USTX 0.7, optionally with a `pitd` curve;
+   - MIDI.
 
-The holdout split is read only on purpose: `--include-holdout --reason "…"` on the gate, or `--holdout-once --reason "…"` on the dev harness. Every read is logged in `crates/sona-eval/corpus/holdout-reads.jsonl`, and a second read of the same songs is refused without `--reread`.
+Every decision has an ADR in [`docs/adr/`](docs/adr/). The domain glossary is in
+[`CONTEXT.md`](CONTEXT.md), and what's next is in [`docs/roadmap.md`](docs/roadmap.md).
 
-### Checks
+## Development
 
-CI (`.github/workflows/ci.yml`) encodes what the project has learned, so no one can regress it by forgetting:
-- **No corpus data:** nothing from the UST corpus, audio or Vocadito is ever tracked.
-- **Output invariants:** on random stems, both decoders always emit one sorted, non-overlapping voice with valid scores.
-- **TLA+ model check:** grid note assembly plus the review surface's snap, including mutants that must be caught.
-- **Shared cases:** the quantizer's TypeScript and Rust ports agree.
-- **Clippy** with warnings as errors.
+[`docs/dev-workflow.md`](docs/dev-workflow.md) covers setup, the measure-and-confirm loop and every
+check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md). CI runs:
+- the corpus guard (no USTs, audio or Vocadito ever tracked);
+- clippy with warnings as errors;
+- the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
+- the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
+  start screen.
 
-The rules that need judgment (dev and holdout discipline, measure an oracle first, opt-in defaults, tests that claim behaviour) are in [`docs/agents/rules.md`](docs/agents/rules.md).
-
-## Building
-
-### Prerequisites
-
-- [Rust](https://www.rust-lang.org/tools/install) (stable, edition 2021). No C toolchain or model download needed for the default path.
-- [Node 22](https://nodejs.org/) or later — for the web review surface only.
-
-```bash
-git clone https://github.com/sweeneyngo/sona.git
-cd sona
-cargo build --release                        # workspace binaries (target/release/sona)
-(cd web && npm install && npm run build)     # static review surface in web/dist
-cargo test                                   # fast, offline test suite
-```
-
-## Layout
+The browser drivers (`web/e2e/`) run locally.
 
 ```
 sona/
 ├── crates/
-│   ├── sona-core/   # perception: stem → annotation JSON (pYIN, onsets, note-HMM, confidence)
-│   ├── sona-cli/    # the `sona` binary
-│   └── sona-eval/   # evaluation harness: per-stage metrics vs labeled data
-├── web/             # interpretation: Vite + TypeScript piano-roll review surface
-├── verification/    # TLA+ models (grid note assembly + snap), run by CI
-├── scripts/ci/      # repo guards run by CI
-├── docs/adr/        # architecture decision records (the load-bearing "why")
-├── docs/agents/     # rules and conventions for contributors and coding agents
-└── CONTEXT.md       # domain glossary
+│   ├── sona-core/      # perception: audio → notes, pitch, tempo (Rust)
+│   ├── sona-cli/       # the `sona` binary: transcribe, serve
+│   └── sona-eval/      # measurement: Vocadito, the UST corpus, tempo; holdout ledger; reports
+├── web/                # the app (Vite + TypeScript); web/e2e = browser drivers
+├── verification/       # TLA+ models, each with mutants, run by CI
+├── scripts/            # setup-separators.sh; ci/ guards
+├── docs/               # adr/, roadmap.md, dev-workflow.md, agents/
+└── CONTEXT.md          # domain glossary
 ```

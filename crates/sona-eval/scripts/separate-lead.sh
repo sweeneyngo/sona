@@ -33,27 +33,7 @@ stems="${SONA_UST_STEMS_DIR:-$script_dir/../data/pifuyuu-stems}"
 venv="${SONA_LEAD_VENV:-$HOME/.local/share/sona/separator-venv}"
 models_dir="$venv/models"
 
-if [ ! -x "$venv/bin/audio-separator" ]; then
-  py=""
-  for cand in python3.12 python3.11 python3.10 "$HOME"/.pyenv/versions/3.1[012].*/bin/python; do
-    if "$cand" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 12) else 1)' >/dev/null 2>&1; then
-      py="$cand"; break
-    fi
-  done
-  [ -n "$py" ] || { echo "error: need Python 3.10–3.12" >&2; exit 1; }
-  echo "Creating separator venv at $venv (one-time, ~2 GB with torch)"
-  "$py" -m venv "$venv"
-  "$venv/bin/pip" install --quiet --upgrade pip
-  "$venv/bin/pip" install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
-  "$venv/bin/pip" install --quiet "audio-separator[cpu]>=0.30"
-fi
-# torch and torchvision must come from the same build (audio-separator can pull a
-# PyPI torchvision built against a different torch); repair a mismatched venv.
-if ! "$venv/bin/python" -c "import torchvision" >/dev/null 2>&1; then
-  echo "Repairing torchvision to match torch $("$venv/bin/python" -c 'import torch; print(torch.__version__)')"
-  torch_v="$("$venv/bin/python" -c 'import torch; print(torch.__version__.split("+")[0])')"
-  "$venv/bin/pip" install --quiet --force-reinstall --no-deps "torch==$torch_v" torchvision --index-url https://download.pytorch.org/whl/cpu
-fi
+SONA_LEAD_VENV="$venv" "$script_dir/../../../scripts/setup-separators.sh" lead
 mkdir -p "$models_dir"
 # Record the version actually installed: the provenance pins it, not this script.
 pkg_version="$("$venv/bin/python" -c 'import importlib.metadata as m; print(m.version("audio-separator"))')"

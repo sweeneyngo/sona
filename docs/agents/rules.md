@@ -11,6 +11,8 @@ failure it prevents.
 | Never track corpus data: Pifuyuu's USTs (no redistribution), source songs, Vocadito. Only synthetic fixtures under `crates/*/fixtures/`. | `scripts/ci/check-no-corpus-data.sh` |
 | Every segmenter emits one voice: sorted, non-overlapping, non-empty notes, MIDI pitch, scores in `0..=1`; grid-mode boundaries on one grid. | `crates/sona-core/tests/output_invariants.rs` (random stems, both decoders) |
 | Grid note assembly and the review surface's snap keep the line monophonic and lose no note. | `verification/grid-notes/check.sh` (TLA+, mutants must be caught) and the exhaustive path test in `grid.rs` |
+| The app's stateful UI keeps its promises: a typed lyric or pitch value lands on the note shown, a drag never overwrites a later edit, a job never runs without a usable tempo, a stale tempo answer never shows. | `verification/{lyric-editor,expr-bar,start-flow}/check.sh` (TLA+, mutants must be caught) |
+| `sona serve`'s queue runs one job at a time, and a cancelled job never reports done. | `verification/serve-jobs/check.sh`, `crates/sona-cli/tests/serve.rs` |
 | `web/lib/grid.ts` and its Rust port `crates/sona-eval/src/quantize.rs` agree. | shared `crates/sona-eval/fixtures/quantize/*.json`, asserted by both test suites |
 | No clippy warnings. | `cargo clippy --workspace --all-targets -- -D warnings` |
 | A holdout read is deliberate and logged; a re-read of the same songs is refused without `--reread`. | `crates/sona-eval/src/holdout.rs`, ledger `crates/sona-eval/corpus/holdout-reads.jsonl` |
@@ -27,10 +29,13 @@ failure it prevents.
 
 ## Commands
 
+The whole loop, from setup to shipping, is in [`../dev-workflow.md`](../dev-workflow.md).
+
 ```sh
 scripts/ci/check-no-corpus-data.sh
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --release
 (cd web && npx tsc --noEmit && npx vitest run)
-verification/grid-notes/check.sh           # needs Java 11+ and tla2tools.jar 1.7.4
+for m in verification/*/check.sh; do "$m" || break; done   # Java 11+, tla2tools.jar 1.7.4
+web/e2e/run_all.sh                                          # browser drivers; see web/e2e/README.md
 ```

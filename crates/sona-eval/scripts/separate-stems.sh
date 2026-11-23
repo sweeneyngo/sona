@@ -34,25 +34,7 @@ stems="${SONA_UST_STEMS_DIR:-$script_dir/../data/pifuyuu-stems}"
 venv="${SONA_DEMUCS_VENV:-$HOME/.local/share/sona/demucs-venv}"
 version_tag="demucs $DEMUCS_VERSION (torch $TORCH_VERSION, cpu)"
 
-if [ ! -x "$venv/bin/python" ]; then
-  py="${SONA_DEMUCS_PYTHON:-}"
-  if [ -z "$py" ]; then
-    # Probe by *running* each candidate: a pyenv shim exists on PATH even when its
-    # version isn't active, and then fails at exec time.
-    for cand in python3.12 python3.11 python3.10 "$HOME"/.pyenv/versions/3.1[012].*/bin/python; do
-      if "$cand" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 12) else 1)' >/dev/null 2>&1; then
-        py="$cand"; break
-      fi
-    done
-  fi
-  [ -n "$py" ] || { echo "error: need Python 3.10–3.12 for demucs; set SONA_DEMUCS_PYTHON" >&2; exit 1; }
-  echo "Creating demucs venv at $venv (one-time, ~2 GB)"
-  "$py" -m venv "$venv"
-  "$venv/bin/pip" install --quiet --upgrade pip
-  "$venv/bin/pip" install --quiet "torch==$TORCH_VERSION" "torchaudio==$TORCH_VERSION" \
-      --index-url https://download.pytorch.org/whl/cpu
-  "$venv/bin/pip" install --quiet "demucs==$DEMUCS_VERSION" "soundfile"
-fi
+SONA_DEMUCS_VENV="$venv" "$script_dir/../../../scripts/setup-separators.sh" demucs
 "$venv/bin/python" -c "import demucs, sys; assert demucs.__version__ == '$DEMUCS_VERSION', demucs.__version__"
 
 mkdir -p "$stems"
