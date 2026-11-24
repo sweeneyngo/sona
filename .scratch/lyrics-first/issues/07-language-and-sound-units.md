@@ -1,6 +1,6 @@
 # 07 — Language detection and sound units (phonemization)
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: none
 
