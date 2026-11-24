@@ -1,4 +1,4 @@
-"""The one-click path a newcomer takes: drop a song, check the tempo, transcribe, play; then the secondary controls."""
+"""The one-click path a newcomer takes: drop a song, give its BPM (here by picking the detected ½× hint), transcribe, play; then the secondary controls."""
 import hashlib, json, pathlib, time
 from playwright.sync_api import sync_playwright
 from _env import *  # noqa: F403
@@ -11,10 +11,18 @@ with sync_playwright() as p:
     page.screenshot(path=str(S / "U1-start.png"))
     print("visible controls on the start screen:", page.evaluate("Array.from(document.querySelectorAll('header button, header input')).filter(e => e.offsetParent).map(e => e.id || e.textContent.trim())"), "| inputs:", page.evaluate("Array.from(document.querySelectorAll('input,select,textarea')).filter(e => e.offsetParent && e.type !== 'file').length"))
     page.set_input_files("#song-file", str(SONG))
-    page.wait_for_selector("#song-ready:not([hidden])", timeout=30000)
-    print("suggested tempo:", page.input_value("#song-bpm"))
+    page.wait_for_selector("#song-ready:not([hidden])", timeout=5000)
+    print("on drop: BPM field", repr(page.input_value("#song-bpm")), "| focused:", page.evaluate("document.activeElement.id"), "| hint:", repr(page.inner_text("#song-hint")))
+    page.wait_for_selector("#song-hint-half:not([hidden])", timeout=60000)
     page.screenshot(path=str(S / "U2-ready.png"))
-    page.click("#song-half"); print("after ½×:", page.input_value("#song-bpm"))
+    print("detected:", repr(page.inner_text("#song-hint")), "| BPM field after the estimate:", repr(page.input_value("#song-bpm")))
+    assert page.input_value("#song-bpm") == "", "the estimate filled the BPM field by itself"
+    page.click("#song-go")
+    print("Transcribe with no BPM:", page.is_visible("#song-ready"), repr(page.inner_text("#song-error")))
+    assert page.is_visible("#song-ready") and "BPM" in page.inner_text("#song-error"), "Transcribe ran without a BPM"
+    half = page.inner_text("#song-hint-half").split()[-1]
+    page.click("#song-hint-half"); print("after picking", repr(page.inner_text("#song-hint-half")) + ":", page.input_value("#song-bpm"))
+    assert page.input_value("#song-bpm") == half, "picking the hint did not fill its value"
     t0 = time.time(); page.click("#song-go")
     page.wait_for_selector("#song-running:not([hidden])", timeout=10000); time.sleep(3)
     page.screenshot(path=str(S / "U3-running.png")); print("running:", page.inner_text("#song-phase"))

@@ -15,8 +15,8 @@ scripts/setup-separators.sh                 # vocal separators (Python 3.10–3.
 ./target/release/sona serve                 # open http://127.0.0.1:8977
 ```
 
-Drop a song on the page. sona suggests its tempo (press **½×** if it's twice too fast), and **Transcribe**
-does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, add GAME (below).
+Drop a song on the page and type its BPM (decimals are fine). If you don't know it, click the detected
+tempo or its **½×** beside the field. **Transcribe** does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, add GAME (below).
 
 ## Using the app
 
@@ -169,7 +169,8 @@ How grid mode got there, on the dev songs:
 
 **Tempo** from the full mix ([ADR-0022](docs/adr/0022-tempo-estimation-and-one-step-start.md)): exact on
 24/32 fresh songs (75%), within an octave on 31/32, and never at half tempo. Slow songs read at double, so
-the app pre-fills the estimate with ½× beside it.
+the app asks for the song's BPM and offers the estimate and its ½× only as hints
+([ADR-0028](docs/adr/0028-ask-for-the-bpm-first.md)).
 
 **Pitch:** fitted glides and vibrato sit 9–30% closer to the singer's pitch than flat notes
 ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md)).

@@ -41,7 +41,7 @@ import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Ex
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
 import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJob, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
-import { phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
+import { hintBpm, parseBpm, phaseProgress, startStep, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
@@ -135,9 +135,9 @@ const el = {
   songName: document.getElementById("song-name") as HTMLElement,
   songChange: document.getElementById("song-change") as HTMLButtonElement,
   songBpm: document.getElementById("song-bpm") as HTMLInputElement,
-  songHalf: document.getElementById("song-half") as HTMLButtonElement,
-  songDouble: document.getElementById("song-double") as HTMLButtonElement,
-  songTempoNote: document.getElementById("song-tempo-note") as HTMLParagraphElement,
+  songHintText: document.getElementById("song-hint-text") as HTMLSpanElement,
+  songHintFull: document.getElementById("song-hint-full") as HTMLButtonElement,
+  songHintHalf: document.getElementById("song-hint-half") as HTMLButtonElement,
   songMore: document.getElementById("song-more") as HTMLDetailsElement,
   songGrid: document.getElementById("song-grid") as HTMLSelectElement,
   songSeparation: document.getElementById("song-separation") as HTMLSelectElement,
@@ -2397,15 +2397,21 @@ function renderStart(): void {
   el.drop.hidden = s.kind === "ready" || s.kind === "running";
   el.drop.classList.toggle("disabled", unavailable);
   el.songFile.disabled = unavailable;
-  el.dropTitle.textContent = unavailable ? "Start sona serve to transcribe" : s.kind === "detecting" ? s.name : "Drop a song";
-  el.dropSub.textContent = unavailable ? "" : s.kind === "detecting" ? "Finding the tempo…" : s.kind === "idle" && s.error ? s.error : "or click to choose";
+  el.dropTitle.textContent = unavailable ? "Start sona serve to transcribe" : "Drop a song";
+  el.dropSub.textContent = unavailable ? "" : s.kind === "idle" && s.error ? s.error : "or click to choose";
   el.songReady.hidden = s.kind !== "ready";
   if (s.kind === "ready") {
     el.songName.textContent = s.name;
     if (document.activeElement !== el.songBpm) el.songBpm.value = s.bpm === null ? "" : String(s.bpm);
-    el.songHalf.disabled = el.songDouble.disabled = !usableBpm(s.bpm);
-    el.songTempoNote.hidden = s.detected !== null;
-    el.songTempoNote.textContent = "No steady beat found: type the tempo.";
+    const d = s.detected;
+    el.songHintText.textContent = d === "pending" ? "finding the tempo…" : d === null ? "no steady beat found" : "detected ≈";
+    el.songHintFull.hidden = el.songHintHalf.hidden = typeof d !== "number";
+    if (typeof d === "number") {
+      el.songHintFull.textContent = String(hintBpm(d, 1));
+      el.songHintHalf.textContent = `½× ${hintBpm(d, 0.5)}`;
+      el.songHintFull.title = `Use ${hintBpm(d, 1)} BPM`;
+      el.songHintHalf.title = `Use ${hintBpm(d, 0.5)} BPM`;
+    }
     el.songError.hidden = !s.error;
     el.songError.textContent = s.error ?? "";
   }
@@ -2440,6 +2446,7 @@ async function chooseSong(file: File): Promise<void> {
   const song = ++songCounter;
   songBlob = file;
   dispatchStart({ type: "choose", song, name: file.name });
+  el.songBpm.focus();
   let found: number | null = null;
   if (serveCaps?.tempo) {
     try {
@@ -2547,9 +2554,9 @@ el.drop.addEventListener("keydown", (e) => {
   }
 });
 el.songChange.addEventListener("click", () => dispatchStart({ type: "start-over" }));
-el.songBpm.addEventListener("input", () => dispatchStart({ type: "set-bpm", bpm: el.songBpm.value === "" ? null : Number(el.songBpm.value) }));
-el.songHalf.addEventListener("click", () => dispatchStart({ type: "halve" }));
-el.songDouble.addEventListener("click", () => dispatchStart({ type: "double" }));
+el.songBpm.addEventListener("input", () => dispatchStart({ type: "set-bpm", bpm: parseBpm(el.songBpm.value) }));
+el.songHintFull.addEventListener("click", () => dispatchStart({ type: "use-hint", multiple: 1 }));
+el.songHintHalf.addEventListener("click", () => dispatchStart({ type: "use-hint", multiple: 0.5 }));
 el.songGo.addEventListener("click", () => void transcribeSong());
 el.songBpm.addEventListener("keydown", (e) => {
   if (e.key === "Enter") void transcribeSong();

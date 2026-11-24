@@ -5,13 +5,13 @@ how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
 
 | Driver | Checks |
 |---|---|
-| `song_to_notes.py` | Drop a song, tempo suggested, ½×, Transcribe, notes loaded with fitted pitch; play/pause, the tempo popover, the View menu by keyboard, File → New song and Back. Needs `sona serve`. |
+| `song_to_notes.py` | Drop a song: the BPM field is empty and focused, the estimate is only a hint, Transcribe refuses an empty field, picking the ½× hint fills it; Transcribe, notes loaded with fitted pitch; play/pause, the tempo popover, the View menu by keyboard, File → New song and Back. Needs `sona serve`. |
 | `pitch_handles.py` | Drag, add and remove pitch points; drag the vibrato's start, fades, depth and period; a typed value is committed before a drag. |
 | `pitch_pen.py` | The pitch pen draws and erases the white line; the singer's-pitch export carries it. |
 | `sung_pitch_export.py` | "USTX with the singer's pitch" equals the plain USTX apart from its `pitd` curve. |
 | `lyrics_export.py` | Paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
 | `fit_and_export.py` | Fit pitch, edit a vibrato, export UST/USTX; a session reload exports the same UST. |
-| `cancel_and_retry.py` | Cancel stops the server job, keeps the song and tempo, and a retry starts at once. Needs `sona serve`. |
+| `cancel_and_retry.py` | A decimal BPM typed right after the drop (`123,5`) is the job's BPM; Cancel stops the server job, keeps the song and BPM, and a retry starts at once. Needs `sona serve`. |
 | `undo_redo.py` | A tempo burst, a note drag, a lyric and a pen stroke undo one step each and redo exactly; Ctrl+Z in a text field leaves the document alone; reopening a file starts a fresh history. |
 | `stale_hover.py` | Delete after a scroll acts on what is under the mouse now. |
 | `lite_autosave.py` | With storage forced full, pen edits survive a reload and resume. |

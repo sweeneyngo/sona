@@ -40,7 +40,9 @@ mutant() {
   expect "mutant $name" "$rule" "$(violated_invariant "$dir/StartFlow.tla" "$dir/StartFlow.cfg")"
 }
 echo "Mutants (each must be caught):"
-mutant stale-tempo-wins    TempoIsForTheShownSong "s/IF kind = \"detecting\" \/\\\\ song = s/IF kind = \"detecting\"/"
-mutant start-without-tempo JobsHaveATempo         "s/kind = \"ready\" \/\\\\ Usable(bpm) \/\\\\ jobs < 2/kind = \"ready\" \/\\\\ jobs < 2/"
+mutant stale-tempo-wins      TempoIsForTheShownSong "s/ \/\\\\ song = s \/\\\\ hint = NoTempo/ \/\\\\ hint = NoTempo/"
+mutant start-without-tempo   JobsHaveATempo         "s/kind = \"ready\" \/\\\\ Usable(bpm) \/\\\\ jobs < 2/kind = \"ready\" \/\\\\ jobs < 2/"
+mutant estimate-becomes-bpm  BpmIsYours             "s/\/\\\\ bpm' = bpm$/\/\\\\ bpm' = IF kind = \"ready\" THEN t ELSE bpm/"
+mutant bpm-carries-over      BpmIsYours             "s/bpm' = NoTempo \/\\\\ hint' = NoTempo/bpm' = bpm \/\\\\ hint' = NoTempo/"
 rm -rf "$tmp"
 exit $fail
