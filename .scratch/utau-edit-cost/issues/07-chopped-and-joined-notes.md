@@ -1,6 +1,6 @@
 # 07 — Same-pitch boundaries: split at moras, merge restarts
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: 03
 
@@ -47,3 +47,10 @@ mora change?), so one ticket decides both.
   unchanged.
 
 ## Comments
+
+- 2026-11-24 (claimed). **Selection rule, declared before any measurement.** A mechanism is worth porting
+  if on dev it lowers GAME lead's pooled cost/min with a song-bootstrap 95% interval on the paired
+  difference (mechanism minus baseline, 10 000 resamples of the 9 songs) that excludes 0, and it does not
+  raise the learned stage's pooled cost/min. Oracles (1a, 2 with the true count) are ceilings and never
+  port. Thresholds are chosen on dev only; spent splits are diagnosis only (logged re-reads) and confirm
+  nothing; holdout4 is not read. Anything ported is opt-in and the default stays byte-identical.
