@@ -266,6 +266,13 @@ reference available without ears. Holdout4 needs a music reference labelled by e
    - Ship the rule if it beats today's rule on beat-correct songs, beyond the song-bootstrap noise.
    - Report bar-correct separately.
 
+## Ported to Rust (utau-edit-cost 05)
+
+The recommended rule is now `sona_core::bar_one::estimate` (opt-in; ADR-0031). On dev its bar call
+equals this study's on 9/9 songs and its beat is within 0.05 cell of the drums' on 9/9. That is a check of
+the port, not of the bar, which is circular here. `cargo run --release -p sona-eval --bin sona-eval-frame
+-- --estimate-bar-one` prints the per-song table.
+
 ## Ear-labelling the music frame (utau-edit-cost 10)
 
 The manifest holds the music's beat and bar per song: `music_beat_shift_cells` and `music_bar_shift_cells`

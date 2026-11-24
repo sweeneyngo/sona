@@ -55,7 +55,11 @@ OPTIONS (transcribe):
                      With --game: let the learned cell stage choose each cell (ADR-0026). DIR is a
                      folder from crates/sona-eval/scripts/cellstage/export_onnx.py; the stem is then
                      the lead, and --vocals names the vocals stem it was separated from
-    --vocals <WAV>   With --cell-model: the vocals stem (demucs) beside the lead stem
+    --vocals <WAV>   With --cell-model: the vocals stem (demucs) beside the lead stem; with
+                     --bar-one: the vocals stem the mix is measured without (default: the stem)
+    --bar-one <MIX>  Also estimate where bar 1 falls in the music (experimental, opt-in): the beat
+                     from the full mix MIX (a WAV at the stem's rate), the bar from its harmony
+                     without the vocals. Written to the annotation's `bar_one`; at --grid, else 16
     -h, --help       Print this usage
     -V, --version    Print version
 
@@ -129,6 +133,7 @@ struct TranscribeArgs {
     octave_check: bool,
     vocals: Option<String>,
     cell_model: Option<String>,
+    bar_one: Option<String>,
 }
 
 /// The `transcribe` subcommand: parse args, decode the stem, run the pipeline,
@@ -168,8 +173,31 @@ fn transcribe(parsed: &TranscribeArgs) -> Result<sona_core::Annotation, String> 
     } else if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
         game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
     }
+    if let Some(mix) = &parsed.bar_one {
+        annotation.bar_one = bar_one(mix, parsed.vocals.as_deref().unwrap_or(&parsed.stem), parsed.bpm, parsed.grid.unwrap_or(16))?;
+        if annotation.bar_one.is_none() {
+            eprintln!("sona: --bar-one: too little audio to hear a beat, so no bar 1");
+        }
+    }
     annotation.provenance = Some(transcribe_provenance(parsed)?);
     Ok(annotation)
+}
+
+/// Bar 1 from the full mix and the vocals stem (utau-edit-cost 05).
+#[cfg(feature = "spectral")]
+fn bar_one(mix_path: &str, vocals_path: &str, bpm: f64, division: u32) -> Result<Option<sona_core::BarOneEstimate>, String> {
+    let (mix, mix_rate) = load_wav_mono(mix_path)?;
+    let (vocals, vocals_rate) = load_wav_mono(vocals_path)?;
+    if mix_rate != vocals_rate {
+        return Err(format!("--bar-one needs the mix at the vocals' rate: '{mix_path}' is {mix_rate} Hz, '{vocals_path}' {vocals_rate} Hz"));
+    }
+    Ok(sona_core::bar_one::estimate(&mix, &vocals, mix_rate, bpm, division)
+        .map(|b| sona_core::BarOneEstimate { time_s: b.bar_s, confidence: b.confidence, harmonic: b.from_harmony() }))
+}
+
+#[cfg(not(feature = "spectral"))]
+fn bar_one(_: &str, _: &str, _: f64, _: u32) -> Result<Option<sona_core::BarOneEstimate>, String> {
+    Err("--bar-one needs sona built with the `spectral` feature".into())
 }
 
 fn transcribe_provenance(parsed: &TranscribeArgs) -> Result<sona_core::Provenance, String> {
@@ -199,6 +227,13 @@ fn transcribe_provenance(parsed: &TranscribeArgs) -> Result<sona_core::Provenanc
     if let (Some(model), Some(vocals)) = (&parsed.cell_model, &parsed.vocals) {
         models.push(provenance::fingerprint_file("cells/model", &Path::new(model).join("cellstage.onnx"))?);
         models.push(provenance::fingerprint_file("input/vocals", Path::new(vocals))?);
+    }
+    if let Some(mix) = &parsed.bar_one {
+        set("bar_one", "mix".into());
+        models.push(provenance::fingerprint_file("input/mix", Path::new(mix))?);
+        if let (Some(vocals), None) = (&parsed.vocals, &parsed.cell_model) {
+            models.push(provenance::fingerprint_file("input/vocals", Path::new(vocals))?);
+        }
     }
     Ok(provenance::provenance(input, settings, models))
 }
@@ -314,6 +349,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let (mut salience, mut spectral_cue) = (true, cfg!(feature = "spectral"));
     let (mut game, mut octave_check): (Option<String>, bool) = (None, true);
     let (mut vocals, mut cell_model): (Option<String>, Option<String>) = (None, None);
+    let mut bar_one: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -348,6 +384,10 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
             let (raw, next) = flag_value(args, i, rest, "--vocals")?;
             i = next;
             vocals = Some(raw);
+        } else if let Some(rest) = arg.strip_prefix("--bar-one") {
+            let (raw, next) = flag_value(args, i, rest, "--bar-one")?;
+            i = next;
+            bar_one = Some(raw);
         } else if let Some(rest) = arg.strip_prefix("--cell-model") {
             let (raw, next) = flag_value(args, i, rest, "--cell-model")?;
             i = next;
@@ -387,10 +427,10 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     if cell_model.is_some() && (game.is_none() || vocals.is_none()) {
         return Err("--cell-model needs --game DIR and --vocals VOCALS.wav (the stem is then the lead)".into());
     }
-    if vocals.is_some() && cell_model.is_none() {
-        return Err("--vocals is only used with --cell-model".into());
+    if vocals.is_some() && cell_model.is_none() && bar_one.is_none() {
+        return Err("--vocals is only used with --cell-model or --bar-one".into());
     }
-    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue, game, octave_check, vocals, cell_model })
+    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue, game, octave_check, vocals, cell_model, bar_one })
 }
 
 /// Resolve a flag's value at index `i`, where `rest` is whatever followed the

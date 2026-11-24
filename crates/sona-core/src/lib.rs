@@ -32,8 +32,10 @@ pub mod segment;
 pub mod timbre;
 #[cfg(feature = "spectral")]
 pub mod tempo;
+#[cfg(feature = "spectral")]
+pub mod bar_one;
 
-pub use annotation::{Annotation, EnergyFrame, F0Frame, FileFingerprint, JobRecord, Note, Producer, Provenance, StemSource, StepTime, SubScores, SCHEMA_VERSION};
+pub use annotation::{Annotation, BarOneEstimate, EnergyFrame, F0Frame, FileFingerprint, JobRecord, Note, Producer, Provenance, StemSource, StepTime, SubScores, SCHEMA_VERSION};
 pub use confidence::{soft_min, ConfidenceScorer};
 pub use midi::{to_smf, write_midi};
 pub use onset::{Onset, OnsetDetector, OnsetResult};

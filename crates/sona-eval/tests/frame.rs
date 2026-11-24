@@ -1,8 +1,8 @@
 //! Frame metrics on click tracks with a known tempo and a known bar 1.
 
 use sona_eval::frame::{
-    bar_offset, cells_after, click_times, drift_beats, measure, nearest_tick0_s, overlay_clicks, sona_tick0_from_audio, sona_tick0_s, tempo_multiple, MusicFrame,
-    TempoMultiple, CLICK_S,
+    bar_offset, cells_after, click_times, drift_beats, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, song_bootstrap, sona_tick0_from_audio,
+    sona_tick0_s, tempo_multiple, MusicFrame, TempoMultiple, CLICK_S,
 };
 use sona_eval::quantize::grid_spacing_seconds;
 
@@ -252,4 +252,28 @@ fn an_overlay_on_silence_clicks_on_the_candidate_grid() {
     let phase = sona_core::tempo::grid_phase(&out, SR, beat).unwrap();
     let off = cells_after(phase, bar_line, beat, beat);
     assert!(off.min(1.0 - off) < 0.05, "phase {phase}");
+}
+
+#[test]
+fn a_tick_zero_whole_beats_after_the_music_s_bar_line_is_that_many_beats_off() {
+    let (bpm, division, ust_tick0) = (180.0, 16, -4.9);
+    let music = MusicFrame { beat_shift_cells: 1, bar_shift_cells: 9, ear_checked: false };
+    let (beat, cell) = (60.0 / bpm, grid_spacing_seconds(bpm, 16.0));
+    let bar_line = ust_tick0 + 9.0 * cell;
+    for k in 0..8 {
+        let got = music_bar_offset(bar_line + f64::from(k) * beat + 7.0 * 4.0 * beat, ust_tick0, bpm, division, music);
+        assert_eq!(got.beats, k % 4, "{k} beats after: {got:?}");
+        assert!(got.residual_beats.abs() < 1e-9, "{k} beats after: {got:?}");
+    }
+    let a_cell_late = music_bar_offset(bar_line + cell, ust_tick0, bpm, division, music);
+    assert_eq!(a_cell_late.beats, 0);
+    assert!((a_cell_late.residual_beats - 0.25).abs() < 1e-9, "{a_cell_late:?}");
+}
+
+#[test]
+fn a_song_bootstrap_brackets_the_count_and_is_degenerate_when_every_song_agrees() {
+    assert_eq!(song_bootstrap(&[1.0; 9]), (9.0, 9.0));
+    assert_eq!(song_bootstrap(&[0.0; 9]), (0.0, 0.0));
+    let (lo, hi) = song_bootstrap(&[1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+    assert!((1.0..5.0).contains(&lo) && hi > 5.0 && hi <= 8.0, "[{lo}, {hi}]");
 }

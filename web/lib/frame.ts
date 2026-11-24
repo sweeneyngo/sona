@@ -5,6 +5,7 @@
  * 4/4 only: a bar is four beats.
  */
 
+import type { BarOneEstimate } from "./annotation";
 import { gridSpacingSeconds, snapTime } from "./grid";
 
 export const BEATS_PER_BAR = 4;
@@ -100,7 +101,26 @@ export type FrameEvent =
   | { type: "drag"; from: Frame; dt: number }
   /** "This line is beat 1": the grid line nearest `t` becomes a bar line. */
   | { type: "bar-one"; t: number }
-  | { type: "auto-bar-one" };
+  /** Back to Auto: the estimate from the music when the annotation has one, else the default rule. */
+  | { type: "auto-bar-one"; estimate?: number | null };
+
+/** The annotation's `bar_one`, or `null` when it has none or it is malformed. */
+export function parseBarOne(raw: unknown): BarOneEstimate | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const { time_s, confidence, harmonic } = o;
+  if (typeof time_s !== "number" || !Number.isFinite(time_s) || typeof confidence !== "number" || !(confidence >= 0 && confidence <= 1) || typeof harmonic !== "boolean") return null;
+  return { time_s, confidence, harmonic };
+}
+
+/** What the ♩ popover says bar 1 is. */
+export function barOneLabel(f: Frame, estimate: BarOneEstimate | null): string {
+  if (f.barOne === null) return "first grid line";
+  const at = `${downbeat(f).toFixed(3)} s`;
+  if (estimate === null || f.barOne !== estimate.time_s) return at;
+  const pct = Math.round(estimate.confidence * 100);
+  return estimate.harmonic ? `${at} · from the music (${pct}%)` : `${at} · the music's beat (bar unsure, ${pct}%)`;
+}
 
 /**
  * The frame after `e`. A chosen bar 1 is a time in the stem, so a new tempo or
@@ -117,7 +137,7 @@ export function updateFrame(f: Frame, e: FrameEvent): Frame {
     case "bar-one":
       return { ...f, barOne: snapTime(e.t, cellSeconds(f), f.anchor) };
     case "auto-bar-one":
-      return { ...f, barOne: null };
+      return { ...f, barOne: e.estimate ?? null };
   }
 }
 

@@ -116,6 +116,7 @@ fn pyin_contour_feeds_the_annotation() {
         f0_contour: contour,
         energy_envelope: vec![],
         provenance: None,
+        bar_one: None,
     };
     assert!(!annotation.f0_contour.is_empty());
 

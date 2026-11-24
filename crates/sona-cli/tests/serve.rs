@@ -457,3 +457,25 @@ fn help_works_on_both_subcommands_and_a_missing_separator_says_what_to_do() {
     let error = body["error"].as_str().unwrap();
     assert!(error.contains("setup-separators.sh") && error.contains("--demucs-venv") && error.contains("sona serve --help"), "{error}");
 }
+
+#[test]
+fn bar_one_is_estimated_only_for_a_job_that_asks_and_has_the_full_song() {
+    let srv = start("barone", "");
+    assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=120&separation=none&bar_one=1&name=a.wav", &song_wav()).0, 400, "a stem upload has no mix");
+    assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=120&separation=vocals&bar_one=yes&name=a.wav", &song_wav()).0, 400);
+    let plain = submit(srv.port, "bpm=120&separation=vocals&name=song.wav", &song_wav());
+    assert_eq!(wait_final(srv.port, &plain)["phase"], "done");
+    let plain = annotation(srv.port, &plain);
+    assert!(plain.get("bar_one").is_none(), "{}", plain["bar_one"]);
+    assert!(plain["provenance"]["settings"].get("bar_one").is_none());
+    for separation in ["vocals", "lead"] {
+        let id = submit(srv.port, &format!("bpm=120&separation={separation}&bar_one=1&name=song.wav"), &song_wav());
+        assert_eq!(wait_final(srv.port, &id)["phase"], "done");
+        let ann = annotation(srv.port, &id);
+        let b = &ann["bar_one"];
+        assert_eq!((b["harmonic"].as_bool(), b["confidence"].as_f64()), (Some(false), Some(0.0)), "the stub's vocals are the whole mix: {b}");
+        assert!((0.0..0.5).contains(&b["time_s"].as_f64().unwrap()), "{b}");
+        assert_eq!(ann["provenance"]["settings"]["bar_one"], "mix");
+        assert_eq!(ann["notes"], plain["notes"], "{separation}: the notes don't depend on bar 1");
+    }
+}

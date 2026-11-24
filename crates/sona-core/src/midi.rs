@@ -146,6 +146,7 @@ mod tests {
             f0_contour: vec![],
             energy_envelope: vec![],
             provenance: None,
+            bar_one: None,
         }
     }
 

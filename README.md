@@ -95,6 +95,13 @@ The app picks the best engine the server has, so nothing changes on the page.
   the beat you hear as beat 1 (or seek there and use **Bar 1 → At playhead** under **♩**), and that line
   becomes a bar line in the editor and in every export. Dragging the ruler shifts the grid and the bars
   move with it; **Auto** puts bar 1 back on the first grid line. Bars are 4/4.
+- **Bar 1 from the music** (experimental, opt-in; [ADR-0031](docs/adr/0031-bar-one-from-the-music.md)).
+  Tick **Bar 1 from the music** under the start screen's **Options** and sona finds the song's beat in the
+  mix and the first beat of its bars from where the harmony changes. The editor then starts with bar 1
+  there, and the **♩** popover says so ("from the music", with the share of the song that agrees);
+  **Auto** goes back to it. Without the option nothing changes. On the 9 dev songs it agrees with the
+  best reference available (itself a harmonic estimate, so not yet proof); confirming it needs songs
+  labelled by ear.
 - **Export → USTX / UST / MIDI.** The page autosaves; **File → Save session** keeps a copy.
   **File → Details…** shows what produced the notes: the sona build, the input's and models' SHA-256,
   every setting, and, for a song, each step's time and the separator versions
@@ -159,6 +166,9 @@ Options:
   --game <DIR>      With --grid: take the notes from openvpi GAME (experimental, ADR-0017;
                     build with --features game, set ORT_DYLIB_PATH, 44.1 kHz stem).
   --no-octave-check With --game: skip the subharmonic octave check (on by default).
+  --bar-one <MIX>   Also estimate bar 1 from the full mix MIX (a WAV at the stem's rate)
+                    and the vocals (--vocals, else the stem), into the JSON's `bar_one`
+                    (experimental, opt-in; ADR-0031).
 ```
 
 `--grid` is the mode for UST/Vocaloid-style material. It includes harmonic-salience pitch evidence and

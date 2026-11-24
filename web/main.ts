@@ -31,7 +31,7 @@ import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags 
 import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, splitLyrics } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
-import { barNumber, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
+import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
 import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
 import { sungPitchCurve } from "./lib/sungPitch";
@@ -46,7 +46,7 @@ import { hintBpm, parseBpm, phaseProgress, startStep, type StartEvent, type Star
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
-import type { Annotation, F0Frame, Note, WorkingNote } from "./lib/annotation";
+import type { Annotation, BarOneEstimate, F0Frame, Note, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
@@ -146,6 +146,7 @@ const el = {
   songGrid: document.getElementById("song-grid") as HTMLSelectElement,
   songSeparation: document.getElementById("song-separation") as HTMLSelectElement,
   songEngine: document.getElementById("song-engine") as HTMLSelectElement,
+  songBarOne: document.getElementById("song-bar-one") as HTMLInputElement,
   songGo: document.getElementById("song-go") as HTMLButtonElement,
   songError: document.getElementById("song-error") as HTMLParagraphElement,
   songRunning: document.getElementById("song-running") as HTMLDivElement,
@@ -369,7 +370,7 @@ function applyLoadedJson(parsed: any): boolean {
     bpm = annotation.bpm > 0 ? annotation.bpm : 120;
     el.bpm.value = String(bpm);
     gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
-    barOne = null;
+    barOne = annotation.bar_one?.time_s ?? null;
   }
   resetView(); // zoomed-in default + 2-octave window centred on the notes.
   rebuild();
@@ -420,7 +421,13 @@ function normalizeAnnotation(raw: any): Annotation {
     f0_contour: unpackContour(raw.f0_contour),
     energy_envelope: Array.isArray(raw.energy_envelope) ? raw.energy_envelope : [],
     ...withProvenance(raw.provenance),
+    ...withBarOne(raw.bar_one),
   };
+}
+
+function withBarOne(raw: unknown): { bar_one?: BarOneEstimate } {
+  const b = parseBarOne(raw);
+  return b ? { bar_one: b } : {};
 }
 
 function withProvenance(raw: unknown): { provenance?: Provenance } {
@@ -455,8 +462,10 @@ function exportTickZero(): number {
 }
 
 function syncBarOne(): void {
-  el.barOneReadout.textContent = barOne === null ? "first grid line" : `${downbeat(currentFrame()).toFixed(3)} s`;
-  el.barOneAuto.disabled = barOne === null;
+  const estimate = annotation?.bar_one ?? null;
+  el.barOneReadout.textContent = barOneLabel(currentFrame(), estimate);
+  el.barOneAuto.disabled = barOne === (estimate?.time_s ?? null);
+  el.barOneAuto.title = estimate ? "Bar 1 where sona estimated it from the music" : "Bar 1 on the first grid line, as before";
 }
 
 /** "This line is beat 1": the grid line nearest `t` becomes a bar line. */
@@ -713,10 +722,11 @@ el.snapKey.addEventListener("change", () => {
 el.export.addEventListener("click", exportMidi);
 el.barOneHere.addEventListener("click", () => setBarOneAt(currentPlayheadS()));
 el.barOneAuto.addEventListener("click", () => {
-  changeFrame({ type: "auto-bar-one" });
+  const estimate = annotation?.bar_one ?? null;
+  changeFrame({ type: "auto-bar-one", estimate: estimate?.time_s ?? null });
   markDirty();
   redraw();
-  setStatus("Bar 1 is on the first grid line again");
+  setStatus(estimate ? "Bar 1 is on the estimate from the music again" : "Bar 1 is on the first grid line again");
 });
 
 // --- Modals (help + settings) -----------------------------------------------
@@ -2506,8 +2516,15 @@ function applyCapabilities(caps: Capabilities): void {
   for (const opt of Array.from(el.songEngine.options)) opt.disabled = !caps.engines[opt.value as Engine];
   el.songSeparation.value = d.separation;
   el.songEngine.value = d.engine;
+  syncBarOneOption();
   dispatchStart({ type: "serve-found" });
 }
+
+/** Bar 1 from the music needs the full song beside its vocals, so not an upload that is already a stem. */
+function syncBarOneOption(): void {
+  el.songBarOne.disabled = el.songSeparation.value === "none";
+}
+el.songSeparation.addEventListener("change", syncBarOneOption);
 
 async function chooseSong(file: File): Promise<void> {
   if (startState.kind === "running" || startState.kind === "unavailable") return;
@@ -2538,7 +2555,9 @@ async function transcribeSong(): Promise<void> {
   if (!awaitingJob(attempt) || s.kind !== "running" || !songBlob) return;
   const grid = el.songGrid.value === "24" ? 24 : 16;
   try {
-    const job = await submitJob({ bpm: s.bpm, grid, separation: el.songSeparation.value as Separation, engine: el.songEngine.value as Engine, name: s.name }, songBlob);
+    const separation = el.songSeparation.value as Separation;
+    const barOneWanted = el.songBarOne.checked && separation !== "none";
+    const job = await submitJob({ bpm: s.bpm, grid, separation, engine: el.songEngine.value as Engine, name: s.name, ...(barOneWanted ? { barOne: true } : {}) }, songBlob);
     if (!awaitingJob(attempt)) {
       await cancelJob(job.id).catch(() => undefined);
       return;
@@ -2595,7 +2614,8 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   dispatchStart({ type: "results-loaded", job: j.id });
   startShown = false;
   rebuild();
-  setStatus(`${workingNotes.length} notes`);
+  syncBarOne();
+  setStatus(`${workingNotes.length} notes${annotation?.bar_one ? ` · bar 1: ${el.barOneReadout.textContent}` : ""}`);
 }
 
 el.songFile.addEventListener("change", () => {

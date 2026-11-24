@@ -69,6 +69,8 @@ pub struct JobSpec {
     pub grid: u32,
     pub separation: Separation,
     pub engine: Engine,
+    /// Estimate bar 1 from the music too (opt-in; utau-edit-cost 05).
+    pub bar_one: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,6 +161,10 @@ impl Job {
 
     pub fn annotation_path(&self) -> PathBuf {
         self.dir.join("annotation.json")
+    }
+
+    pub fn mix_path(&self) -> PathBuf {
+        self.dir.join("mix.wav")
     }
 
     pub fn stem_path(&self) -> PathBuf {
@@ -482,6 +488,9 @@ fn pipeline(job: &Job, w: &Worker) -> Result<(), String> {
         Separation::Vocals | Separation::Lead => separate(job, w, &input)?,
     }
     step(job, Phase::Transcribing)?;
+    if job.spec.bar_one {
+        to_mono_wav(job, w, &input, &job.mix_path())?;
+    }
     let tools = &w.tools;
     let args = crate::TranscribeArgs {
         stem: job.stem_path().to_string_lossy().into_owned(),
@@ -495,11 +504,12 @@ fn pipeline(job: &Job, w: &Worker) -> Result<(), String> {
             Engine::Pyin => None,
         },
         octave_check: true,
-        vocals: (job.spec.engine == Engine::Cells).then(|| job.vocals_path().to_string_lossy().into_owned()),
+        vocals: (job.spec.engine == Engine::Cells || (job.spec.bar_one && job.spec.separation == Separation::Lead)).then(|| job.vocals_path().to_string_lossy().into_owned()),
         cell_model: match job.spec.engine {
             Engine::Cells => Some(tools.cell_model.as_ref().ok_or("no cell model is configured on this server")?.to_string_lossy().into_owned()),
             _ => None,
         },
+        bar_one: job.spec.bar_one.then(|| job.mix_path().to_string_lossy().into_owned()),
     };
     if std::env::var(PANIC_FOR_TEST).is_ok_and(|name| name == job.spec.name) {
         panic!("{PANIC_FOR_TEST} asked for a panic in {}", job.spec.name);
