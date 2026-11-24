@@ -37,7 +37,9 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
    - `sona-eval-ust-dev`: it caches the f0 contour and GAME output, runs several `--cfg` configs in one
      go, and has `--per-song`, `--diag`, `--dump` and `--edit-cost`;
    - `sona-eval-cellstage --edit-cost` for the shipped stack (GAME + learned stage). The edit cost
-     weights each error by how hard it is to fix in OpenUtau (`sona_eval::correction::edit_cost`);
+     weights each error by how hard it is to fix in OpenUtau (`sona_eval::correction::edit_cost`). It caches
+     GAME like ust-dev, and `--dump` feeds `crates/sona-eval/scripts/edit-cost-taxonomy/` (error classes,
+     oracles, confidence calibration);
    - `sona-eval-tempo` for tempo.
    - Prototype in Python on dumped intermediates, and port to Rust only once it wins. The port must
      reproduce the prototype's numbers.

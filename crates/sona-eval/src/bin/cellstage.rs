@@ -332,3 +332,39 @@ fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize),
         "ust": ust_notes, "game_lead": stage_notes(inputs.lead_notes), "lead_ratios": inputs.lead_ratios, "game_vocals": stage_notes(inputs.vocals_notes),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runs() -> StageRuns {
+        let note = |a: f64, b: f64, m: f32, v: bool| StageNote { onset_s: a, offset_s: b, midi: m, voiced: v };
+        let chunk = |t0: f64, frames: usize, dim: usize| EncoderChunk { t0, frames, dim, data: (0..frames * dim).map(|i| i as f32 * 0.37 - 1.5).collect() };
+        StageRuns {
+            lead_notes: vec![note(0.1, 0.4, 60.25, true), note(0.4, 0.9, 0.0, false)],
+            lead_ratios: vec![0.5, f32::MIN_POSITIVE],
+            lead_frames: vec![chunk(0.0, 3, 2), chunk(19.7, 2, 2)],
+            vocals_notes: vec![note(0.12, 0.38, 59.9, true)],
+            vocals_frames: vec![chunk(0.0, 4, 2)],
+        }
+    }
+
+    fn same(a: &StageRuns, b: &StageRuns) -> bool {
+        a.lead_notes == b.lead_notes && a.lead_ratios == b.lead_ratios && a.lead_frames == b.lead_frames && a.vocals_notes == b.vocals_notes && a.vocals_frames == b.vocals_frames
+    }
+
+    #[test]
+    fn cached_game_runs_read_back_exactly() {
+        let r = runs();
+        let back = runs_from_bytes(&runs_to_bytes(&r)).expect("reads back");
+        assert!(same(&r, &back));
+    }
+
+    #[test]
+    fn a_torn_or_foreign_cache_file_is_recomputed_not_trusted() {
+        let bytes = runs_to_bytes(&runs());
+        assert!(runs_from_bytes(&bytes[..bytes.len() - 1]).is_none(), "truncated");
+        assert!(runs_from_bytes(&[bytes.as_slice(), &[0]].concat()).is_none(), "trailing bytes");
+        assert!(runs_from_bytes(&bytes[8..]).is_none(), "no magic");
+    }
+}
