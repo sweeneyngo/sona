@@ -4,14 +4,20 @@
 //!
 //! ```sh
 //! ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo run --release -p sona-eval --features game --bin sona-eval-cellstage -- \
-//!     --model ~/.cache/sona/cellstage-D [--split holdout3 --reason "…" --reread]
+//!     --model ~/.cache/sona/cellstage-D [--edit-cost] [--split holdout3 --reason "…" --reread]
 //! ```
+//!
+//! `--edit-cost` adds the OpenUtau edit cost (`sona_eval::correction::edit_cost`) against the lead UST
+//! on its own grid, per song and pooled, for sona's default pYIN grid mode on the vocals, GAME's lead
+//! notes on the onset phase, and the learned stage on the onset phase (what ships).
 use std::path::PathBuf;
 use std::process::ExitCode;
 use sona_core::cellstage::snap_notes;
 use sona_core::tempo::grid_phase;
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, CellModel, GameModel, GameParams, StageRuns};
 use sona_core::{GridMode, PYin, Producer, Transcriber};
+use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
+use sona_eval::correction::EditNote;
 use sona_eval::holdout::authorize;
 use sona_eval::quantize::grid_spacing_seconds;
 use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest, SongUsts};
@@ -72,6 +78,8 @@ fn run() -> Result<(), String> {
         .filter(|s| std::env::var("SONA_ONLY").map_or(true, |only| only.split(',').any(|o| o == s.id)))
         .collect();
     let mut tot = [(0usize, 0usize); 6];
+    let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
+    let mut costs: [Vec<(String, EditCost)>; 3] = Default::default();
     println!("{:28} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}", "song", "lead/est", "stage/est", "lead/ons", "stage/ons", "lead/UST", "stage/UST");
     for song in songs {
         let offset = song.alignment_offset_s.expect("filtered");
@@ -100,11 +108,20 @@ fn run() -> Result<(), String> {
         let a_on = t_on.transcribe(&PYin::default(), &vocals, sr, bpm, Producer::Pyin);
         let sona_on: Notes = a_on.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
         let mut row = [(0usize, 0usize); 6];
+        let grid = CellGrid { spacing_s: spacing, anchor_s: offset, cells_per_measure: division };
+        let edit_notes = |ns: &Notes| ns.iter().map(|&(a, b, p)| EditNote { onset_s: a, offset_s: b, midi_pitch: f64::from(p) }).collect::<Vec<_>>();
+        if with_edit_cost {
+            costs[0].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&sona), &grid)));
+        }
         for (j, (anchor, notes)) in [(estimated, &sona), (onset, &sona_on), (offset.rem_euclid(spacing), &sona)].into_iter().enumerate() {
             let lead_only = snap_notes(&runs.lead_notes, spacing, anchor);
             let stage = cell_stage_notes(&model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
             row[2 * j] = cells(&reference, &lead_only, spacing, offset);
             row[2 * j + 1] = cells(&reference, &stage, spacing, offset);
+            if with_edit_cost && j == 1 {
+                costs[1].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&lead_only), &grid)));
+                costs[2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&stage), &grid)));
+            }
         }
         let pct = |(o, n): (usize, usize)| 100.0 * o as f64 / n.max(1) as f64;
         println!("{:28} {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}%   phase est {:+.3} ons {:+.3} cells", song.id, pct(row[0]), pct(row[1]), pct(row[2]), pct(row[3]), pct(row[4]), pct(row[5]), off(estimated), off(onset));
@@ -115,5 +132,11 @@ fn run() -> Result<(), String> {
     }
     let pct = |(o, n): (usize, usize)| 100.0 * o as f64 / n.max(1) as f64;
     println!("{:28} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%   ({} cells)", "ALL", pct(tot[0]), pct(tot[1]), pct(tot[2]), pct(tot[3]), pct(tot[4]), pct(tot[5]), tot[0].1);
+    if with_edit_cost {
+        let titles = ["pYIN grid mode on the vocals (its own phase)", "GAME lead + octave rule, onset phase", "learned cell stage, onset phase (ships)"];
+        for (title, rows) in titles.iter().zip(&costs) {
+            print!("{}", edit_cost::report(title, rows));
+        }
+    }
     Ok(())
 }
