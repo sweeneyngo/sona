@@ -1,6 +1,6 @@
 # 07 — Language detection and sound units (phonemization)
 
-Status: ready-for-agent
+Status: resolved
 Type: research
 Blocked by: none
 
@@ -40,3 +40,38 @@ phonemizer, library, licence, how it would run), the Japanese reading accuracy, 
 "units" module behind the lyric box (Japanese first), and the tickets to build it.
 
 ## Comments
+
+## Answer
+
+Report: `crates/sona-eval/reports/language-and-units.md`. Harness: `crates/sona-eval/scripts/language-units/`.
+Dev only, 9 songs; per-song text stayed in the scratchpad.
+
+- **The lyric on each note differs by language in OpenUtau.**
+  - Japanese: one hiragana mora; the phonemizer builds the VCV/CVVC aliases.
+  - English and other Latin-script languages: the whole word on the first note, then `+`.
+  - Chinese: one hanzi or pinyin; OpenUtau converts hanzi itself.
+  - Korean: one hangul syllable.
+- **Japanese units.** っ is never a note: 0 of 5,336 UST notes, against 137 in the texts. A long-vowel
+  tail has its own note only 18% of the time.
+- **Hiragana input**, mora error rate against the UST on Japanese lines:
+  - today's splitter: 12.4%;
+  - with the UST's conventions: 9.0%;
+  - plus optional tails from a rule with no dictionary: 5.3%;
+  - with an OpenJTalk-family analyser: 4.3%.
+- **Kanji input.** The best readers tie: pyopenjtalk-plus 3.8% [2.1, 5.9], vanilla OpenJTalk 3.9%,
+  fugashi+unidic-lite 4.1%, with tails optional; 4.5% with tails merged.
+  - Kanji-word moras err at 5.3%, kana-word moras at 1.8%. The 1.8% is the floor from the text
+    differing from what is sung.
+  - pykakasi (GPL) is worst at 11.1%.
+  - The kanji errors are:
+    - wrong sense (a common noun read as a name);
+    - the lyricist's own reading (ruby, gikun);
+    - sung variants (言う→ゆう);
+    - 何.
+- **English islands.** 22 of 368 lines are Latin. e2k (Unlicense) brings their error from 88% to 25%.
+- **Language detection.** A script rule decides the song's language, and each line inherits it.
+  Per-line lingua mislabels 8 Han-only lines as Chinese.
+- **Recommendation.** Build 08 (units), 10 (detection) and 09 (optional tails in the fit). Build 11
+  (kanji via jpreprocess in `sona serve`, reviewed by the user) and 13 (more languages) only if the user
+  decides to.
+- **New tickets:** 08–13.
