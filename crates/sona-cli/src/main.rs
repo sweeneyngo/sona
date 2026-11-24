@@ -271,7 +271,7 @@ fn game_settings() -> Vec<(String, String)> {
 #[allow(clippy::too_many_arguments)]
 fn cell_stage(annotation: &mut sona_core::Annotation, transcriber: &Transcriber, lead: &[f32], vocals_path: &str, game_dir: &str, model_dir: &str, division: u32, args: &TranscribeArgs) -> Result<(), String> {
     use sona_core::tempo::grid_phase;
-    use sona_core::game::{cell_stage_notes, cells_covering, grid_spacing_s, phase_of, stage_segments, CellModel, GameModel, GameParams, StageRuns, GAME_SAMPLE_RATE};
+    use sona_core::game::{cell_stage_notes, cells_covering, grid_spacing_s, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageRuns, GAME_SAMPLE_RATE};
     let (vocals, sr) = load_wav_mono(vocals_path)?;
     if sr != GAME_SAMPLE_RATE || annotation.sample_rate != GAME_SAMPLE_RATE {
         return Err(format!("the cell stage needs {GAME_SAMPLE_RATE} Hz stems"));
@@ -296,8 +296,8 @@ fn cell_stage(annotation: &mut sona_core::Annotation, transcriber: &Transcriber,
     let model = CellModel::load(Path::new(model_dir), GameParams::default().threads).map_err(|e| e.to_string())?;
     let runs = StageRuns::compute(&game, lead, &vocals, sr).map_err(|e| e.to_string())?;
     let duration = lead.len().max(vocals.len()) as f64 / f64::from(sr);
-    let notes = cell_stage_notes(&model, &runs, &sona, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
-    annotation.notes = transcriber.scorer.score_all(&stage_segments(&notes), &annotation.energy_envelope);
+    let stage = cell_stage_notes(&model, &runs, &sona, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+    annotation.notes = stage_annotation_notes(&stage, &transcriber.scorer, &annotation.energy_envelope);
     annotation.producer = Producer::Game;
     Ok(())
 }

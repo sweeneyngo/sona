@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::tempo::grid_phase;
-use sona_core::game::{cell_stage_notes, cells_covering, grid_segments, phase_of, CellModel, GameModel, GameParams, StageRuns};
+use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
 use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
 use sona_eval::correction::EditNote;
@@ -252,7 +252,8 @@ fn run() -> Result<(), String> {
         }
         for (j, (anchor, notes)) in [(estimated, &sona), (onset, &sona_on), (offset.rem_euclid(spacing), &sona)].into_iter().enumerate() {
             let lead_only = snap_notes(&runs.lead_notes, spacing, anchor);
-            let stage = cell_stage_notes(&model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+            let scored = cell_stage_notes(&model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+            let stage = scored.notes.clone();
             row[2 * j] = cells(&reference, &lead_only, spacing, offset);
             row[2 * j + 1] = cells(&reference, &stage, spacing, offset);
             if with_edit_cost && j == 1 {
@@ -263,7 +264,7 @@ fn run() -> Result<(), String> {
                 let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
                 let costs: Vec<_> = outputs.iter().map(|(name, ns)| (*name, edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid))).collect();
                 let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
-                let song_dump = dump_song(&model, &inputs, cells_covering(duration, spacing, anchor), &stage, &lead, sr, &usts, offset)?;
+                let song_dump = dump_song(&model, &inputs, cells_covering(duration, spacing, anchor), &scored, &lead, sr, &usts, offset)?;
                 let value = json!({
                     "id": song.id, "bpm": bpm, "division": division, "spacing": spacing, "ust_anchor": offset, "onset_phase": anchor,
                     "reference": reference, "outputs": outputs.iter().map(|(name, ns)| (name.to_string(), json!(ns))).collect::<serde_json::Map<_, _>>(),
@@ -293,9 +294,10 @@ fn run() -> Result<(), String> {
 }
 
 /// The stage's cells and notes in detail, for `--dump`: candidates, sources, class probabilities and
-/// each shipped note's confidence (scored as `sona transcribe` scores them, on the lead's energy).
+/// each shipped note's confidence and sub-scores (as `sona transcribe` gives them, on the lead's energy).
 #[allow(clippy::too_many_arguments)]
-fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize), stage: &Notes, lead: &[f32], sr: u32, usts: &SongUsts, offset: f64) -> Result<serde_json::Value, String> {
+fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize), scored: &StageNotes, lead: &[f32], sr: u32, usts: &SongUsts, offset: f64) -> Result<serde_json::Value, String> {
+    let stage = &scored.notes;
     let (x, cands, sources) = cell_features(inputs, k0, n);
     let logits = model.logits(&x, n).map_err(|e| e.to_string())?;
     let classes = choose_class(&logits, &cands);
@@ -312,9 +314,8 @@ fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize),
             e.iter().map(|v| v / z).collect()
         })
         .collect();
-    let shipped: Vec<(f64, f64, u8)> = stage.iter().filter_map(|&(a, b, p)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p))).collect();
     let envelope = Transcriber::default().onset.detect(lead, sr).energy_envelope;
-    let scored = Transcriber::default().scorer.score_all(&grid_segments(&shipped), &envelope);
+    let shipped = stage_annotation_notes(scored, &Transcriber::default().scorer, &envelope);
     let ust_notes: Vec<_> = usts
         .lead
         .iter()
@@ -328,7 +329,7 @@ fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize),
     let stage_notes = |ns: &[StageNote]| ns.iter().map(|n| (n.onset_s, n.offset_s, n.midi, n.voiced)).collect::<Vec<_>>();
     Ok(json!({
         "k0": k0, "classes": classes, "cands": cands, "sources": sources, "probs": probs,
-        "confidence": scored.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch, n.confidence, [n.sub_scores.pitch_stability, n.sub_scores.voicing, n.sub_scores.onset_clarity, n.sub_scores.offset_clarity])).collect::<Vec<_>>(),
+        "confidence": shipped.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch, n.confidence, [n.sub_scores.pitch_stability, n.sub_scores.voicing, n.sub_scores.onset_clarity, n.sub_scores.offset_clarity])).collect::<Vec<_>>(),
         "ust": ust_notes, "game_lead": stage_notes(inputs.lead_notes), "lead_ratios": inputs.lead_ratios, "game_vocals": stage_notes(inputs.vocals_notes),
     }))
 }

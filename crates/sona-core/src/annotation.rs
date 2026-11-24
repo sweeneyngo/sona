@@ -141,7 +141,9 @@ pub struct Note {
     /// MIDI pitch number (0–127); 69 = A4 = 440 Hz.
     pub midi_pitch: u8,
     /// Combined confidence scalar in `0.0..=1.0`, the weakest-link soft-min of
-    /// [`sub_scores`](Note::sub_scores). Drives the review-surface heatmap.
+    /// [`sub_scores`](Note::sub_scores); for the learned cell stage's notes, the
+    /// stage's own chance that the note needs no split or merge (ADR-0033).
+    /// Drives the review-surface heatmap.
     pub confidence: f32,
     /// The per-dimension scores the scalar is composed from — let the UI show
     /// *why* a note is flagged (e.g. "⚠ uncertain offset").

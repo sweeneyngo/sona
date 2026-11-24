@@ -1,7 +1,8 @@
 //! What every consumer of sona's notes relies on, checked on generated inputs for
 //! every segmenter: the note-HMM default, pYIN grid mode (ADR-0015), GAME's grid
 //! snapping with the octave check (ADR-0017, `--features game`) and the learned
-//! cell stage (ADR-0026) from its GAME note snapping to its cells → notes step:
+//! cell stage (ADR-0026) from its GAME note snapping to its cells → notes step and the notes the app gets
+//! (with the stage's confidence, ADR-0033):
 //!
 //! - one voice: notes in onset order, never overlapping;
 //! - every note ends after it starts; pitch is a MIDI number;
@@ -15,7 +16,7 @@
 //! weights CI doesn't have, so their note assembly is driven with random raw
 //! GAME notes and random per-cell choices.
 
-use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, Candidates, EncoderChunk, Sources, StageInputs, StageNote};
+use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, snap_notes, Candidates, EncoderChunk, Sources, StageInputs, StageNote};
 use sona_core::{
     timbre::N_CEPS, Annotation, CandidateEvidence, CueModel, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, Note, NoteHmm, NoteSegment,
     Onset, PYin, PitchCandidate, Producer, SpectralCue, TimbreFrames, Transcriber,
@@ -324,10 +325,17 @@ impl StageCase {
     }
 
     /// The cell stage without its model: features, random logits, the masked choice, cells → notes.
-    fn notes(&self, rng: &mut Rng, anchor: f64, (k0, n): (i64, usize)) -> Vec<(f64, f64, i32)> {
+    fn notes(&self, rng: &mut Rng, anchor: f64, cells: (i64, usize)) -> Vec<(f64, f64, i32)> {
+        self.notes_with_confidence(rng, anchor, cells).0
+    }
+
+    /// [`notes`](Self::notes) and each note's confidence from the same random logits.
+    fn notes_with_confidence(&self, rng: &mut Rng, anchor: f64, (k0, n): (i64, usize)) -> (Vec<(f64, f64, i32)>, Vec<f32>) {
         let (_, cands, sources) = cell_features(&self.inputs(anchor), k0, n);
         let logits: Vec<f32> = (0..n * 6).map(|_| rng.range(-4.0, 4.0) as f32).collect();
-        cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, self.spacing, anchor)
+        let notes = cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, self.spacing, anchor);
+        let confidence = note_confidence(&logits, k0, self.spacing, anchor, &notes);
+        (notes, confidence)
     }
 }
 
@@ -407,7 +415,7 @@ fn cell_stage_emits_one_voice_on_its_grid_from_random_inputs() {
 #[cfg(feature = "game")]
 mod game {
     use super::*;
-    use sona_core::game::{cells_covering, correct_octaves_with, grid_spacing_s, phase_of, snap_to_grid, stage_segments, GameNote, OctaveRule};
+    use sona_core::game::{cells_covering, correct_octaves_with, grid_spacing_s, phase_of, snap_to_grid, stage_annotation_notes, stage_segments, GameNote, OctaveRule, StageNotes};
     use sona_core::ConfidenceScorer;
 
     fn envelope(rng: &mut Rng, duration: f64) -> Vec<EnergyFrame> {
@@ -448,10 +456,13 @@ mod game {
             let first = anchor + k0 as f64 * s.spacing;
             assert!(first <= 0.0 && first > -s.spacing, "{what}: the first cell starts at {first}");
             assert!(anchor + (k0 + n as i64) as f64 * s.spacing >= s.duration - s.spacing / 2.0, "{what}: the cells stop short of {}", s.duration);
-            let segs = stage_segments(&s.notes(&mut rng, anchor, (k0, n)));
+            let (notes, confidence) = s.notes_with_confidence(&mut rng, anchor, (k0, n));
+            let segs = stage_segments(&notes);
             assert_one_voice(&segs, &what);
             assert_on_grid_at(&segs.iter().map(|n| (n.onset_s, n.offset_s)).collect::<Vec<_>>(), anchor, s.spacing, &what);
-            assert_valid_notes(&ConfidenceScorer::default().score_all(&segs, &envelope(&mut rng, s.duration + 0.5)), &what);
+            let shown = stage_annotation_notes(&StageNotes { notes, confidence }, &ConfidenceScorer::default(), &envelope(&mut rng, s.duration + 0.5));
+            assert_eq!(shown.len(), segs.len(), "{what}: a note was lost on the way to the app");
+            assert_valid_notes(&shown, &what);
         }
     }
 }

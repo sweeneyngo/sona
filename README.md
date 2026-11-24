@@ -317,7 +317,9 @@ follow `mir_eval` and are reimplemented in Rust.
 3. **Notes**, in the Rust core:
    - the app (`sona serve`) always uses grid mode, which decodes one state per grid cell with pYIN pitch,
      harmonic salience and a spectral syllable cue (ADR-0015, ADR-0016);
-   - optionally GAME notes with an octave check (ADR-0017), and the learned cell stage on top (ADR-0026);
+   - optionally GAME notes with an octave check (ADR-0017), and the learned cell stage on top (ADR-0026),
+     whose notes carry the stage's own confidence: low on long notes and on cells the model was unsure of,
+     where joined and chopped notes sit (ADR-0033);
    - `sona transcribe` without `--grid` runs the original grid-free note-HMM (ADR-0010).
 4. **Interpretation**, in the browser: snapping to a live grid and key, per-note confidence, lyrics,
    pitch fitting, handles and the pen (ADR-0003/0004, ADR-0018 to ADR-0021).
