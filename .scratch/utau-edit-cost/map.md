@@ -45,6 +45,11 @@ a line below.
   `music_*` fields, dev only, `unverified-estimate`), and `--clicks` writes click overlays for ear-labelling.
   Dev, music-anchored: with a typed BPM the frame passes when bar offset is 0, which is **5/9**; sona's bar 1
   is whole beats off the music on 4/9 (the file doesn't start on the music's bar). That gap is 05's target.
+- 2026-11-24, **01 resolved** (merged; verified: tests, a joined mutant, amaten reproduced exactly). Dev,
+  shipped stack (learned stage): **180.2 cost/min [115.9, 256.5], clean measures 23.8% [13.8, 33.9]**, while
+  its cell accuracy is 92.7%. GAME lead 188.7 / 16.2%; pYIN default 338.4 / 3.1%. Cost by class: **joined
+  53%**, chopped 19%, length 11%, missing 9%, shift 4%, pitch 3%, extra 1%. So **07 outranks 06**
+  (missing is only 9%). Unverified: whether joined notes are mostly same-pitch re-articulations (03).
 
 ## Fog
 
