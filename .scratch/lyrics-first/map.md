@@ -11,6 +11,9 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
 ## Decisions so far
 
 - 2026-11-24: lyrics are required; the fallback is lyric transcription; hiragana only for now (user).
+- 2026-11-24: the fallback recogniser is Whisper large-v3-turbo with fugashi/unidic-lite readings and the VAD
+  at 0.2: 37.1% mora error on dev, against 20.7% for pasted lyric-site text. It gives a draft to review,
+  not a finished lyric (05, `crates/sona-eval/reports/lyric-transcription.md`).
 
 ## Fog
 
