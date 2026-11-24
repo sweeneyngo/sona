@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::http::{read_request, write_response, HttpError, Limits, Request, Response};
-use crate::jobs::{Engine, Job, JobSpec, Phase, Queue, Separation, Tools};
+use crate::jobs::{Engine, Job, JobSpec, Phase, Queue, Separation, Settings, ToolTimeout, Tools};
 
 const LIMITS: Limits = Limits { max_header_bytes: 16 * 1024, max_body_bytes: 500 * 1_000_000 };
 const DEFAULT_PORT: u16 = 8977;
@@ -13,7 +13,7 @@ const MAX_BPM: f64 = 400.0;
 pub struct ServeArgs {
     port: u16,
     web_dir: Option<PathBuf>,
-    jobs_dir: PathBuf,
+    settings: Settings,
     tools: Tools,
 }
 
@@ -21,11 +21,19 @@ fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`: on disk, where `/tmp` may be RAM (ADR-0030).
+fn default_cache_dir() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).unwrap_or_else(|| home().join(".cache")).join("sona")
+}
+
 pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
     let share = home().join(".local/share/sona");
     let mut port = DEFAULT_PORT;
     let mut web_dir: Option<PathBuf> = None;
-    let mut jobs_dir = std::env::temp_dir().join("sona-jobs");
+    let mut cache_dir = default_cache_dir();
+    let mut jobs_dir: Option<PathBuf> = None;
+    let (mut keep_jobs, mut keep_stems) = (20usize, 10usize);
+    let mut tool_timeout = ToolTimeout { min_s: 600.0, per_audio_s: 20.0 };
     let mut demucs_venv = std::env::var_os("SONA_DEMUCS_VENV").map(PathBuf::from).unwrap_or_else(|| share.join("demucs-venv"));
     let mut separator_venv = std::env::var_os("SONA_LEAD_VENV").map(PathBuf::from).unwrap_or_else(|| share.join("separator-venv"));
     let mut game_dir: Option<PathBuf> = None;
@@ -36,7 +44,14 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
         match args[i].as_str() {
             "--port" => port = value(i)?.parse().map_err(|_| "--port must be a number (0 picks a free port)")?,
             "--web-dir" => web_dir = Some(PathBuf::from(value(i)?)),
-            "--jobs-dir" => jobs_dir = PathBuf::from(value(i)?),
+            "--cache-dir" => cache_dir = PathBuf::from(value(i)?),
+            "--jobs-dir" => jobs_dir = Some(PathBuf::from(value(i)?)),
+            "--keep-jobs" => keep_jobs = value(i)?.parse().ok().filter(|n| *n >= 1).ok_or("--keep-jobs must be a whole number, at least 1")?,
+            "--keep-stems" => keep_stems = value(i)?.parse().map_err(|_| "--keep-stems must be a whole number (0 turns the stem cache off)")?,
+            "--tool-timeout" => tool_timeout.min_s = value(i)?.parse().ok().filter(|s: &f64| s.is_finite() && *s > 0.0).ok_or("--tool-timeout must be a positive number of seconds")?,
+            "--tool-timeout-ratio" => {
+                tool_timeout.per_audio_s = value(i)?.parse().ok().filter(|r: &f64| r.is_finite() && *r >= 0.0).ok_or("--tool-timeout-ratio must be a number of seconds per second of audio")?
+            }
             "--demucs-venv" => demucs_venv = PathBuf::from(value(i)?),
             "--separator-venv" => separator_venv = PathBuf::from(value(i)?),
             "--game" => game_dir = Some(PathBuf::from(value(i)?)),
@@ -64,7 +79,8 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
         game_dir,
         cell_model,
     };
-    Ok(ServeArgs { port, web_dir, jobs_dir, tools })
+    let settings = Settings { jobs_dir: jobs_dir.unwrap_or_else(|| cache_dir.join("jobs")), stems_dir: cache_dir.join("stems"), keep_jobs, keep_stems, tool_timeout };
+    Ok(ServeArgs { port, web_dir, settings, tools })
 }
 
 struct Server {
@@ -78,7 +94,8 @@ pub fn run_serve(args: &[String]) -> Result<(), String> {
     let a = parse_serve_args(args)?;
     let listener = TcpListener::bind(("127.0.0.1", a.port)).map_err(|e| format!("binding 127.0.0.1:{}: {e}", a.port))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let queue = Queue::start(a.jobs_dir.clone(), a.tools.clone()).map_err(|e| format!("jobs dir {}: {e}", a.jobs_dir.display()))?;
+    let jobs_dir = a.settings.jobs_dir.clone();
+    let queue = Queue::start(a.settings, a.tools.clone()).map_err(|e| format!("jobs dir {}: {e}", jobs_dir.display()))?;
     let server = Arc::new(Server { port, web_dir: a.web_dir, tools: a.tools, queue });
     println!("sona: serving http://127.0.0.1:{port}");
     if server.web_dir.is_none() {
@@ -120,6 +137,11 @@ impl Server {
         let host_ok = req.header("Host").is_some_and(|h| h == format!("127.0.0.1:{}", self.port) || h == format!("localhost:{}", self.port));
         if !host_ok {
             return Err(HttpError { status: 403, message: "this server only answers its own address".into() });
+        }
+        // A page on another site can still send a "simple" cross-origin POST; the browser names that site in `Origin`.
+        let own_origin = |o: &str| o == format!("http://127.0.0.1:{}", self.port) || o == format!("http://localhost:{}", self.port);
+        if req.path.starts_with("/api/") && req.header("Origin").is_some_and(|o| !own_origin(o)) {
+            return Err(HttpError { status: 403, message: "this server only answers its own pages".into() });
         }
         let parts: Vec<&str> = req.path.trim_start_matches('/').split('/').collect();
         match (req.method.as_str(), parts.as_slice()) {
@@ -176,7 +198,10 @@ impl Server {
             Separation::Lead => "lead",
         };
         if caps["separation"][sep_key] != true {
-            return Err(HttpError { status: 409, message: format!("separation '{sep_key}' isn't set up on this server (see `sona serve --help`)") });
+            return Err(HttpError {
+                status: 409,
+                message: format!("separation '{sep_key}' isn't set up on this server: run scripts/setup-separators.sh, or start sona serve with --demucs-venv and --separator-venv (see `sona serve --help`)"),
+            });
         }
         if spec.engine == Engine::Game && caps["engines"]["game"] != true {
             return Err(HttpError { status: 409, message: "GAME isn't set up on this server (start it with --game DIR and ORT_DYLIB_PATH)".into() });
@@ -260,7 +285,7 @@ fn job_status(job: &Job) -> serde_json::Value {
         "phase": phase.label(),
         "error": match &phase { Phase::Failed(e) => Some(e.clone()), _ => None },
         "elapsed_s": job.created.elapsed().as_secs_f64(),
-        "log": job.log_tail(12),
+        "log": job.log_tail(12).into_iter().chain(job.tool_line()).collect::<Vec<_>>(),
     })
 }
 

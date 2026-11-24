@@ -1,6 +1,7 @@
 # One-click generation: `sona serve`
 
-**Status: Accepted (2026-11-22).** This is the third milestone of ADR-0018.
+**Status: Accepted (2026-11-22).** This is the third milestone of ADR-0018. Amended by ADR-0030 (stem
+cache, jobs folder and clean-up, panics and tool deadlines).
 
 ## Context
 

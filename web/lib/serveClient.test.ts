@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { ServeError, defaultJob, isFinal, jobQuery, parseCapabilities, parseJobStatus } from "./serveClient";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ServeError, defaultJob, fetchJobOrCancel, isFinal, jobQuery, parseCapabilities, parseJobStatus } from "./serveClient";
 
 describe("serve client boundary", () => {
   it("parses capabilities, treating anything but true as unavailable", () => {
@@ -36,5 +36,30 @@ describe("serve client boundary", () => {
     expect(params.get("engine")).toBe("game");
     expect(params.get("name")).toBe("a&engine=pyin ✓.mp3");
     expect(params.getAll("engine")).toHaveLength(1);
+  });
+
+  describe("a watcher that loses the job", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const server = (poll: () => Response) => {
+      const calls: string[] = [];
+      vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
+        calls.push(`${init?.method ?? "GET"} ${path}`);
+        return init?.method === "DELETE" ? Response.json({ id: "j1", phase: "cancelled" }, { status: 202 }) : poll();
+      });
+      return calls;
+    };
+
+    it("cancels the job on the server when a poll fails, and still reports the failure", async () => {
+      const calls = server(() => Response.json({ error: "boom" }, { status: 500 }));
+      await expect(fetchJobOrCancel("j1")).rejects.toThrow("boom");
+      expect(calls).toEqual(["GET /api/jobs/j1", "DELETE /api/jobs/j1"]);
+    });
+
+    it("leaves a job it can read alone", async () => {
+      const calls = server(() => Response.json({ id: "j1", phase: "transcribing" }));
+      expect((await fetchJobOrCancel("j1")).phase).toBe("transcribing");
+      expect(calls).toEqual(["GET /api/jobs/j1"]);
+    });
   });
 });

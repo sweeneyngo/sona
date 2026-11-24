@@ -37,7 +37,9 @@ scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separa
 Drop a song on the page and type its BPM (decimals are fine). If you don't know it, click the detected
 tempo, or its **½×**, beside the field. **Transcribe** does the rest. A 25 s clip takes about 80 s on a
 laptop CPU; the first job is slower while the separator models download. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
-**MIDI**.
+**MIDI**. Got the BPM wrong? Drop the same song again with the right one: the server keeps the separated
+stems of recent songs, so a second run (another BPM, ½×, grid or engine) skips separation and takes only
+the transcription time ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md)).
 
 ### Better notes with GAME (optional)
 
@@ -73,6 +75,11 @@ The app picks the best engine the server has, so nothing changes on the page.
 - **GAME is greyed out under Options:** the binary must be built with `--features game`, and `ORT_DYLIB_PATH` must be
   set in the shell that runs `sona serve`.
 - **Port 8977 is taken:** `sona serve --port 9000`.
+- **"… was stopped after N s, its time limit":** a separator or ffmpeg ran far longer than the song
+  should take and was stopped. If the machine is only slow, raise `--tool-timeout` (seconds) or
+  `--tool-timeout-ratio` (seconds per second of audio). `sona serve --help` lists every option.
+- **"sona hit an internal error":** a bug. The job's `panic.log` (path in the message) says where; the
+  server keeps running.
 
 ## Using the app
 
@@ -155,7 +162,13 @@ separate lead-vocal stem added nothing (it does help GAME).
 
 `sona serve` hosts the app and runs jobs: demucs, then the UVR karaoke lead, then pYIN or GAME notes. It
 listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
-Options: `--port`, `--jobs-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`.
+Options: `--port`, `--demucs-venv`, `--separator-venv`, `--game DIR`, and for disk and time:
+- `--cache-dir` (default `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`, never RAM-backed `/tmp`): jobs and
+  the stem cache;
+- `--keep-jobs N` (20) finished jobs and `--keep-stems N` (10) separated songs are kept; older ones are
+  deleted between jobs, never a queued or running one;
+- `--tool-timeout S` (600) / `--tool-timeout-ratio R` (20 s per second of audio): a hung tool fails its
+  job instead of blocking the queue. A panic fails only its job, too ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md)).
 
 **GAME** (openvpi's singing-transcription model; setup above) gives better notes. **GAME plus the
 learned cell stage** is the best measured (`--cell-model DIR --vocals VOCALS.wav`, or
