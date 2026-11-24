@@ -12,8 +12,15 @@
 //! decide whether onset/offset actually moved. Timing corrections larger than
 //! the match window read as a delete + an add. The onset/offset change
 //! thresholds are the ±50 ms the note metric uses (ADR-0011).
+//!
+//! [`edit_cost`] scores a transcription against a UST on grid cells instead, weighted by how hard each
+//! error is to fix in OpenUtau. The two agree on the shared case file `fixtures/correction/cases.json`
+//! for the classes both have (extra = deleted, missing = added, pitch, length = offset moved), which
+//! `web/lib/correction.test.ts` asserts too.
 
 use serde::Deserialize;
+
+pub mod edit_cost;
 
 /// A note as stored in a session file: raw seconds, MIDI pitch. Extra fields
 /// (confidence, sub-scores, `manual`) are ignored.
@@ -161,6 +168,55 @@ mod tests {
             &MatchParams::default(),
         );
         assert_eq!((c.added, c.deleted, c.total), (1, 0, 1));
+    }
+
+    #[derive(Deserialize)]
+    struct SharedCase {
+        name: String,
+        spacing_s: f64,
+        anchor_s: f64,
+        ust: Vec<(f64, f64, f64)>,
+        output: Vec<(f64, f64, f64)>,
+        correction: SharedCorrection,
+        edit_cost: SharedEditCost,
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    struct SharedCorrection {
+        added: usize,
+        deleted: usize,
+        pitch_fixed: usize,
+        onset_moved: usize,
+        offset_moved: usize,
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct SharedEditCost {
+        extra: usize,
+        missing: usize,
+        pitch: usize,
+        length: usize,
+    }
+
+    #[test]
+    fn both_scorers_agree_with_correction_ts_on_every_shared_case() {
+        use edit_cost::{edit_cost, CellGrid, ErrorClass};
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/correction/cases.json");
+        let cases: Vec<SharedCase> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert!(cases.len() >= 6);
+        let notes = |v: &[(f64, f64, f64)]| v.iter().map(|&(a, b, p)| n(a, b, p)).collect::<Vec<_>>();
+        for c in &cases {
+            let (ust, out) = (notes(&c.ust), notes(&c.output));
+            let k = correction_cost(&out, &ust, &MatchParams::default());
+            let got = SharedCorrection { added: k.added, deleted: k.deleted, pitch_fixed: k.pitch_fixed, onset_moved: k.onset_moved, offset_moved: k.offset_moved };
+            assert_eq!(got, c.correction, "{}: correction", c.name);
+            let e = edit_cost(&ust, &out, &CellGrid { spacing_s: c.spacing_s, anchor_s: c.anchor_s, cells_per_measure: 16 });
+            let got = SharedEditCost { extra: e.count(ErrorClass::Extra), missing: e.count(ErrorClass::Missing), pitch: e.count(ErrorClass::Pitch), length: e.count(ErrorClass::Length) };
+            assert_eq!(got, c.edit_cost, "{}: edit cost", c.name);
+            assert_eq!((got.extra, got.missing, got.pitch, got.length), (k.deleted, k.added, k.pitch_fixed, k.offset_moved), "{}: shared classes", c.name);
+            assert_eq!(e.cost(), (k.deleted + 2 * k.added + k.pitch_fixed + k.offset_moved) as u64, "{}: no other class", c.name);
+        }
     }
 
     #[test]

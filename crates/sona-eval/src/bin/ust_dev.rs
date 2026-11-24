@@ -18,6 +18,9 @@
 //! top-k candidate, monophonic vs polyphonic.
 //! The spectral re-articulation cue (`g.cue=spectral`, `g.sc.*`) needs
 //! `--features spectral`.
+//!
+//! `--edit-cost` adds, per config, the OpenUtau edit cost of the quantized notes against the UST
+//! (`sona_eval::correction::edit_cost`): per song and pooled, with song-bootstrap intervals.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,6 +28,8 @@ use std::process::ExitCode;
 use sona_core::grid::CandidateEvidence;
 use sona_core::pitch::{HarmonicSalience, PitchCandidate};
 use sona_core::{Annotation, CueModel, F0Frame, GridDecoder, GridSpec, PYin, PitchTracker, Producer, SpectralCue, TimbreFrames, Transcriber};
+use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
+use sona_eval::correction::EditNote;
 use sona_eval::estimate::EstNote;
 use sona_eval::metrics::note::{match_notes, NoteParams};
 use sona_eval::metrics::Prf1;
@@ -554,6 +559,7 @@ fn run() -> Result<(), String> {
     let (mut reason, mut reread): (Option<String>, bool) = (None, false);
     let mut pyin = PYin::default();
     let mut cand_diag = false;
+    let mut with_edit_cost = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -582,6 +588,7 @@ fn run() -> Result<(), String> {
             "--diag" => diag = true,
             "--cand-diag" => cand_diag = true,
             "--per-song" => per_song = true,
+            "--edit-cost" => with_edit_cost = true,
             "--dump" => {
                 i += 1;
                 dump = Some(PathBuf::from(args.get(i).ok_or("--dump needs a dir")?));
@@ -697,6 +704,21 @@ fn run() -> Result<(), String> {
                     v[1].cells.iter().map(|(a, b)| format!("{a}/{b}")).collect::<Vec<_>>().join(" ")
                 );
             }
+        }
+        if with_edit_cost {
+            let rows: Vec<(String, EditCost)> = items
+                .iter()
+                .zip(&scored)
+                .filter_map(|(it, (_, a))| {
+                    let g = it.grid.as_ref()?;
+                    let note = |(on, off, p): (f64, f64, f64)| EditNote { onset_s: on, offset_s: off, midi_pitch: p };
+                    let reference: Vec<EditNote> = it.refs.iter().map(|r| note((r.onset_s, r.offset_s, f64::from(r.midi_pitch)))).collect();
+                    let output: Vec<EditNote> = est(a, Some(&g.opts)).iter().map(|e| note((e.onset_s, e.offset_s, f64::from(e.midi_pitch)))).collect();
+                    let grid = CellGrid { spacing_s: g.opts.spacing, anchor_s: g.opts.anchor, cells_per_measure: g.division };
+                    Some((it.id.clone(), edit_cost(&reference, &output, &grid)))
+                })
+                .collect();
+            print!("{}", edit_cost::report(&format!("{name} (quantized, vs the lead UST)"), &rows));
         }
         if let (Some(dir), 0) = (&dump, ci) {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;

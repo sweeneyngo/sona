@@ -1,5 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { alignNotes, correctionCost, correctionChanges, type NoteLike } from "./correction";
 
@@ -152,4 +153,25 @@ test("correctionChanges itemises each correction", () => {
 test("a note both re-pitched and re-timed yields two change entries", () => {
   const changes = correctionChanges([n(0, 0.5, 60)], [n(0.08, 0.5, 62)]);
   assert.deepEqual(changes.map((c) => c.kind).sort(), ["onset", "pitch"]);
+});
+
+interface SharedCase {
+  name: string;
+  ust: [number, number, number][];
+  output: [number, number, number][];
+  correction: { added: number; deleted: number; pitchFixed: number; onsetMoved: number; offsetMoved: number };
+}
+
+const sharedCases: SharedCase[] = JSON.parse(
+  readFileSync(new URL("../../crates/sona-eval/fixtures/correction/cases.json", import.meta.url), "utf8"),
+);
+
+test("correctionCost agrees with the Rust scorers on every shared case", () => {
+  assert.ok(sharedCases.length >= 6);
+  const notes = (v: [number, number, number][]) => v.map(([on, off, p]) => n(on, off, p));
+  for (const c of sharedCases) {
+    const got = correctionCost(notes(c.output), notes(c.ust));
+    const { added, deleted, pitchFixed, onsetMoved, offsetMoved } = got;
+    assert.deepEqual({ added, deleted, pitchFixed, onsetMoved, offsetMoved }, c.correction, c.name);
+  }
 });
