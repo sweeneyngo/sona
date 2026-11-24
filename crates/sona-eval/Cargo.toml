@@ -136,3 +136,7 @@ required-features = ["game"]
 [[bin]]
 name = "sona-eval-phase"
 path = "src/bin/phase.rs"
+
+[[bin]]
+name = "sona-eval-frame"
+path = "src/bin/frame.rs"
