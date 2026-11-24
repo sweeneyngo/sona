@@ -16,6 +16,12 @@ a line below.
 - 2026-11-24: the target is cheap fixes in OpenUtau, not cell accuracy (user). Tiers and weights in
   `spec.md`.
 - 2026-11-24: users usually know their BPM, so ask for it first (user).
+- 2026-11-24, **02 resolved** (merged 903352d; `sona-eval-frame`, verified). Dev, sona's own BPM: frame
+  pass 1/9. **Drift fails the frame** (0.01–0.42% tempo error → 0.07–3.8 beats over a song), which a
+  typed BPM (04) removes. Bar offset is 0 on 9/9, but only because every corpus file starts about 4 bars
+  after the UST's bar 1, so **this corpus can't test bar-1 detection (05)**. sona's tick 0 sits **one cell
+  after the UST's** on 9/9; on 6/9 the UST's own beat grid is a 16th off the drums, so the residual
+  measures agreement with Pifuyuu's grid, not with the music. 03 decides whether the residual counts.
 
 ## Fog
 
