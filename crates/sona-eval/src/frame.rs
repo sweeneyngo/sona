@@ -69,6 +69,24 @@ pub fn sona_tick0_s(phase_s: f64, spacing_s: f64) -> f64 {
     phase_s.rem_euclid(spacing_s)
 }
 
+/// Audio time of tick 0 under the "nearest grid line to 0 s" rule: the grid line closest to time 0,
+/// which may sit up to half a cell before the audio starts. An alternative to [`sona_tick0_s`] for
+/// the bar-one study (`reports/bar-one.md`); not what the export does.
+pub fn nearest_tick0_s(phase_s: f64, spacing_s: f64) -> f64 {
+    let p = phase_s.rem_euclid(spacing_s);
+    if p > spacing_s / 2.0 {
+        p - spacing_s
+    } else {
+        p
+    }
+}
+
+/// How many cells the lines of a `period_s` grid through `t_s` sit after the lines of the same
+/// grid through `reference_s`, in `[0, period_s / cell_s)`.
+pub fn cells_after(t_s: f64, reference_s: f64, period_s: f64, cell_s: f64) -> f64 {
+    (t_s - reference_s).rem_euclid(period_s) / cell_s
+}
+
 /// Audio time of sona's tick 0 for a vocals track at a given tempo and grid, as the cell stage and the
 /// export place it. `None` without enough audio to hear onsets.
 pub fn sona_tick0_from_audio(vocals: &[f32], sample_rate: u32, bpm: f64, division: u32) -> Option<f64> {

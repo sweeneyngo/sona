@@ -1,6 +1,6 @@
 # 03 — The bar offset is sub-beat: measure it in cells; "nearest grid line to 0 s" is a candidate prior
 
-Status: ready-for-agent
+Status: resolved
 Type: research
 Blocked by: — (utau-edit-cost 02 is resolved; a new default would also need audit 02 to reach the export)
 
@@ -71,4 +71,41 @@ song is explained, and the bias check is written down either way.
   `alignment_offset_s` with an alignment on vowel onsets and with the drums' beat phase, per dev song.
   For the user, the truth that matters is the **music's** beat and bar, because that is what they hear
   against the instrumental in OpenUtau. Frame metrics live in `sona-eval-frame` (`sona_eval::frame`).
+
+## Answer
+
+Resolved 2026-11-24 (dev only; no holdout read). Report: `crates/sona-eval/reports/bar-one.md`. Tool:
+`sona-eval-frame --bar-one`.
+
+**Reading (a) holds, and more broadly than the triage put it. Reading (b) is rejected.**
+- Re-aligning each UST to vowel-band onsets moves it by only −15…+11 ms (median +8 ms; at most 0.27 cell)
+  on 9/9 dev songs. Shifting by ±1 cell scores 0.06–0.65 of the peak.
+- So `alignment_offset_s` needs no correction, and past cell-accuracy numbers stand. A one-cell bias would
+  have capped sung-cell agreement near 74%; a 10–20 ms bias moves no cell.
+
+**Pifuyuu's grid is tied to the file, not to the music.** The UST's bar 5 sits 28–100 ms before 0 s on every
+song, which fits a 4-bar lead-in with the audio dropped at bar 5.
+- The UST's beat lines are off the drums' beat on 7/9: one 16th on 6, a triplet 8th on atamaro.
+- The UST's bar lines match the music's (harmonic) downbeat on 1/9.
+
+**Neither audio-anchored rule finds the music.**
+- Today's rule (first grid line ≥ 0 s) lands on the music's beat on 5/9 and on its bar on 2/9.
+- "Nearest grid line to 0 s" lands on the beat on 5/9 and the bar on 3/9.
+- This ticket's prediction of 10/10 against the UST was wrong. The bar line sits more than half a cell before
+  0 s on 7/9, so "nearest" reaches it on only 2/9.
+
+**What finds the music.**
+- sona's own `grid_phase` on the **mix** at one-beat spacing matches the drums' beat on 9/9 (within 0.05 cell).
+- A harmonic-change downbeat on mix − vocals is stable within every song. Independent drum and bass cues back
+  it on 5/9, but it has no ear-checked ground truth.
+
+**Recommended default bar-1 rule (opt-in; confirm on holdout4 against ear-labelled music beat and bar lines):**
+1. Cell phase from the vocals' onsets (ADR-0027).
+2. Beat = the cell line nearest `grid_phase(mix, beat)`.
+3. Bar = the beat (mod 4) with the most harmonic change in the chroma of mix − vocals.
+4. Tick 0 = that bar line at or before 0 s, with the export delaying the audio by the gap (A02).
+
+The frame metric (utau-02, 05, 08) must be re-anchored from UST tick 0 to the music. The report proposes two
+manifest fields for this, `music_beat_shift_cells` and `music_bar_shift_cells`, seeded from these dev values
+and to be ear-checked. It does not change `alignment_offset_s`.
 

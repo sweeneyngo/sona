@@ -1,6 +1,6 @@
 //! Frame metrics on click tracks with a known tempo and a known bar 1.
 
-use sona_eval::frame::{bar_offset, drift_beats, measure, sona_tick0_from_audio, tempo_multiple, TempoMultiple};
+use sona_eval::frame::{bar_offset, cells_after, drift_beats, measure, nearest_tick0_s, sona_tick0_from_audio, sona_tick0_s, tempo_multiple, TempoMultiple};
 
 const SR: u32 = 22050;
 
@@ -72,6 +72,37 @@ fn a_sub_beat_offset_is_a_residual() {
     let got = bar_offset(0.0, 0.7 * 0.4, 150.0);
     assert_eq!(got.beats, 3);
     assert!((got.residual_beats - 0.3).abs() < 1e-9);
+}
+
+#[test]
+fn the_nearest_rule_takes_a_grid_line_just_before_the_audio() {
+    let cell = 0.1;
+    assert!((nearest_tick0_s(0.03, cell) - 0.03).abs() < 1e-12);
+    assert!((nearest_tick0_s(0.08, cell) + 0.02).abs() < 1e-12);
+    assert!((nearest_tick0_s(-0.02, cell) + 0.02).abs() < 1e-12);
+    assert!((nearest_tick0_s(0.38, cell) + 0.02).abs() < 1e-12);
+    assert!((sona_tick0_s(0.08, cell) - 0.08).abs() < 1e-12);
+}
+
+#[test]
+fn the_nearest_rule_on_a_click_track_lands_on_bar_one_before_the_audio() {
+    let bpm = 180.0;
+    let beat = 60.0 / bpm;
+    let cell = beat / 4.0;
+    let start = 0.8 * cell;
+    let audio = click_track(bpm, 30.0, start);
+    let phase = sona_core::tempo::grid_phase(&audio, SR, cell).unwrap();
+    let bar_line_before = start - cell;
+    assert!((nearest_tick0_s(phase, cell) - bar_line_before).abs() < 0.003, "phase {phase}");
+    assert!((sona_tick0_s(phase, cell) - start).abs() < 0.003, "phase {phase}");
+}
+
+#[test]
+fn cells_after_wraps_into_one_period() {
+    let (beat, cell) = (0.4, 0.1);
+    assert!((cells_after(0.1, 0.0, beat, cell) - 1.0).abs() < 1e-9);
+    assert!((cells_after(-0.1, 0.0, beat, cell) - 3.0).abs() < 1e-9);
+    assert!((cells_after(5.0 * beat + 0.2, 0.0, beat, cell) - 2.0).abs() < 1e-9);
 }
 
 #[test]
