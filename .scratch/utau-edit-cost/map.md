@@ -116,6 +116,13 @@ a line below.
   hide several syllables" or "the model was unsure here" from the larger of ADR-0033's two terms (new optional
   `Note.stage_doubt`). Dev: 33.3% of cost caught at 20%; "long" flags catch 25.9% of joined vs 8.8% of chopped
   cost, "unsure" 6.8% vs 27.4%, so the reasons point at the right fix. The share itself is a product call.
+- 2026-11-24, **08 resolved** (merged; verified: holdout ledger untouched, the manifest only adds entries, a
+  status-flip mutant caught). **holdout4 = 24 songs** (uploads 2026-08-07 back to 03-24, from the OneDrive
+  share; 86 skipped with reasons), **holdout4-tempo = 0** (tempo changes are rare in these USTs). Offsets were
+  set without sona (`sona-eval-ust-align --no-verify`) and are `unverified`, because the shipped check uses
+  sona's onset detector. **The pre-registered read's first step is that check**: songs it flags (35 ms
+  shift / 30 ms drift) are dropped before any score; at least 20 must remain. Bundle every dev winner
+  (05 bar 1, 07/lyrics fit, 11, 12, 13's confidence, lyrics-first 02) into that one read.
 
 ## Fog
 
