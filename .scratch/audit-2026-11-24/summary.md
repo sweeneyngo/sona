@@ -42,3 +42,4 @@ so separation is inflated); job dir 134 MB, never deleted.
   tool deadlines, Origin check, 48 kHz resampling, separator progress in the UI. Left over → 10, 11, 12.
 - Needs a human in OpenUtau: MIDI import of UTF-8 lyric events and tick 0; a UST with a chosen beat 1
   lands on an OpenUtau bar line.
+- 2026-11-24: **A06 resolved** (merged): invariants now fuzz GAME's `snap_to_grid` (+ octave check), the cell stage's `snap_notes`/`cells_to_notes`, and the stage minus the model; no violations found; runs in CI without weights.
