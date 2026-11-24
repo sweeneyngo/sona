@@ -14,7 +14,7 @@ top three overall are at the end.
 
   Measured ceilings (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch
   per cell 95.6%. Fine-tuning GAME on 30 songs gave +0.8 (not adopted). Every holdout is spent.
-- **Tempo.** Suggested from the mix: exact on 75% of fresh songs, within an octave on 97%, never at half
+- **Tempo.** The user gives the BPM; the estimate from the mix is a hint (ADR-0028). It is exact on 75% of fresh songs, within an octave on 97%, never at half
   (ADR-0022).
 - **Pitch.** Fitted glides and vibrato are 9–30% closer to the singer than flat notes (ADR-0019). They can
   be dragged on the roll, and the singer's own pitch exports as a `pitd` curve (ADR-0021).

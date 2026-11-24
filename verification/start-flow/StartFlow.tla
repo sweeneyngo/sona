@@ -3,38 +3,44 @@ EXTENDS Naturals
 CONSTANTS Songs, Tempos
 NoTempo == 0
 Usable(t) == t # NoTempo
-VARIABLES kind, song, bpm, detectedFor, pending, jobFor, jobs
-vars == <<kind, song, bpm, detectedFor, pending, jobFor, jobs>>
+VARIABLES kind, song, bpm, enteredFor, hint, hintFor, pending, jobFor, jobs
+vars == <<kind, song, bpm, enteredFor, hint, hintFor, pending, jobFor, jobs>>
 
-Init == /\ kind = "idle" /\ song = 0 /\ bpm = NoTempo /\ detectedFor = 0
-        /\ pending = {} /\ jobFor = 0 /\ jobs = 0
+Init == /\ kind = "idle" /\ song = 0 /\ bpm = NoTempo /\ enteredFor = 0
+        /\ hint = NoTempo /\ hintFor = 0 /\ pending = {} /\ jobFor = 0 /\ jobs = 0
 
-Choose(s) == /\ kind \in {"idle", "detecting", "ready"}
-             /\ kind' = "detecting" /\ song' = s /\ pending' = pending \cup {s}
-             /\ UNCHANGED <<bpm, detectedFor, jobFor, jobs>>
+Choose(s) == /\ kind \in {"idle", "ready", "loaded"}
+             /\ kind' = "ready" /\ song' = s /\ pending' = pending \cup {s}
+             /\ bpm' = NoTempo /\ hint' = NoTempo
+             /\ UNCHANGED <<enteredFor, hintFor, jobFor, jobs>>
 TempoArrives(s, t) == /\ s \in pending
                       /\ pending' = pending \ {s}
-                      /\ IF kind = "detecting" /\ song = s
-                         THEN kind' = "ready" /\ bpm' = t /\ detectedFor' = s
-                         ELSE UNCHANGED <<kind, bpm, detectedFor>>
-                      /\ UNCHANGED <<song, jobFor, jobs>>
-YouSetTheTempo(t) == /\ kind = "ready" /\ bpm' = t
-                     /\ UNCHANGED <<kind, song, detectedFor, pending, jobFor, jobs>>
+                      /\ IF kind \in {"ready", "running"} /\ song = s /\ hint = NoTempo
+                         THEN hint' = t /\ hintFor' = s
+                         ELSE UNCHANGED <<hint, hintFor>>
+                      /\ bpm' = bpm
+                      /\ UNCHANGED <<kind, song, enteredFor, jobFor, jobs>>
+YouSetTheTempo(t) == /\ kind = "ready" /\ bpm' = t /\ enteredFor' = song
+                     /\ UNCHANGED <<kind, song, hint, hintFor, pending, jobFor, jobs>>
+YouPickTheHint == /\ kind = "ready" /\ Usable(hint) /\ bpm' = hint /\ enteredFor' = song
+                  /\ UNCHANGED <<kind, song, hint, hintFor, pending, jobFor, jobs>>
 YouPressTranscribe == /\ kind = "ready" /\ Usable(bpm) /\ jobs < 2
                       /\ kind' = "running" /\ jobFor' = song /\ jobs' = jobs + 1
-                      /\ UNCHANGED <<song, bpm, detectedFor, pending>>
+                      /\ UNCHANGED <<song, bpm, enteredFor, hint, hintFor, pending>>
 TheJobEnds == /\ kind = "running"
               /\ \/ kind' = "loaded"
                  \/ kind' = "ready"
-              /\ UNCHANGED <<song, bpm, detectedFor, pending, jobFor, jobs>>
-StartOver == /\ kind \in {"ready", "loaded", "detecting"}
-             /\ kind' = "idle" /\ UNCHANGED <<song, bpm, detectedFor, pending, jobFor, jobs>>
+              /\ UNCHANGED <<song, bpm, enteredFor, hint, hintFor, pending, jobFor, jobs>>
+StartOver == /\ kind \in {"ready", "loaded"}
+             /\ kind' = "idle" /\ UNCHANGED <<song, bpm, enteredFor, hint, hintFor, pending, jobFor, jobs>>
 
 Next == \/ \E s \in Songs : Choose(s)
         \/ \E s \in Songs, t \in Tempos : TempoArrives(s, t)
         \/ \E t \in Tempos : YouSetTheTempo(t)
-        \/ YouPressTranscribe \/ TheJobEnds \/ StartOver
+        \/ YouPickTheHint \/ YouPressTranscribe \/ TheJobEnds \/ StartOver
 
-TempoIsForTheShownSong == kind = "ready" /\ detectedFor # 0 /\ bpm # NoTempo => detectedFor = song
+OnScreen == kind \in {"ready", "running"}
+TempoIsForTheShownSong == OnScreen /\ hint # NoTempo => hintFor = song
+BpmIsYours == OnScreen /\ Usable(bpm) => enteredFor = song
 JobsHaveATempo == kind = "running" => Usable(bpm) /\ jobFor = song
 ====

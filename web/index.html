@@ -524,6 +524,9 @@
         min-width: 54px;
         color: var(--muted);
       }
+      .tempo-row {
+        flex-wrap: wrap;
+      }
       .tempo-row input {
         width: 92px;
         font-size: 18px;
@@ -531,6 +534,14 @@
       .unit {
         color: var(--muted);
         font-size: 12px;
+      }
+      .tempo-hint {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: 10px;
+        color: var(--muted);
+        font-size: 12.5px;
       }
       .hint-line {
         margin: -6px 0 0;
@@ -1136,12 +1147,14 @@
               </div>
               <div class="tempo-row">
                 <label for="song-bpm">Tempo</label>
-                <input id="song-bpm" type="number" min="20" max="400" step="0.1" />
+                <input id="song-bpm" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 128" />
                 <span class="unit">BPM</span>
-                <button id="song-half" class="chip" title="Half the tempo">½×</button>
-                <button id="song-double" class="chip" title="Double the tempo">2×</button>
+                <span id="song-hint" class="tempo-hint" role="status">
+                  <span id="song-hint-text"></span>
+                  <button id="song-hint-full" class="chip" hidden></button>
+                  <button id="song-hint-half" class="chip" hidden></button>
+                </span>
               </div>
-              <p id="song-tempo-note" class="hint-line" hidden></p>
               <details id="song-more" class="more">
                 <summary>Options</summary>
                 <div class="more-grid">

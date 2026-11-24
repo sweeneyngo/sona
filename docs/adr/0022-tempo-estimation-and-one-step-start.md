@@ -1,6 +1,6 @@
 # ADR-0022: Tempo estimation, and a start screen with one action
 
-Status: accepted (2026-11-23)
+Status: accepted (2026-11-23). Decision 2 amended by [ADR-0028](0028-ask-for-the-bpm-first.md): the start screen asks for the BPM, and the estimate is a hint rather than a pre-filled value.
 
 ## Context
 
