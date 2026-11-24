@@ -29,6 +29,7 @@ pub mod onset;
 pub mod pipeline;
 pub mod pitch;
 pub mod prefilter;
+pub mod release;
 pub mod segment;
 pub mod timbre;
 #[cfg(feature = "spectral")]

@@ -21,6 +21,10 @@
 //! would get it: a phrase is a run of touching notes, and its moras are the lead UST's notes sung inside
 //! its span (by midpoint). The default run is unchanged.
 //!
+//! `--trim-releases` (opt-in, utau-edit-cost 12) adds the edit cost of GAME's lead notes and of the stage
+//! after `sona_core::release::trim_releases` on the vocals' energy envelope (the stage's row shows why it
+//! is not applied there). The default run is unchanged.
+//!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
@@ -29,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::lyric_fit::{fit_phrase, mora_of, CellNote, Mora};
+use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
@@ -243,7 +248,8 @@ fn run() -> Result<(), String> {
     let mut tot = [(0usize, 0usize); 6];
     let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
     let with_fit = args.iter().any(|a| a == "--fit-phrase-lyrics");
-    let mut costs: [Vec<(String, EditCost)>; 5] = Default::default();
+    let with_trim = args.iter().any(|a| a == "--trim-releases");
+    let mut costs: [Vec<(String, EditCost)>; 7] = Default::default();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -301,6 +307,12 @@ fn run() -> Result<(), String> {
                         costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&fitted), &grid)));
                     }
                 }
+                if with_trim {
+                    for (k, ns) in [(5, &lead_only), (6, &stage)] {
+                        let trimmed = trim_releases(ns, &rms, spacing, ReleaseRule::default());
+                        costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&trimmed), &grid)));
+                    }
+                }
             }
             if let (Some(dir), 1) = (&dump, j) {
                 let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
@@ -333,6 +345,8 @@ fn run() -> Result<(), String> {
             "learned cell stage, onset phase (ships)",
             "GAME lead + octave rule, each phrase's lyric fitted (opt-in)",
             "learned cell stage, each phrase's lyric fitted (opt-in)",
+            "GAME lead + octave rule, releases trimmed (opt-in)",
+            "learned cell stage, releases trimmed (opt-in; not applied: raises its cost)",
         ];
         for (title, rows) in titles.iter().zip(&costs).filter(|(_, rows)| !rows.is_empty()) {
             print!("{}", edit_cost::report(title, rows));

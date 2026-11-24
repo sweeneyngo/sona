@@ -282,6 +282,12 @@ The metric is the share of grid cells that match the UST.
   user pasting each phrase's kana onto its notes, fitted by `sona_core::lyric_fit`, cuts GAME lead's cost
   188.7 → 174.9 per minute (−13.9 [−30.2, −3.8]); not a default
   ([report](crates/sona-eval/reports/same-pitch-boundaries.md)).
+- **Single-note errors** (start, end, pitch; 22% of GAME lead's cost; opt-in, dev only). The largest cause is
+  GAME holding a note through the short rest before the next note. Ending notes where the vocals' energy falls
+  away (`sona_core::release`) cuts GAME lead 188.7 → 184.3 per minute (−4.4 [−6.5, −2.5]) and raises clean
+  measures 16.2% → 18.7%. The shipped stage has already learned this, and the trim does not help it. The
+  remaining one-cell and semitone errors have no evidence saying which way to fix them
+  ([report](crates/sona-eval/reports/single-note-errors.md)).
 
 How grid mode got there, on the dev songs:
 
