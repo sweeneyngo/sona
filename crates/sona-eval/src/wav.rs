@@ -50,9 +50,14 @@ pub fn read_mono(path: &Path) -> Result<(Vec<f32>, u32), EvalError> {
 /// Used only by the fixture generator; kept next to the reader so the encode and
 /// decode conventions live together.
 pub fn write_mono_16bit(path: &Path, samples: &[f32]) -> Result<(), EvalError> {
+    write_mono_16bit_at(path, samples, SAMPLE_RATE)
+}
+
+/// [`write_mono_16bit`] at any sample rate (the click overlays keep the song's).
+pub fn write_mono_16bit_at(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), EvalError> {
     let spec = hound::WavSpec {
         channels: 1,
-        sample_rate: SAMPLE_RATE,
+        sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };

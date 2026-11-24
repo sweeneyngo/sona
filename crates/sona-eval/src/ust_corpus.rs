@@ -92,7 +92,29 @@ pub struct Song {
     /// Assigned by upload order before any tuning: odd positions dev, even holdout.
     #[serde(default)]
     pub split: Option<String>,
+    /// Whole cells from the UST's beat lines to the music's beat, in `0..cells per beat`
+    /// (utau-edit-cost 10; `sona_eval::frame::MusicFrame`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_beat_shift_cells: Option<u32>,
+    /// Whole cells from the UST's bar lines (every 4 beats from its tick 0) to the music's bar line,
+    /// in `0..cells per bar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_bar_shift_cells: Option<u32>,
+    /// `unverified-estimate` (seeded from `reports/bar-one.md`) or `ear-checked`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_frame_status: Option<String>,
     pub notes: Option<String>,
+}
+
+impl Song {
+    /// The music's beat and bar against the UST's lines, when the manifest has both shifts.
+    pub fn music_frame(&self) -> Option<crate::frame::MusicFrame> {
+        Some(crate::frame::MusicFrame {
+            beat_shift_cells: self.music_beat_shift_cells?,
+            bar_shift_cells: self.music_bar_shift_cells?,
+            ear_checked: self.music_frame_status.as_deref() == Some("ear-checked"),
+        })
+    }
 }
 
 /// Stem provenance (ticket 03).
@@ -263,7 +285,17 @@ mod tests {
         );
         let again: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
         assert_eq!(m, again);
+        let mut pretty = serde_json::to_string_pretty(&m).unwrap();
+        pretty.push('\n');
+        assert_eq!(pretty, std::fs::read_to_string(&path).unwrap(), "save() rewrites the committed manifest byte for byte");
         for s in &m.songs {
+            let shifts = (s.music_beat_shift_cells.is_some(), s.music_bar_shift_cells.is_some(), s.music_frame_status.is_some());
+            assert!(matches!(shifts, (false, false, false) | (true, true, true)), "{}: music frame fields come together", s.id);
+            if let Some(music) = s.music_frame() {
+                assert!(matches!(s.music_frame_status.as_deref(), Some("unverified-estimate" | "ear-checked")), "{}", s.id);
+                let cells_per_beat = s.grid_division.unwrap_or(16) / 4;
+                assert!(music.is_consistent(cells_per_beat), "{}: the bar line must fall on the beat: {music:?}", s.id);
+            }
             assert!(matches!(s.stratum.as_str(), "vocaloid-original" | "human-sung"), "{}: {}", s.id, s.stratum);
             assert!(!s.original_url.contains("youtube.com/@pifuyuu"), "{}: original must not be the cover", s.id);
             assert_ne!(s.original_url, s.cover_video_url, "{}: original must not be the cover", s.id);
