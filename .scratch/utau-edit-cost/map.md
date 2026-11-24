@@ -139,6 +139,17 @@ a line below.
   - **BPM:** keep sona's estimator. Trackers give the felt tempo, half the UST's notation on 4–7/10 songs.
     Post hoc, sona's octave × a tracker's tempo makes the whole-BPM hint exact on 10/10 (sona 6/10). That
     needs a pre-registered holdout4-tempo test.
+- 2026-11-24, **16 resolved, opt-in** (ADR-0036, [ticket](issues/16-beat-this-bar-one.md); dev only).
+  - Beat This! is a user-installed tool: `scripts/setup-separators.sh beat-this` puts it in the lead venv,
+    and `sona serve` / `sona transcribe --bar-one-tracker beat-this` run it on the mix, one thread, under the
+    tool deadline.
+  - Bar 1 is the beat most of its downbeats fall on (mod 4), and the harmony's bar 1 is kept beside it. The
+    app offers First grid line / From the harmony / From Beat This (only when installed) and flags a
+    disagreement.
+  - Dev: 9/9, the same as the harmony; the Rust fold equals `score.py` on 9/9. Speed, one thread at load
+    27–39: median 88 s CPU and 133 s wall per 4-minute song.
+  - Ticket 05's holdout4 rule gains it as arm C, thresholds unchanged, with a tie-break to the harmony. The
+    holdout read still needs `--estimate-bar-one` to get a `--split` path.
 
 ## Fog
 
