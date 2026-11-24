@@ -1,13 +1,13 @@
 /**
  * Editor sessions for the export tests: raw notes from a fixture or a seeded
- * generator, snapped the way the editor snaps them (`quantizeNote`, then
- * `resolveOverlaps`), with the session's BPM, division and grid anchor.
+ * generator, read by the editor's own `effectiveNotes`, with the session's BPM,
+ * division and grid anchor.
  */
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { quantizeNote, resolveOverlaps, gridSpacingSeconds } from "./grid";
 import type { Expression } from "./expression";
+import { effectiveNotes, exportNotes } from "./interpret";
 import type { LyricNote } from "./sequence";
 
 export interface RawNote {
@@ -37,21 +37,17 @@ export function lcg(seed: number): () => number {
 
 /** The notes as the editor exports them: each snapped to the grid (or escaped), then made monophonic. */
 export function snapLikeTheEditor(raw: RawNote[], bpm: number, division: number, anchor: number): LyricNote[] {
-  const spacing = gridSpacingSeconds(bpm, division);
-  const snapped = resolveOverlaps(
-    raw.map((n) => {
-      const q = { onset_s: n.onset_s, offset_s: n.offset_s, sub_scores: { onset_clarity: n.onset_clarity ?? 0 } };
-      return quantizeNote(q, n.manual ? { spacing, anchor, escapeDistanceCells: Infinity } : { spacing, anchor });
-    }),
-    spacing,
-  );
-  return raw.map((n, i) => ({
-    onset_s: snapped[i].onset_s,
-    offset_s: snapped[i].offset_s,
+  const working = raw.map((n) => ({
+    onset_s: n.onset_s,
+    offset_s: n.offset_s,
     midi_pitch: n.midi_pitch,
-    lyric: n.lyric,
+    confidence: 1,
+    sub_scores: { pitch_stability: 1, voicing: 1, onset_clarity: n.onset_clarity ?? 0, offset_clarity: 1 },
+    ...(n.manual ? { manual: true } : {}),
+    ...(n.lyric !== undefined ? { lyric: n.lyric } : {}),
     ...(n.expr ? { expr: n.expr } : {}),
   }));
+  return exportNotes(effectiveNotes(working, { bpm, division, anchor, barOne: null }, { flagThreshold: 0.5, snapKey: false, key: null }));
 }
 
 const LYRICS = [undefined, "ら", "きゃ", "ー", "a", "ゔ🎵", " ", "ん"];
