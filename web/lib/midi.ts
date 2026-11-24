@@ -1,23 +1,18 @@
-// Pure Standard MIDI File (SMF) encoder for the review surface.
-// The UI exports the *authoritative* MIDI from the current snapped + corrected
-// state (ADR-0004), so this owns the seconds→ticks conversion and byte layout.
-// A format-0, single-track file is all a monophonic vocal line needs. No deps —
-// hand-rolled — and DOM-free so it's unit-testable under Vitest.
+// Pure Standard MIDI File (SMF) encoder for the review surface. It writes the
+// export seam's Sequence (`sequence.ts`), so its ticks are the UST's and the
+// USTX's. A format-0, single-track file is all a monophonic vocal line needs.
+// No deps — hand-rolled — and DOM-free so it's unit-testable under Vitest.
 
-import { clampPitch } from "./math";
-import type { Note } from "./annotation";
+import { TICKS_PER_QUARTER, type Sequence } from "./sequence";
 
 const NOTE_ON = 0x90;
 const NOTE_OFF = 0x80;
 const DEFAULT_VELOCITY = 100;
 
-/** A note the encoder needs: pitch + timing in seconds (a slice of {@link Note}). */
-export type MidiNote = Pick<Note, "onset_s" | "offset_s" | "midi_pitch">;
-
 interface Event {
   tick: number;
-  kind: "on" | "off";
-  pitch: number;
+  rank: number;
+  bytes: number[];
 }
 
 /**
@@ -36,34 +31,25 @@ export function writeVarLen(value: number): number[] {
 }
 
 /**
- * Encode notes (each `{ onset_s, offset_s, midi_pitch }`, seconds) as a
- * format-0 SMF `Uint8Array` at the given `bpm`. `ppq` is the ticks-per-quarter
- * division. Notes are sorted by onset; at each tick note-offs are emitted before
- * note-ons so a note ending where the next begins doesn't overlap.
+ * Encode `seq` as a format-0 SMF at `bpm`, `TICKS_PER_QUARTER` ticks per quarter:
+ * a tempo, a 4/4 time signature, and per note a lyric (`FF 05`, UTF-8), a note-on
+ * and a note-off. At one tick, note-offs come before lyrics and note-ons, so a
+ * note ending where the next begins doesn't overlap it.
  */
-export function encodeMidiFile(
-  notes: MidiNote[],
-  { bpm, ppq = 480 }: { bpm: number; ppq?: number },
-): Uint8Array {
-  const ticksPerSecond = (bpm / 60) * ppq;
-  const toTicks = (s: number) => Math.max(0, Math.round(s * ticksPerSecond));
-
-  // Fan each note out to an on/off pair at absolute ticks, then order by tick
-  // (offs first on ties) so the delta-time stream is monotonic.
+export function encodeMidiFile(seq: Sequence, { bpm }: { bpm: number }): Uint8Array {
+  const utf8 = new TextEncoder();
   const events: Event[] = [];
-  for (const note of notes) {
-    const pitch = clampPitch(note.midi_pitch);
-    const on = toTicks(note.onset_s);
-    const off = Math.max(on + 1, toTicks(note.offset_s));
-    events.push({ tick: on, kind: "on", pitch });
-    events.push({ tick: off, kind: "off", pitch });
+  for (const n of seq.notes) {
+    const pitch = Math.max(0, Math.min(127, n.tone));
+    const lyric = [...utf8.encode(n.lyric)];
+    events.push({ tick: n.position, rank: 1, bytes: [0xff, 0x05, ...writeVarLen(lyric.length), ...lyric] });
+    events.push({ tick: n.position, rank: 2, bytes: [NOTE_ON, pitch, DEFAULT_VELOCITY] });
+    events.push({ tick: n.position + n.duration, rank: 0, bytes: [NOTE_OFF, pitch, 0] });
   }
-  events.sort((a, b) => a.tick - b.tick || rank(a.kind) - rank(b.kind));
+  events.sort((a, b) => a.tick - b.tick || a.rank - b.rank);
 
-  const track: number[] = [];
-  // Tempo meta: microseconds per quarter note.
   const usPerQuarter = Math.round(60_000_000 / bpm);
-  track.push(
+  const track: number[] = [
     ...writeVarLen(0),
     0xff,
     0x51,
@@ -71,19 +57,21 @@ export function encodeMidiFile(
     (usPerQuarter >> 16) & 0xff,
     (usPerQuarter >> 8) & 0xff,
     usPerQuarter & 0xff,
-  );
+    ...writeVarLen(0),
+    0xff,
+    0x58,
+    0x04,
+    4, // four beats per bar
+    2, // of a quarter note (2^2)
+    24, // MIDI clocks per metronome click
+    8, // 32nd notes per quarter
+  ];
 
   let prevTick = 0;
   for (const ev of events) {
-    track.push(...writeVarLen(ev.tick - prevTick));
+    track.push(...writeVarLen(ev.tick - prevTick), ...ev.bytes);
     prevTick = ev.tick;
-    if (ev.kind === "on") {
-      track.push(NOTE_ON, ev.pitch, DEFAULT_VELOCITY);
-    } else {
-      track.push(NOTE_OFF, ev.pitch, 0);
-    }
   }
-  // End-of-Track meta.
   track.push(...writeVarLen(0), 0xff, 0x2f, 0x00);
 
   const header = [
@@ -91,15 +79,10 @@ export function encodeMidiFile(
     ...u32(6),
     ...u16(0), // format 0
     ...u16(1), // one track
-    ...u16(ppq),
+    ...u16(TICKS_PER_QUARTER),
   ];
   const trackChunk = [...ascii("MTrk"), ...u32(track.length), ...track];
   return Uint8Array.from([...header, ...trackChunk]);
-}
-
-// note-off (0) sorts before note-on (1) at the same tick.
-function rank(kind: "on" | "off"): number {
-  return kind === "off" ? 0 : 1;
 }
 
 function ascii(s: string): number[] {

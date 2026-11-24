@@ -30,7 +30,8 @@ import { clampPitch } from "./lib/math";
 import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, splitLyrics } from "./lib/lyrics";
-import { TICKS_PER_QUARTER, sequenceInSeconds, toSequence } from "./lib/sequence";
+import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
+import { barNumber, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
 import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
 import { sungPitchCurve } from "./lib/sungPitch";
@@ -71,6 +72,9 @@ const el = {
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
   keyReadout: document.getElementById("key-readout") as HTMLOutputElement,
+  barOneReadout: document.getElementById("bar-one-readout") as HTMLOutputElement,
+  barOneHere: document.getElementById("bar-one-here") as HTMLButtonElement,
+  barOneAuto: document.getElementById("bar-one-auto") as HTMLButtonElement,
   keyDetail: document.getElementById("key-detail") as HTMLOutputElement,
   correctionOpen: document.getElementById("correction-open") as HTMLButtonElement,
   correctionBadge: document.getElementById("correction-badge") as HTMLSpanElement,
@@ -198,7 +202,7 @@ interface DragBase {
   moved: boolean;
 }
 type Drag =
-  | (DragBase & { mode: "offset"; origAnchor: number })
+  | (DragBase & { mode: "offset"; origFrame: Frame })
   | (DragBase & { mode: "handle"; note: WorkingNote; handle: Handle; origExpr: Expression; span: NoteSpan })
   | (DragBase & { mode: "pen"; lastT: number; lastCents: number; erase: boolean })
   | (DragBase & {
@@ -255,6 +259,8 @@ let dirty = false;
 let bpm = 120;
 let division = 16;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
+// A downbeat the user chose (ADR-0029); null = bar 1 on the first grid line.
+let barOne: number | null = null;
 let flagThreshold = 0.5;
 // Snap each note's pitch to the detected key's scale (display + export). Off by
 // default: out-of-key notes are flagged for review rather than auto-corrected.
@@ -363,6 +369,7 @@ function applyLoadedJson(parsed: any): boolean {
     bpm = annotation.bpm > 0 ? annotation.bpm : 120;
     el.bpm.value = String(bpm);
     gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
+    barOne = null;
   }
   resetView(); // zoomed-in default + 2-octave window centred on the notes.
   rebuild();
@@ -426,6 +433,38 @@ function withProvenance(raw: unknown): { provenance?: Provenance } {
 /** Current grid cell size in seconds. */
 function spacing(): number {
   return gridSpacingSeconds(bpm, division);
+}
+
+/** The frame the editor draws and the export writes (ADR-0029). */
+function currentFrame(): Frame {
+  return { bpm, division, anchor: gridAnchor, barOne };
+}
+
+function changeFrame(e: FrameEvent): void {
+  const f = updateFrame(currentFrame(), e);
+  bpm = f.bpm;
+  division = f.division;
+  gridAnchor = f.anchor;
+  barOne = f.barOne;
+  syncBarOne();
+}
+
+/** Stem time of the export's tick 0 for the notes as they are now. */
+function exportTickZero(): number {
+  return tickZero(currentFrame(), effectiveNotes().map((e) => e.onset_s));
+}
+
+function syncBarOne(): void {
+  el.barOneReadout.textContent = barOne === null ? "first grid line" : `${downbeat(currentFrame()).toFixed(3)} s`;
+  el.barOneAuto.disabled = barOne === null;
+}
+
+/** "This line is beat 1": the grid line nearest `t` becomes a bar line. */
+function setBarOneAt(t: number): void {
+  changeFrame({ type: "bar-one", t });
+  markDirty();
+  redraw();
+  setStatus(`Bar lines now fall on ${downbeat(currentFrame()).toFixed(3)} s`);
 }
 
 /** Drop the cached interpretation; next `effectiveNotes()` recomputes it. */
@@ -574,8 +613,8 @@ function effectiveNotes(): EffectiveNote[] {
   return effectiveCache;
 }
 
-/** The effective notes reshaped for the MIDI encoder / synth (seconds + pitch). */
-function midiNotes() {
+/** The effective notes reshaped for the synth (stem seconds + pitch). */
+function playbackNotes() {
   return effectiveNotes().map((e) => ({
     onset_s: e.onset_s,
     offset_s: e.offset_s,
@@ -629,6 +668,7 @@ el.division.addEventListener("change", () => {
 function syncTempoChip(): void {
   const grid = el.division.selectedOptions[0]?.textContent ?? `1/${division}`;
   el.tempoChipText.textContent = `${Math.round(bpm * 10) / 10} · ${grid}`;
+  syncBarOne();
 }
 
 function setTempoPop(open: boolean): void {
@@ -671,6 +711,13 @@ el.snapKey.addEventListener("change", () => {
   redraw();
 });
 el.export.addEventListener("click", exportMidi);
+el.barOneHere.addEventListener("click", () => setBarOneAt(currentPlayheadS()));
+el.barOneAuto.addEventListener("click", () => {
+  changeFrame({ type: "auto-bar-one" });
+  markDirty();
+  redraw();
+  setStatus("Bar 1 is on the first grid line again");
+});
 
 // --- Modals (help + settings) -----------------------------------------------
 
@@ -928,30 +975,25 @@ function drawPitchHighlights(w: number): void {
 }
 
 /**
- * The grid lines *within the visible time window* — screen x plus whether each
- * lands on a beat. Culled to `[viewT0, viewT1]` so a fine grid over a long stem
- * only produces the handful of lines actually on screen.
+ * The frame's grid lines *within the visible time window*: screen x, whether
+ * each is a cell, beat or bar line, and its time. Culled to `[viewT0, viewT1]`
+ * so a fine grid over a long stem only produces the lines actually on screen.
  */
-function gridLineInfo(): { x: number; isBeat: boolean }[] {
-  const s = spacing();
-  const cellsPerBeat = division / 4; // a beat is a quarter note.
-  const from = Math.max(0, viewT0);
-  const to = Math.min(totalDuration(), viewT1);
-  const kStart = Math.ceil((from - gridAnchor) / s - 1e-9);
-  const kEnd = Math.floor((to - gridAnchor) / s + 1e-9);
-  const out: { x: number; isBeat: boolean }[] = [];
-  for (let k = kStart; k <= kEnd; k++) {
-    const t = gridAnchor + k * s;
-    if (t < -1e-9) continue;
-    out.push({ x: scale!.timeToX(t), isBeat: ((k % cellsPerBeat) + cellsPerBeat) % cellsPerBeat === 0 });
-  }
-  return out;
+function gridLineInfo(): { x: number; t: number; kind: LineKind }[] {
+  return gridLines(currentFrame(), viewT0, Math.min(totalDuration(), viewT1)).map((l) => ({ x: scale!.timeToX(l.t), t: l.t, kind: l.kind }));
 }
 
-/** Vertical grid lines from BPM/division/phase; beat lines drawn stronger. */
+const GRID_LINE_COLOUR: Record<LineKind, string> = { cell: "#1c2029", beat: "#2f3646", bar: "#4a5470" };
+const RULER_TICK: Record<LineKind, { colour: string; top: number }> = {
+  cell: { colour: "#3a4050", top: RULER_H - 7 },
+  beat: { colour: "#6c7488", top: RULER_H - 13 },
+  bar: { colour: "#a9b0c2", top: 3 },
+};
+
+/** Vertical grid lines from the frame; beat lines stronger, bar lines strongest. */
 function drawTimeGrid(_w: number, h: number): void {
-  for (const { x, isBeat } of gridLineInfo()) {
-    ctx2d.strokeStyle = isBeat ? "#2f3646" : "#1c2029";
+  for (const { x, kind } of gridLineInfo()) {
+    ctx2d.strokeStyle = GRID_LINE_COLOUR[kind];
     ctx2d.beginPath();
     ctx2d.moveTo(x, PAD.top);
     ctx2d.lineTo(x, h);
@@ -973,14 +1015,26 @@ function drawRulerBg(w: number): void {
   ctx2d.fillText("seek ▸", 6, RULER_H - 6);
 }
 
-/** A tick on each grid line in the ruler (clipped to the plot area). */
+/** A tick on each grid line in the ruler, and OpenUtau's bar number beside each bar line (clipped to the plot area). */
 function drawRulerTicks(): void {
-  for (const { x, isBeat } of gridLineInfo()) {
-    ctx2d.strokeStyle = isBeat ? "#6c7488" : "#3a4050";
+  const lines = gridLineInfo();
+  const t0 = exportTickZero();
+  const frame = currentFrame();
+  const barPx = scale!.timeToX(barSeconds(frame)) - scale!.timeToX(0);
+  const every = barPx >= 28 ? 1 : 2 ** Math.ceil(Math.log2(28 / Math.max(1, barPx)));
+  ctx2d.font = '9px "Space Mono", ui-monospace, monospace';
+  for (const { x, t, kind } of lines) {
+    const tick = RULER_TICK[kind];
+    ctx2d.strokeStyle = tick.colour;
     ctx2d.beginPath();
-    ctx2d.moveTo(x, isBeat ? 3 : RULER_H - 7);
+    ctx2d.moveTo(x, tick.top);
     ctx2d.lineTo(x, RULER_H - 1);
     ctx2d.stroke();
+    const bar = barNumber(frame, t, t0);
+    if (kind === "bar" && (bar - 1) % every === 0) {
+      ctx2d.fillStyle = "#a9b0c2";
+      ctx2d.fillText(String(bar), x + 3, 11);
+    }
   }
 }
 
@@ -1178,10 +1232,15 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
   if (!scale) return;
   const { x, y } = canvasPoint(e);
 
-  // The top ruler: a click seeks the playhead, a drag shifts the grid phase.
+  // The top ruler: a click seeks the playhead, a drag shifts the grid phase,
+  // and a Shift-click makes the nearest grid line beat 1 of a bar.
   if (y < RULER_H) {
+    if (e.shiftKey) {
+      setBarOneAt(scale.xToTime(x));
+      return;
+    }
     edits.beginGesture();
-    drag = { mode: "offset", startX: x, startY: y, origAnchor: gridAnchor, moved: false };
+    drag = { mode: "offset", startX: x, startY: y, origFrame: currentFrame(), moved: false };
     return;
   }
 
@@ -1277,7 +1336,7 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
     // Only shift the grid once it's really a drag; a sub-threshold click stays a
     // seek (handled on mouseup) with the phase untouched.
     if (d.moved) {
-      gridAnchor = d.origAnchor + dt;
+      changeFrame({ type: "drag", from: d.origFrame, dt });
       invalidateEffective(); // snapping depends on the phase
       markDirty();
       redraw();
@@ -1636,6 +1695,8 @@ interface SessionState {
   bpm: number;
   division: number;
   gridAnchor: number;
+  /** A downbeat the user chose, in stem seconds; absent or null = the first grid line (ADR-0029). */
+  barOne: number | null;
   flagThreshold: number;
   snapKey: boolean;
 }
@@ -1648,7 +1709,7 @@ interface SessionState {
  * appended.
  */
 function buildSessionFile(): Annotation & { baseline: Note[]; session: SessionState } {
-  const session: SessionState = { bpm, division, gridAnchor, flagThreshold, snapKey };
+  const session: SessionState = { bpm, division, gridAnchor, barOne, flagThreshold, snapKey };
   return { ...annotation!, notes: workingNotes, baseline: baselineNotes, session };
 }
 
@@ -1682,7 +1743,7 @@ interface DocState {
 const contourShare = new SharedSnapshot<F0Frame>();
 
 function captureDoc(): DocState {
-  const doc = JSON.stringify({ notes: workingNotes, bpm, division, gridAnchor, flagThreshold, snapKey });
+  const doc = JSON.stringify({ notes: workingNotes, bpm, division, gridAnchor, barOne, flagThreshold, snapKey });
   return { doc, contour: annotation ? contourShare.capture(annotation.f0_contour) : null };
 }
 
@@ -1695,6 +1756,8 @@ function restoreDoc(s: DocState): void {
   bpm = d.bpm;
   division = d.division;
   gridAnchor = d.gridAnchor;
+  barOne = d.barOne ?? null;
+  syncBarOne();
   flagThreshold = d.flagThreshold;
   snapKey = d.snapKey;
   el.bpm.value = String(bpm);
@@ -1825,6 +1888,7 @@ function restoreSession(s: any): void {
     : workingNotes.length
       ? Math.min(...workingNotes.map((n) => n.onset_s))
       : 0;
+  barOne = typeof s.barOne === "number" && Number.isFinite(s.barOne) ? s.barOne : null;
   if (Number.isFinite(Number(s.flagThreshold))) {
     flagThreshold = Math.min(1, Math.max(0, Number(s.flagThreshold)));
     el.flag.value = String(flagThreshold);
@@ -1837,15 +1901,15 @@ function restoreSession(s: any): void {
 el.save.addEventListener("click", saveSession);
 
 /**
- * Export the authoritative MIDI (ADR-0004): the current snapped + corrected
- * state, seconds→ticks at the chosen BPM. Escaped notes export at their raw
+ * Export the authoritative MIDI (ADR-0004): the same sequence as the UST and
+ * USTX, so its notes sit on the same ticks. Escaped notes export at their raw
  * position, as shown.
  */
 function exportMidi(): void {
   if (!annotation) return;
-  const notes = midiNotes();
-  download(encodeMidiFile(notes, { bpm }) as BlobPart, "sona.mid", "audio/midi");
-  setStatus("Exported sona.mid");
+  const seq = sequenceForExport();
+  download(encodeMidiFile(seq, { bpm }) as BlobPart, "sona.mid", "audio/midi");
+  setStatus(`Exported sona.mid${shiftNote(seq)}`);
 }
 
 function notesInTimeOrder(): WorkingNote[] {
@@ -1856,27 +1920,31 @@ function lyricNotes() {
   return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric, expr: e.raw.expr }));
 }
 
-function exportSequence() {
-  return toSequence(lyricNotes(), { bpm, spacing: spacing(), anchor: gridAnchor });
+function sequenceForExport(): Sequence {
+  return exportSequence(lyricNotes(), currentFrame());
 }
 
-function shiftNote(shiftS: number): string {
-  return shiftS > 0.0005 ? ` · shifted ${Math.round(shiftS * 1000)} ms onto the grid` : "";
+/** Where tick 0 (bar 1 in OpenUtau) is in the stem, for lining the stem up with the export. */
+function shiftNote(seq: Sequence): string {
+  const ms = Math.round(seq.shiftS * 1000);
+  if (barOne === null) return seq.shiftS > 0.0005 ? ` · shifted ${ms} ms onto the grid` : "";
+  if (ms > 0) return ` · bar 1 starts ${ms} ms into the stem`;
+  return ms < 0 ? ` · bar 1 starts ${-ms} ms before the stem` : "";
 }
 
 function exportUst(): void {
   if (!annotation) return;
-  const seq = exportSequence();
+  const seq = sequenceForExport();
   const { bytes, encoding } = encodeUst(seq, { bpm, projectName: "sona" });
   download(bytes as BlobPart, "sona.ust", "text/plain");
-  setStatus(`Exported sona.ust${encoding === "shift_jis" ? "" : " (UTF-8)"}${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ust${encoding === "shift_jis" ? "" : " (UTF-8)"}${shiftNote(seq)}`);
 }
 
 function exportUstx(): void {
   if (!annotation) return;
-  const seq = exportSequence();
+  const seq = sequenceForExport();
   download(ustxText(seq, { bpm, name: "sona" }), "sona.ustx", "text/yaml");
-  setStatus(`Exported sona.ustx${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ustx${shiftNote(seq)}`);
 }
 
 el.exportUst.addEventListener("click", exportUst);
@@ -1885,13 +1953,13 @@ el.exportUstxSung.addEventListener("click", exportUstxSung);
 
 function exportUstxSung(): void {
   if (!annotation) return;
-  const seq = exportSequence();
+  const seq = sequenceForExport();
   const curve = sungPitchCurve(annotation.f0_contour, sequenceInSeconds(seq, bpm), {
     shiftS: seq.shiftS,
     ticksPerSecond: (bpm / 60) * TICKS_PER_QUARTER,
   });
   download(ustxText(seq, { bpm, name: "sona", curves: [{ ...curve, abbr: "pitd" }] }), "sona.ustx", "text/yaml");
-  setStatus(`Exported sona.ustx with the singer's pitch${shiftNote(seq.shiftS)}`);
+  setStatus(`Exported sona.ustx with the singer's pitch${shiftNote(seq)}`);
 }
 
 let lyricTarget: WorkingNote | null = null;
@@ -2628,7 +2696,7 @@ function startPlayback(): void {
   synthGain.gain.value = el.muteSynth.checked ? 0 : 1;
   synthGain.connect(ac.destination);
   const voices: OscillatorNode[] = [];
-  for (const voice of buildSchedule(midiNotes())) {
+  for (const voice of buildSchedule(playbackNotes())) {
     const osc = scheduleVoice(ac, synthGain, voice, startedAt, from);
     if (osc) voices.push(osc);
   }

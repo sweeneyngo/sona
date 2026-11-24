@@ -83,6 +83,11 @@ The app picks the best engine the server has, so nothing changes on the page.
   checking (Help explains them).
 - **Tempo, grid and key** are under the **♩** button. **View** holds the pitch curve, the pitch pen and
   the mutes.
+- **Bars and beat 1** ([ADR-0029](docs/adr/0029-export-frame-bar-one.md)). Bright lines are bar lines,
+  numbered in the ruler as OpenUtau will number them; middle ones are beats. **Shift-click the ruler** on
+  the beat you hear as beat 1 (or seek there and use **Bar 1 → At playhead** under **♩**), and that line
+  becomes a bar line in the editor and in every export. Dragging the ruler shifts the grid and the bars
+  move with it; **Auto** puts bar 1 back on the first grid line. Bars are 4/4.
 - **Export → USTX / UST / MIDI.** The page autosaves; **File → Save session** keeps a copy.
   **File → Details…** shows what produced the notes: the sona build, the input's and models' SHA-256,
   every setting, and, for a song, each step's time and the separator versions
@@ -92,8 +97,8 @@ The app picks the best engine the server has, so nothing changes on the page.
 **Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
 - **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
 - **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
-- **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it) and **Export → USTX** (OpenUtau) write the same snapped notes as the MIDI export, with their lyrics. A note without a lyric sings あ.
-- **Grid alignment.** The notes move onto the editor's grid, so the vocal starts up to one grid cell earlier than the stem. The status line reports the shift.
+- **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it), **Export → USTX** (OpenUtau) and **Export → MIDI** are written from one sequence, so every note lands on the same tick in all three, with its lyric (MIDI carries it as a lyric event, UTF-8, and a 4/4 time signature). A note without a lyric sings あ.
+- **Grid alignment.** Tick 0 of every export is a bar line of the editor. By default that is the first grid line of the stem, so the vocal starts up to one grid cell earlier than the stem, as before. Once you choose bar 1 (or drag the ruler), tick 0 is the first bar line of the stem (or the bar before it, when a pickup is sung before it), and OpenUtau's beats and bars fall on the editor's. The status line says where tick 0 is in the stem.
 - **Sessions.** Lyrics are saved in the session JSON.
 
 **Pitch: portamento, vibrato and the singer's own pitch** ([ADR-0019](docs/adr/0019-pitch-expression-portamento-vibrato.md), [ADR-0021](docs/adr/0021-direct-pitch-editing-and-sung-pitch.md)):
@@ -259,7 +264,7 @@ follow `mir_eval` and are reimplemented in Rust.
 5. **Export:**
    - UST in Shift-JIS, or UTF-8 when a lyric needs it;
    - USTX 0.7, optionally with a `pitd` curve;
-   - MIDI.
+   - MIDI, on the same ticks (one export seam, ADR-0029).
 
 Every decision has an ADR in [`docs/adr/`](docs/adr/). The domain glossary is in
 [`CONTEXT.md`](CONTEXT.md), and what's next is in [`docs/roadmap.md`](docs/roadmap.md).

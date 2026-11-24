@@ -6,6 +6,7 @@ how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
 | Driver | Checks |
 |---|---|
 | `song_to_notes.py` | Drop a song: the BPM field is empty and focused, the estimate is only a hint, Transcribe refuses an empty field, picking the ½× hint fills it; Transcribe, notes loaded with fitted pitch; play/pause, the tempo popover, the View menu by keyboard, File → New song and Back. Needs `sona serve`. |
+| `bar_one.py` | Needs no annotation (writes its own, and a silent stem). The default UST is the pre-frame one and the MIDI sits on its ticks; Shift-click on the ruler makes that line a bar line in the ruler and in the UST/MIDI; undo/redo; a session reload exports the same UST; a ruler drag moves the bars with the grid; **Bar 1 → At playhead**. |
 | `pitch_handles.py` | Drag, add and remove pitch points; drag the vibrato's start, fades, depth and period; a typed value is committed before a drag. |
 | `pitch_pen.py` | The pitch pen draws and erases the white line; the singer's-pitch export carries it. |
 | `sung_pitch_export.py` | "USTX with the singer's pitch" equals the plain USTX apart from its `pitd` curve. |
