@@ -79,6 +79,10 @@ a line below.
   phrases with the right note count go 29.7% → 45.4%. Opt-in `sona_core::lyric_fit` /
   `--fit-phrase-lyrics`. The lever is now an editor feature (fit selected notes to a pasted phrase), the user's
   call; a default needs holdout4.
+  - **Correction (lyrics-first 01):** the −13.9 leaked. The simulated paste gave each run of sona's notes only
+    the moras sung inside it, so moras sona missed were never pasted. On honest phrases (the UST's) the shipped
+    `fit_phrase` costs **+16.5** [+3.4, +29.6]; with rests holding moras (`fit_span_moras`) it is −14.1
+    [−31.1, −3.5]. Lines work as phrases only if placed in time, and sona's notes can't place them.
 
 - 2026-11-24, **13 resolved** (ADR-0033; verified: Rust reproduces the prototype on all 4 700 dev notes, notes
   and cells unchanged, mutants caught): the learned stage's note confidence is now `1 − σ(2.27 − 4.44·class

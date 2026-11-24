@@ -293,8 +293,10 @@ The metric is the share of grid cells that match the UST.
 - **Joined notes need the lyrics** (opt-in, dev only): no spectral detector finds the hidden same-pitch
   mora changes well enough to pay, and aligning a whole song's lyric to the notes makes things worse. A
   user pasting each phrase's kana onto its notes, fitted by `sona_core::lyric_fit`, cuts GAME lead's cost
-  188.7 → 174.9 per minute (−13.9 [−30.2, −3.8]); not a default
-  ([report](crates/sona-eval/reports/same-pitch-boundaries.md)).
+  188.7 → 174.9 per minute; not a default
+  ([report](crates/sona-eval/reports/same-pitch-boundaries.md)). That figure is optimistic: its simulated
+  paste left out the moras sona had missed. With honest phrases the fit needs rests to hold moras (next
+  bullet).
 - **A pasted lyric's lines work as its phrases** (dev only): pasting a lyric in order, as the editor does
   today, puts the right mora on 4.9% of the UST's notes, since one missed note shifts everything after it.
   Fitting each line, with its spaces as extra breaks, puts it on 57% and cuts GAME lead's cost 188.7 → 175.2
