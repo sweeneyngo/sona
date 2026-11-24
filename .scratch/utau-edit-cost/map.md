@@ -13,6 +13,14 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, **targets (user: "yes the intent behind the targets are correct"; "try to get it down to the
+  floor")**. Edit cost/min against drawing every note from scratch (~190 UST notes/min × missing 2 ≈ 380):
+  - **usable**: ≤ 190 (half of scratch), *and* the frame (bar 1, tempo) right on nearly every song;
+  - **reliable**: ≤ ~95 (a quarter), ≥ 50% clean measures, no song above ~2× the pooled cost, doubt marks
+    on most of the cost, all confirmed on a holdout;
+  - **floor**: the disagreement of two careful transcriptions of the same audio (the UST is one person's
+    arrangement), not measured yet; it needs a second human transcription. Oracle reference: joined or
+    chopped fixed perfectly gives 67.3 (GAME lead) / 50.0 (stage). Aim for the floor.
 - 2026-11-24: the target is cheap fixes in OpenUtau, not cell accuracy (user). Tiers and weights in
   `spec.md`.
 - 2026-11-24: users usually know their BPM, so ask for it first (user).
