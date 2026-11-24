@@ -114,6 +114,10 @@ where a song sings わたし, 明日 as あす, 言う as ゆう. They are 2.5% 
 errors are the text itself: choruses written once (deletions, 11.7%), English lines with no kana reading
 (692 Latin characters), and asides the UST doesn't sing.
 
+**Which stem.** Turbo on demucs's vocals stem (before the UVR lead split, so backing vocals included)
+scores 36.3% [22.7, 48.2], −0.9 [−3.7, +1.4] against the lead stem: no difference. The fallback can use
+whichever stem the job has; the lead stem is the one the notes come from, so its timestamps line up.
+
 ## What fixing a fallback lyric costs, against pasting one
 
 The fallback's errors are what the user fixes in the lyric box before the notes are fitted (the spec's
