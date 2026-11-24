@@ -50,6 +50,8 @@ a line below.
   its cell accuracy is 92.7%. GAME lead 188.7 / 16.2%; pYIN default 338.4 / 3.1%. Cost by class: **joined
   53%**, chopped 19%, length 11%, missing 9%, shift 4%, pitch 3%, extra 1%. So **07 outranks 06**
   (missing is only 9%). Unverified: whether joined notes are mostly same-pitch re-articulations (03).
+- 2026-11-24, **09 resolved** (merged; verified): `web/e2e/run_all.sh` passes on a clean checkout from a
+  generated fixture (`web/e2e/fixture.py`); drivers find targets on the canvas instead of fixed pixels.
 
 ## Fog
 
