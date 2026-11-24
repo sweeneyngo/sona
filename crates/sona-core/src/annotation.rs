@@ -107,6 +107,10 @@ pub struct JobRecord {
     /// Where the separated stems came from (ADR-0030); absent when the job separated nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stems: Option<StemSource>,
+    /// The song's lyric as the job was sent it, one sung line per line (lyrics-first 03); absent for a
+    /// job sent without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lyric: Option<String>,
 }
 
 /// A job's separated stems, by stem-cache key: the SHA-256 of the upload's hash and every separator
@@ -280,6 +284,7 @@ mod tests {
                     models: vec![file("separator/lead", "UVR.onnx", 2_048, 'd')],
                     separation: Some("lead".into()),
                     stems: Some(StemSource { key: "e".repeat(64), reused: true, separated_by: "j0".into(), by_hash: true }),
+                    lyric: Some("あめが ふる\nかぜが ふく".into()),
                 }),
             }),
             bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }),

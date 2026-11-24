@@ -17,6 +17,8 @@ export interface JobRecord {
   separation?: "none" | "vocals" | "lead";
   /** Where the separated stems came from (ADR-0030); `by_hash` when the job named its upload by hash (ADR-0032). */
   stems?: { key: string; reused: boolean; separated_by: string; by_hash?: true };
+  /** The lyric sent with the job, one sung line per line (lyrics-first 03); absent in older records. */
+  lyric?: string;
 }
 
 export interface Provenance {
@@ -61,6 +63,7 @@ export function parseProvenance(v: unknown): Provenance | null {
         ...(isObj(v.job.stems) && typeof v.job.stems.key === "string" && typeof v.job.stems.reused === "boolean"
           ? { stems: { key: v.job.stems.key, reused: v.job.stems.reused, separated_by: str(v.job.stems.separated_by), ...(v.job.stems.by_hash === true ? { by_hash: true as const } : {}) } }
           : {}),
+        ...(typeof v.job.lyric === "string" ? { lyric: v.job.lyric } : {}),
       };
     }
   }

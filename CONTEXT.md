@@ -46,6 +46,10 @@ The onset and offset of a single note. Offsets are the hardest sub-problem, made
 A single fixed BPM, typed by the user ([ADR-0028](docs/adr/0028-ask-for-the-bpm-first.md)); the estimate from the mix ([ADR-0022](docs/adr/0022-tempo-estimation-and-one-step-start.md)) is only a hint. Tempo changes are deferred (roadmap 2.2) — Vocaloid material is single-tempo and grid-locked. The mix's beat is tracked only to place bar 1, opt-in (ADR-0031).
 _Avoid_: tempo map, tempogram (out of scope)
 
+**Song lyric**:
+The song's whole lyric, which the user gives on the start screen beside the BPM ([ADR-0035](docs/adr/0035-lyrics-are-required.md)): hiragana, with ー, small kana and っ, one **sung line** per line (a line is a phrase; spaces also separate). A job needs one; anything else (katakana, kanji, romaji, punctuation) is named and refused, never converted. It travels with the `sona serve` job, which keeps it as `job.lyric` in the annotation's provenance, so a saved session and a re-transcription keep it. Until lyrics-first 04, the notes take it a **mora** per note in time order (きゃ is one mora; ー, っ and ん are their own). **Lyric transcription** (the fallback, for a user with no lyric) is shown but off until lyrics-first 06.
+_Avoid_: "lyrics" for a note's own lyric (that is the note's **lyric**, one mora); "romaji" input (not taken yet)
+
 **Grid mode**:
 A producer ([ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) for grid-locked material. Given the BPM and a division (16 or 24 cells per whole note), the core decodes notes per grid cell, not per frame, and estimates the phase itself. Its notes already sit on grid lines, so the UI's auto-anchored snap leaves them unchanged. It is the one place the core is *not* invariant to musical settings, deliberately. `sona serve` (the app) runs it on every job; `sona transcribe` runs it only with `--grid`, and is grid-free otherwise. GAME and the learned cell stage are snapped to the same kind of grid.
 _Avoid_: "quantized output" for grid mode (nothing is snapped after the fact; the grid is the decode's state space)

@@ -561,6 +561,49 @@
       .error-line[hidden] {
         display: none;
       }
+      .lyric-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .lyric-row > label {
+        min-width: 54px;
+        padding-top: 6px;
+        color: var(--muted);
+      }
+      .lyric-field {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 0;
+      }
+      #song-lyric {
+        width: 100%;
+        min-height: 110px;
+        box-sizing: border-box;
+        padding: 8px;
+        font: 15px/1.5 "Outfit", system-ui, sans-serif;
+        color: var(--ink);
+        background: #0b0b0b;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        resize: vertical;
+      }
+      #song-lyric-check {
+        margin: 0;
+      }
+      #song-lyric-check.bad {
+        color: var(--danger);
+      }
+      .lyric-fallback {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12.5px;
+        opacity: 0.7;
+      }
       .more summary {
         cursor: pointer;
         color: var(--muted);
@@ -1184,6 +1227,17 @@
                   <button id="song-hint-half" class="chip" hidden></button>
                 </span>
               </div>
+              <div class="lyric-row">
+                <label for="song-lyric">Lyric</label>
+                <div class="lyric-field">
+                  <textarea id="song-lyric" rows="5" spellcheck="false" autocomplete="off" placeholder="In hiragana, one sung line per line:&#10;あめが ふる&#10;かぜが ふく"></textarea>
+                  <p id="song-lyric-check" class="hint-line" role="status"></p>
+                  <label class="lyric-fallback" title="Coming soon. For now, paste the lyric.">
+                    <input id="song-lyric-asr" type="checkbox" disabled />
+                    Transcribe the lyric for me <span class="soon">(not yet: paste it for now)</span>
+                  </label>
+                </div>
+              </div>
               <details id="song-more" class="more">
                 <summary>Options</summary>
                 <div class="more-grid">
@@ -1266,7 +1320,8 @@
             <ol class="help-steps">
               <li><b>Drop a song</b> on the start screen and type its <b>BPM</b>: it sets the grid
                 the notes snap to. sona's guess sits beside the field (with half of it); click one
-                to use it. Then press <b>Transcribe</b>.</li>
+                to use it. Paste the <b>lyric</b> in hiragana, one sung line per line: sona puts one
+                mora on each note. Then press <b>Transcribe</b>.</li>
               <li><b>Find bar 1:</b> <span class="kbd">Shift</span>-click the ruler on the beat you
                 hear as beat 1, so OpenUtau's bars land on the song's.</li>
               <li><b>Play</b> (Space) to hear the singer against the notes, and fix what's wrong.</li>

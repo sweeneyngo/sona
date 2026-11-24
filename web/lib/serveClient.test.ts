@@ -56,6 +56,14 @@ describe("serve client boundary", () => {
     expect(new URLSearchParams(jobQuery({ ...base, barOne: true }).split("?")[1]).get("bar_one")).toBe("1");
   });
 
+  it("sends the lyric with its line breaks, and leaves it out when the job has none", () => {
+    const base = { bpm: 128, grid: 16, separation: "vocals", engine: "pyin", name: "a.wav" } as const;
+    const lyric = "あめが ふる\nかぜが ふく&bpm=1";
+    const q = new URLSearchParams(jobQuery({ ...base, lyric }, "f".repeat(64)).split("?")[1]);
+    expect([q.get("lyric"), q.get("bpm"), q.get("upload")]).toEqual([lyric, "128", "f".repeat(64)]);
+    expect(jobQuery({ ...base, lyric: undefined })).toBe(jobQuery(base));
+  });
+
   describe("the tempo estimate", () => {
     afterEach(() => vi.unstubAllGlobals());
     const answering = (res: () => Response) => vi.stubGlobal("fetch", async () => res());

@@ -22,6 +22,7 @@ with sync_playwright() as p:
         page.goto(SERVE_URL); page.evaluate("localStorage.clear()"); page.reload(); time.sleep(0.5)
         page.set_input_files("#song-file", str(SONG)); page.wait_for_selector("#song-ready:not([hidden])", timeout=5000)
         page.keyboard.type("123,5"); print("typed before the estimate, hint:", repr(page.inner_text("#song-hint")))
+        page.fill("#song-lyric", "あめが ふる\nかぜが ふく")
         go(); time.sleep(4)
         print("BPM sent with the job:", sent)
         assert sent == ["123.5"], "the typed decimal BPM was not the job's"

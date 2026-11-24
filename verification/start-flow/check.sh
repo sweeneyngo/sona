@@ -27,7 +27,7 @@ expect() {
   if [ "$want" = "$got" ]; then echo "  pass  $label ($got)"; else echo "  FAIL  $label: wanted $want, got $got"; fail=1; fi
 }
 
-echo "Rules (every path, 3 songs, 3 tempos, jobs by hash or upload):"
+echo "Rules (every path, 3 songs, 3 tempos, jobs by hash or upload, with or without a lyric):"
 expect "StartFlow.cfg" ok "$(violated_invariant "$here/StartFlow.tla" "$here/StartFlow.cfg")"
 [ "${1:-}" = "--quick" ] && { rm -rf "$tmp"; exit $fail; }
 
@@ -48,5 +48,9 @@ mutant stale-hash-wins       HashIsForTheShownSong  "s/ \/\\\\ song = s \/\\\\ h
 mutant hash-carries-over     HashIsForTheShownSong  "s/hashFor' = 0 \/\\\\ hashing'/hashFor' = hashFor \/\\\\ hashing'/"
 mutant hash-of-another-song  HashJobsNameTheirSong  "s/sending' = \"hash\" \/\\\\ jobHash' = editorSong/sending' = \"hash\" \/\\\\ jobHash' = hashFor/"
 mutant upload-without-file   UploadsSendTheSong     "s/IF fileFor = song/IF TRUE/"
+mutant start-without-lyric   JobsHaveALyric         "/^ *\/\\\\ lyricFor = song$/d"
+mutant lyric-carries-over    LyricIsForTheShownSong "s/fileFor' = s \/\\\\ lyricFor' = 0/fileFor' = s \/\\\\ lyricFor' = lyricFor/"
+mutant retranscribe-without-lyric JobsHaveALyric    "s/IF editorLyric = editorSong/IF TRUE/"
+mutant lyric-of-another-song JobsHaveALyric         "s/jobLyric' = editorLyric/jobLyric' = lyricFor/"
 rm -rf "$tmp"
 exit $fail

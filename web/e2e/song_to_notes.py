@@ -23,6 +23,7 @@ with sync_playwright() as p:
     half = page.inner_text("#song-hint-half").split()[-1]
     page.click("#song-hint-half"); print("after picking", repr(page.inner_text("#song-hint-half")) + ":", page.input_value("#song-bpm"))
     assert page.input_value("#song-bpm") == half, "picking the hint did not fill its value"
+    page.fill("#song-lyric", "あめが ふる\nかぜが ふく")
     t0 = time.time(); page.click("#song-go")
     page.wait_for_selector("#song-running:not([hidden])", timeout=10000); time.sleep(3)
     page.screenshot(path=str(S / "U3-running.png")); print("running:", page.inner_text("#song-phase"))

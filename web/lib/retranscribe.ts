@@ -18,6 +18,8 @@ export interface Transcribed {
   separation: Separation | null;
   engine: Engine | null;
   barOne: boolean;
+  /** The lyric the job was sent, which the next job sends again; null for notes transcribed without one. */
+  lyric: string | null;
 }
 
 const jobGrid = (division: number): JobDivision | null => JOB_GRIDS.find((g) => g.division === division)?.division ?? null;
@@ -36,13 +38,14 @@ export function transcribedFrom(a: Annotation | null): Transcribed | null {
     separation: job.separation ?? null,
     engine,
     barOne: p.settings.bar_one === "mix",
+    lyric: job.lyric ?? null,
   };
 }
 
 /**
  * The job that transcribes `t` again at the editor's `bpm` and grid, or null when neither differs from
  * the transcription's (or the BPM isn't usable). A grid no job can use keeps the transcription's.
- * The separation, engine and bar 1 are the original job's where the server still offers them.
+ * The separation, engine and bar 1 are the original job's where the server still offers them; the lyric is the original's.
  */
 export function retranscribeJob(t: Transcribed, bpm: number, division: number, caps: Capabilities): JobRequest | null {
   const grid = jobGrid(division) ?? t.grid ?? DEFAULT_DIVISION;
@@ -50,7 +53,7 @@ export function retranscribeJob(t: Transcribed, bpm: number, division: number, c
   if (!usableBpm(bpm) || !changed) return null;
   const separation: Separation = t.separation && caps.separation[t.separation] ? t.separation : caps.separation.lead ? "lead" : caps.separation.vocals ? "vocals" : "none";
   const engine: Engine = t.engine && caps.engines[t.engine] && (t.engine !== "cells" || separation === "lead") ? t.engine : caps.engines.game ? "game" : "pyin";
-  return { bpm, grid, separation, engine, name: t.name, ...(t.barOne && separation !== "none" ? { barOne: true } : {}) };
+  return { bpm, grid, separation, engine, name: t.name, ...(t.barOne && separation !== "none" ? { barOne: true } : {}), ...(t.lyric !== null ? { lyric: t.lyric } : {}) };
 }
 
 /** The offer's label: "Re-transcribe at 123.5 BPM". */

@@ -24,7 +24,7 @@ with sync_playwright() as p:
     page.goto(SERVE_URL); page.evaluate("localStorage.clear()"); page.reload(); time.sleep(0.5)
 
     page.set_input_files("#song-file", str(SONG)); page.wait_for_selector("#song-ready:not([hidden])", timeout=5000)
-    page.keyboard.type("120"); time.sleep(1)
+    page.keyboard.type("120"); page.fill("#song-lyric", "あめが ふる\nかぜが ふく"); time.sleep(1)
     page.click("#song-go"); page.wait_for_function(LOADED, timeout=1_500_000); time.sleep(0.3)
     sent = first_log_line(jobs[-1])
     print("first transcription:", ["hash" if f"upload={SHA}" in u else "file" for u in posts], answers, "| server:", sent)
@@ -55,7 +55,7 @@ with sync_playwright() as p:
     stems = after["provenance"]["job"]["stems"]
     check(after["bpm"] == 60 and after["session"]["bpm"] == 60 and page.inner_text("#tempo-chip-text").startswith("60"), "the new notes are at 60 BPM")
     check(stems.get("by_hash") is True and stems["reused"] is True, f"the job reused the stems by hash: {stems}")
-    check(not any(n.get("lyric") for n in after["notes"]), "the new notes replace the edited ones")
+    check(not any(n.get("lyric", "").startswith("l") for n in after["notes"]), "the new notes replace the edited ones (they take the song's lyric, not the edit)")
 
     mclick(page, "#edit-undo"); time.sleep(0.3)
     undone = save(page)

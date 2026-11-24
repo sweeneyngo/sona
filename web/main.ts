@@ -27,7 +27,7 @@ import { detectKey, keyName } from "./lib/key";
 import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
 import { encodeMidiFile } from "./lib/midi";
-import { assignLyrics, splitLyrics } from "./lib/lyrics";
+import { assignLyrics, checkLyric, splitLyrics } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
 import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
 import { DEFAULT_DIVISION, GRIDS, JOB_GRIDS, isDivision, jobDivision } from "./lib/grid";
@@ -145,6 +145,8 @@ const el = {
   songHintText: document.getElementById("song-hint-text") as HTMLSpanElement,
   songHintFull: document.getElementById("song-hint-full") as HTMLButtonElement,
   songHintHalf: document.getElementById("song-hint-half") as HTMLButtonElement,
+  songLyric: document.getElementById("song-lyric") as HTMLTextAreaElement,
+  songLyricCheck: document.getElementById("song-lyric-check") as HTMLParagraphElement,
   songMore: document.getElementById("song-more") as HTMLDetailsElement,
   songGrid: document.getElementById("song-grid") as HTMLSelectElement,
   songSeparation: document.getElementById("song-separation") as HTMLSelectElement,
@@ -344,6 +346,7 @@ function applyLoadedJson(parsed: any): boolean {
   invalidateEffective();
 
   applySettings(settingsOnLoad(parsed, annotation, workingNotes, currentSettings()));
+  showSongLyric();
   resetView(); // zoomed-in default + 2-octave window centred on the notes.
   rebuild();
   edits.reset();
@@ -1907,16 +1910,36 @@ function updateLyricsPreview(): void {
   el.lyricsFromStart.disabled = !tokens.length;
 }
 
-function fillLyrics(from: WorkingNote | null): void {
+/** Put `tokens` on the notes in time order, one each, from the `from`th note. */
+function layLyricTokens(tokens: string[], from: number): { placed: number; leftover: number } {
   const order = notesInTimeOrder();
-  const start = from ? Math.max(0, order.indexOf(from)) : 0;
-  const tokens = splitLyrics(el.lyricsText.value);
-  const { assigned, leftover } = assignLyrics({ tokens, count: order.length, from: start });
+  const { assigned, leftover } = assignLyrics({ tokens, count: order.length, from });
   for (const [i, lyric] of assigned) order[i].lyric = lyric;
+  return { placed: assigned.size, leftover };
+}
+
+function fillLyrics(from: WorkingNote | null): void {
+  const start = from ? Math.max(0, notesInTimeOrder().indexOf(from)) : 0;
+  const { placed, leftover } = layLyricTokens(splitLyrics(el.lyricsText.value), start);
   markDirty();
   setModal(el.lyricsOverlay, false);
   redraw();
-  setStatus(`Lyrics on ${assigned.size} notes` + (leftover ? ` · ${leftover} left over` : ""));
+  setStatus(`Lyrics on ${placed} notes` + (leftover ? ` · ${leftover} left over` : ""));
+}
+
+/** The lyric the notes' job was sent (lyrics-first 03), into the Lyrics box. */
+function showSongLyric(): string | null {
+  const lyric = annotation?.provenance?.job?.lyric ?? null;
+  if (lyric !== null) el.lyricsText.value = lyric;
+  return lyric;
+}
+
+/** Fresh notes from a job take its lyric, a mora a note in time order, until lyrics-first 04 fits them. */
+function laySongLyric(): string {
+  const lyric = showSongLyric();
+  if (lyric === null) return "";
+  const { placed, leftover } = layLyricTokens(splitLyrics(lyric), 0);
+  return ` · lyric on ${placed} notes` + (leftover ? `, ${leftover} moras left over` : "");
 }
 
 el.lyrics.addEventListener("click", () => {
@@ -2341,6 +2364,8 @@ function renderStart(): void {
       el.songHintFull.title = `Use ${hintBpm(d, 1)} BPM`;
       el.songHintHalf.title = `Use ${hintBpm(d, 0.5)} BPM`;
     }
+    if (document.activeElement !== el.songLyric) el.songLyric.value = s.lyric;
+    showLyricCheck(s.lyric);
     el.songError.hidden = !s.error;
     el.songError.textContent = s.error ?? "";
   }
@@ -2353,6 +2378,16 @@ function renderStart(): void {
     el.songBar.style.width = `${Math.max(4, phaseProgress(s.phase, el.songSeparation.value as Separation) * 100)}%`;
     el.songLog.textContent = s.log.join("\n") || "Nothing logged yet.";
   }
+}
+
+/** Under the lyric box: what sona reads in it, or the characters it can't take. */
+function showLyricCheck(text: string): void {
+  const c = checkLyric(text);
+  const lines = c.kind === "ok" ? c.lyric.split("\n").filter((l) => l.trim()).length : 0;
+  const moras = c.kind === "ok" ? splitLyrics(c.lyric).length : 0;
+  el.songLyricCheck.textContent =
+    c.kind === "bad" ? c.message : c.kind === "empty" ? "Each line is a phrase; sona puts one mora on each note." : `${lines} line${lines === 1 ? "" : "s"} · ${moras} moras`;
+  el.songLyricCheck.classList.toggle("bad", c.kind === "bad");
 }
 
 function showStart(show: boolean): void {
@@ -2416,7 +2451,7 @@ async function transcribeSong(): Promise<void> {
   if (!awaitingJob(attempt) || s.kind !== "running") return;
   const separation = el.songSeparation.value as Separation;
   const barOneWanted = el.songBarOne.checked && separation !== "none";
-  await submitSong(attempt, { bpm: s.bpm, grid: jobDivision(el.songGrid.value), separation, engine: el.songEngine.value as Engine, name: s.name, ...(barOneWanted ? { barOne: true } : {}) });
+  await submitSong(attempt, { bpm: s.bpm, grid: jobDivision(el.songGrid.value), separation, engine: el.songEngine.value as Engine, name: s.name, lyric: s.lyric, ...(barOneWanted ? { barOne: true } : {}) });
 }
 
 /** Transcribe the editor's song again at the tempo and grid set in the popover, by its hash (ADR-0032). */
@@ -2434,7 +2469,7 @@ async function retranscribe(): Promise<void> {
   el.songBarOne.checked = job.barOne === true;
   syncBarOneOption();
   setTempoPop(false);
-  dispatchStart({ type: "retranscribe", attempt, song, name: job.name, bpm: job.bpm, hash: t.hash, file });
+  dispatchStart({ type: "retranscribe", attempt, song, name: job.name, bpm: job.bpm, hash: t.hash, file, lyric: t.lyric });
   showStart(true);
   await submitSong(attempt, job);
 }
@@ -2506,6 +2541,7 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   }
   invalidateEffective();
   await loadStemBytes(stem);
+  const lyricNote = laySongLyric();
   fitAll();
   edits.reset();
   syncUndoMenu();
@@ -2513,7 +2549,7 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   startShown = false;
   rebuild();
   syncBarOne();
-  setStatus(`${workingNotes.length} notes${annotation?.bar_one ? ` · bar 1: ${el.barOneReadout.textContent}` : ""}`);
+  setStatus(`${workingNotes.length} notes${lyricNote}${annotation?.bar_one ? ` · bar 1: ${el.barOneReadout.textContent}` : ""}`);
 }
 
 /**
@@ -2553,6 +2589,7 @@ async function loadRetranscription(j: JobStatus, jobBpm: number, keepDivision: n
   invalidateEffective();
   const fresh = settingsOnLoad(raw, next, notes, currentSettings());
   applySettings({ ...fresh, bpm: jobBpm, division: keepDivision, barOne: chosenBarOne ?? fresh.barOne });
+  const lyricNote = laySongLyric();
   fitAll();
   markDirty();
   retranscribing = null;
@@ -2560,7 +2597,7 @@ async function loadRetranscription(j: JobStatus, jobBpm: number, keepDivision: n
   startShown = false;
   rebuild();
   syncBarOne();
-  setStatus(`${workingNotes.length} notes at ${Math.round(jobBpm * 10) / 10} BPM · Undo brings back the notes before`);
+  setStatus(`${workingNotes.length} notes at ${Math.round(jobBpm * 10) / 10} BPM${lyricNote} · Undo brings back the notes before`);
 }
 
 el.songFile.addEventListener("change", () => {
@@ -2588,6 +2625,7 @@ el.drop.addEventListener("keydown", (e) => {
 });
 el.songChange.addEventListener("click", () => dispatchStart({ type: "start-over" }));
 el.songBpm.addEventListener("input", () => dispatchStart({ type: "set-bpm", bpm: parseBpm(el.songBpm.value) }));
+el.songLyric.addEventListener("input", () => dispatchStart({ type: "set-lyric", text: el.songLyric.value }));
 el.songHintFull.addEventListener("click", () => dispatchStart({ type: "use-hint", multiple: 1 }));
 el.songHintHalf.addEventListener("click", () => dispatchStart({ type: "use-hint", multiple: 0.5 }));
 el.songGo.addEventListener("click", () => void transcribeSong());
