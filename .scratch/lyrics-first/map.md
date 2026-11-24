@@ -45,3 +45,6 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
 - Repeated choruses: a pasted lyric may write a chorus once and mean it twice.
 - Long vowels written out (ああ) vs held (ー) vs not written at all. 07: a tail (ー or a spelled-out
   long vowel) has its own UST note 18% of the time; 09 makes tails optional in the fit.
+- The particle は (and へ): UTAU users type it as sung (わ, え), and the dev USTs do. A user who types は gets
+  "ha" sung. A one-line hint by the lyric box ("type particles as sung: わ, え") may be enough; nothing
+  measured yet.

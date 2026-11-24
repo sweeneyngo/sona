@@ -33,3 +33,5 @@ for the user.
 ## Comments
 
 - 2026-11-24, lead: the user chose the English word on its first note, then `+` (for OpenUtau's EN-to-JA phonemizer), not katakana.
+
+- 2026-11-24, lead: 08 made the lyric box and Edit → Lyrics… hiragana-only. The user chose the English word on its first note, then `+`, so this ticket must let Latin words through the check (as one unit spanning its syllables) without loosening anything else.
