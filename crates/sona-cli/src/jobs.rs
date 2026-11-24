@@ -18,6 +18,8 @@ pub struct Tools {
     pub separator_models: PathBuf,
     pub lead_model: String,
     pub ffmpeg: PathBuf,
+    /// The htdemucs weights in torch's cache, where demucs downloads them on its first run.
+    pub demucs_weights: PathBuf,
     pub game_dir: Option<PathBuf>,
     pub cell_model: Option<PathBuf>,
 }
@@ -542,6 +544,7 @@ fn separate(job: &Job, w: &Worker, input: &Path) -> Result<(), String> {
     step(job, Phase::SeparatingVocals)?;
     let out = job.dir.join("demucs");
     let mut cmd = Command::new(&tools.demucs_python);
+    ffmpeg_on_path(&mut cmd, &tools.ffmpeg);
     cmd.args(["-c", DEMUCS_SEEDED, "-n", "htdemucs", "--two-stems", "vocals", "-o"]).arg(&out).arg(input);
     run_child(job, w, cmd, "demucs")?;
     let vocals = find_file(&out, |n| n == "vocals.wav").ok_or("demucs wrote no vocals.wav")?;
@@ -552,6 +555,7 @@ fn separate(job: &Job, w: &Worker, input: &Path) -> Result<(), String> {
         step(job, Phase::SeparatingLead)?;
         let out = job.dir.join("uvr");
         let mut cmd = Command::new(&tools.separator_bin);
+        ffmpeg_on_path(&mut cmd, &tools.ffmpeg);
         cmd.arg(&vocals)
             .args(["--model_filename", &tools.lead_model, "--model_file_dir"])
             .arg(&tools.separator_models)
@@ -573,6 +577,15 @@ fn separate(job: &Job, w: &Worker, input: &Path) -> Result<(), String> {
         *lock(&job.stems) = Some(sona_core::StemSource { key: key.hex, reused: false, separated_by: job.id.clone() });
     }
     Ok(())
+}
+
+/// The separators call `ffmpeg` from `PATH`; put the folder of the one sona was given (`SONA_FFMPEG`) first.
+fn ffmpeg_on_path(cmd: &mut Command, ffmpeg: &Path) {
+    let Some(dir) = ffmpeg.parent().filter(|d| !d.as_os_str().is_empty()) else { return };
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    if let Ok(joined) = std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(std::env::split_paths(&path))) {
+        cmd.env("PATH", joined);
+    }
 }
 
 /// The stem-cache key: the upload's hash, the separation, and every separator version, model and
@@ -732,7 +745,12 @@ fn find_file(root: &Path, want: impl Fn(&str) -> bool + Copy) -> Option<PathBuf>
 }
 
 /// Every stem is 44.1 kHz: GAME needs it, and pYIN's frames are sized in samples.
-const STEM_RATE: u32 = 44_100;
+pub const STEM_RATE: u32 = 44_100;
+
+/// The sample rate of an upload that is a WAV; anything else needs ffmpeg to be read.
+pub fn wav_rate(audio: &[u8]) -> Option<u32> {
+    hound::WavReader::new(std::io::Cursor::new(audio)).ok().map(|r| r.spec().sample_rate)
+}
 
 /// A mono stem at [`STEM_RATE`]: a WAV at that rate is downmixed in-process; anything else goes
 /// through ffmpeg.
@@ -791,7 +809,7 @@ pub fn song_tempo(tools: &Tools, scratch: &Path, ext: &str, audio: &[u8]) -> Res
                 .output();
             let decoded = match out {
                 Ok(o) if o.status.success() => hound::WavReader::open(&wav).map_err(|e| e.to_string()).and_then(read_mono),
-                Ok(o) => Err(format!("ffmpeg could not read the file: {}", String::from_utf8_lossy(&o.stderr).trim())),
+                Ok(o) => Err(format!("ffmpeg could not read the file: {}", ffmpeg_reason(&String::from_utf8_lossy(&o.stderr), &src))),
                 Err(e) => Err(format!("running ffmpeg: {e}")),
             };
             let _ = fs::remove_file(&src);
@@ -800,6 +818,14 @@ pub fn song_tempo(tools: &Tools, scratch: &Path, ext: &str, audio: &[u8]) -> Res
         }
     };
     Ok(sona_core::tempo::estimate_bpm(&mono, sr))
+}
+
+/// ffmpeg's last line (its summary), naming the upload "the file" instead of the server's scratch path.
+#[cfg(feature = "spectral")]
+fn ffmpeg_reason(stderr: &str, src: &Path) -> String {
+    let path = src.display().to_string();
+    let last = stderr.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("no reason given");
+    last.replace(&format!("{path}: "), "").replace(&path, "the file")
 }
 
 #[cfg(feature = "spectral")]

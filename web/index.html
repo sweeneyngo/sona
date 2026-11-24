@@ -607,6 +607,27 @@
       .link[hidden] {
         display: none;
       }
+      .setup-notes {
+        width: min(880px, 100%);
+        margin: 14px auto 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.5;
+        text-align: left;
+      }
+      .setup-notes[hidden] {
+        display: none;
+      }
+      .setup-notes li.missing {
+        color: var(--ink);
+      }
+      .setup-notes li.missing::before {
+        content: "! ";
+        color: var(--danger);
+        font-weight: 600;
+      }
       .start-alt {
         display: flex;
         justify-content: center;
@@ -1197,6 +1218,8 @@
                 <pre id="song-log" class="generate-log"></pre>
               </details>
             </div>
+
+            <ul id="setup-notes" class="setup-notes" hidden></ul>
 
             <div class="start-alt">
               <button id="start-open" class="link">Open files</button>
