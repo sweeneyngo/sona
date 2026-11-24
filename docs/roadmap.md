@@ -75,7 +75,7 @@ top three overall are at the end.
 | 6.1 | ✅ **Done (ADR-0023).** **Seed GAME's segmenter** in sona (fixed `seed` on its random node at load) so a song always gives the same notes | Unseeded runs vary by about 2 notes in 70, and by 0.3–0.7 points of cell accuracy | S | Same notes on reruns; seeded dev numbers recorded |
 | 6.2 | ✅ **Done (ADR-0024).** **Structured job logs**: per-phase timings, tool versions, model hashes and the seed in each job, with a log download in the app | The job log is a tail of child output | S | Every job's log answers "what produced this?" |
 | 6.3 | **Errors a user can act on**: a missing separator or model, an unreadable file, out of disk, each with the fix | Some errors still surface as raw tool output | S | Fault-injection tests in `tests/serve.rs` |
-| 6.4 | **Browser drivers in CI** (Playwright against `sona serve` with stub separators) | They run locally only (`web/e2e/`) | M | Green in CI |
+| 6.4 | **Browser drivers in CI.** The ten editor drivers run in CI (job `e2e`, `scripts/ci/e2e.sh`: a Vite dev server, the synthetic fixture). Left: `song_to_notes` and `cancel_and_retry` against `sona serve` with stub separators | The two serve drivers run locally only (`web/e2e/`) | S–M | Both green in CI |
 | 6.5 | **Eval dashboards**: per-song history across commits for cells, tempo and curve error | Numbers live in reports and commit messages | M | — |
 
 ## Current effort (2026-11-24): edit cost in OpenUtau
