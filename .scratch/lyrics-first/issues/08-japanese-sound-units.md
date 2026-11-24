@@ -1,6 +1,6 @@
 # 08 — Japanese sound units behind the lyric box
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 03
 
