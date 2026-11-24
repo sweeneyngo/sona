@@ -1,6 +1,6 @@
 # 06 — Lean toward a note when unsure
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 01, 03, 07
 
