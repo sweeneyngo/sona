@@ -11,7 +11,7 @@ when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was ver
 | `pitch_handles.py` | Add a point by double-clicking the curve, drag it, Alt-click another away; drag the vibrato's fades (and depth), period and start; a typed value is committed before a drag. |
 | `pitch_pen.py` | A pen stroke one row above a note draws that pitch over the note; Alt-drag erases part of it. |
 | `sung_pitch_export.py` | "USTX with the singer's pitch" equals the plain USTX apart from its `pitd` curve. |
-| `lyrics_export.py` | Paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
+| `lyrics_export.py` | **Edit → Lyrics…** names a katakana character and fills nothing, and gives っ and a held ー no note; paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
 | `fit_and_export.py` | Fit pitch, edit a vibrato, export UST/USTX; a session reload exports the same UST. |
 | `cancel_and_retry.py` | A decimal BPM typed right after the drop (`123,5`) is the job's BPM; Cancel stops the server job, keeps the song and BPM, and a retry starts at once. Needs `sona serve`. |
 | `lyric_start.py` | The lyric box: Transcribe with none asks for it; a katakana line is named as you type and refused; a hiragana lyric goes with the job (line breaks kept), the notes take it a mora each, and **Edit → Lyrics…** holds it; Re-transcribe sends it again; a session reload keeps it. Needs `sona serve` (the song goes as a stem, so the synthetic fixture is enough). |

@@ -594,7 +594,8 @@
       #song-lyric-check {
         margin: 0;
       }
-      #song-lyric-check.bad {
+      #song-lyric-check.bad,
+      #lyrics-preview.bad {
         color: var(--danger);
       }
       .lyric-fallback {
@@ -1487,10 +1488,9 @@
         </div>
         <div class="modal-body">
           <p>
-            Paste the lyrics. They're split into one token per note: kana by mora
-            (きゃ is one; ー, っ and ん are their own), romaji and English by word
-            (write romaji morae with spaces: <code>sa ku ra</code>), each kanji on its
-            own (paste kana for best results). Tokens fill notes in time order.
+            Paste the lyric in hiragana. Each note gets one mora, in time order: きゃ is
+            one, ん is its own, っ gets no note, and a held ー or おう stays on the note
+            before it.
           </p>
           <textarea id="lyrics-text" placeholder="きらきら ひかる…"></textarea>
           <p id="lyrics-preview"></p>

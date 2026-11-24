@@ -47,8 +47,16 @@ with sync_playwright() as p:
     load(page, JSON)
     page.click("#tempo-chip"); page.fill("#bpm", "125"); page.keyboard.press("Escape")
 
-    # 1. paste lyrics and fill from the first note
+    # 0. the Lyrics box takes hiragana only, and lays っ and a held ー on no note of their own
     mclick(page, "#lyrics")
+    page.fill("#lyrics-text", "きって\nカ")
+    shown = page.inner_text("#lyrics-preview")
+    check(shown == "Hiragana only for now. Line 2: カ" and page.is_disabled("#lyrics-from-start"), f"katakana is named and nothing fills: {shown!r}")
+    page.fill("#lyrics-text", "きって とー")
+    shown = page.inner_text("#lyrics-preview")
+    check(shown.startswith("3 moras · ") and shown.endswith("starts: き て と") and page.is_enabled("#lyrics-from-start"), f"っ and a held ー get no note: {shown!r}")
+
+    # 1. paste lyrics and fill from the first note
     page.fill("#lyrics-text", LYRICS)
     print("preview:", page.inner_text("#lyrics-preview"))
     page.screenshot(path=str(shots / "L1-dialog.png"))

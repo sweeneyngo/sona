@@ -1,30 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { assignLyrics, checkLyric, splitLyrics } from "./lyrics";
+import { assignLyrics, checkLyric, lyricsInOrder } from "./lyrics";
 
-describe("splitLyrics", () => {
-  it("splits kana into morae, joining small kana to the one before", () => {
-    expect(splitLyrics("きゃりーぱみゅぱみゅ")).toEqual(["きゃ", "り", "ー", "ぱ", "みゅ", "ぱ", "みゅ"]);
+describe("lyricsInOrder", () => {
+  it("gives each note of a hiragana lyric its mora, line after line", () => {
+    expect(lyricsInOrder("きゃりー ぱみゅ\nあめが ふる")).toEqual(["きゃ", "り", "ぱ", "みゅ", "あ", "め", "が", "ふ", "る"]);
   });
 
-  it("keeps ー, っ and ん as their own morae", () => {
-    expect(splitLyrics("いっしょにんー")).toEqual(["い", "っ", "しょ", "に", "ん", "ー"]);
+  it("gives っ no note, and holds ー and an おう tail in the mora before", () => {
+    expect(lyricsInOrder("いっしょに とうくー")).toEqual(["い", "しょ", "に", "と", "く"]);
   });
 
-  it("does not attach a small kana to っ or ー", () => {
-    expect(splitLyrics("っゃ")).toEqual(["っ", "ゃ"]);
-  });
-
-  it("splits on whitespace and punctuation, keeping Latin words whole", () => {
-    expect(splitLyrics("sa ku ra、hello world!")).toEqual(["sa", "ku", "ra", "hello", "world"]);
-  });
-
-  it("gives each kanji its own token and folds half-width katakana", () => {
-    expect(splitLyrics("星のｶｹﾗ")).toEqual(["星", "の", "カ", "ケ", "ラ"]);
-  });
-
-  it("returns nothing for empty or punctuation-only text", () => {
-    expect(splitLyrics("")).toEqual([]);
-    expect(splitLyrics(" 、。!? ")).toEqual([]);
+  it("returns nothing for an empty or blank lyric", () => {
+    expect(lyricsInOrder("")).toEqual([]);
+    expect(lyricsInOrder(" \n　\n")).toEqual([]);
   });
 });
 
