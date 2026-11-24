@@ -1,6 +1,6 @@
 # 02 — Fit the notes to the pasted lines
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: 01
 
@@ -25,3 +25,17 @@ landing against 01's (d) today, (b+/r) lines placed by the UST (the ceiling) and
 intervals; the penalty chosen leave-one-song-out too. Port reproduces the prototype.
 
 ## Comments
+
+### 2026-11-24 — claimed; design and selection rule (declared before reading any result)
+
+- Text: the UST's moras with 01's line and space breaks (perfect text; only the placement is new). Phrases =
+  lines and spaces (the spec's input rule); lines alone reported beside it.
+- Placement: a Viterbi over lines × note boundaries of the output notes whose midpoint lies in the UST's span
+  (the user starts the lyric at the first sung note). A line's cost is the rest-aware fit's DP cost of its
+  moras on its notes, with cells per mora fixed at the song's; a line starting where two notes touch costs
+  `pb` more; notes outside every line cost 2 each. Then each line is fitted with `fit_span_moras` over its
+  notes' span. `pb` ∈ {0, 1, 3}, chosen on dev and leave-one-song-out.
+- **Ship rule (port to sona-core, opt-in):** on GAME lead, wrong moras per minute below (d) today's with a
+  paired interval excluding 0, and the edit cost not raised (paired Δ against no lyric with an upper bound
+  under +5 cost/min), for the leave-one-song-out choice; the stage must not get worse either. The gap to the
+  ceiling (b+/r: −13.5, 83.4 wrong/min) is reported.
