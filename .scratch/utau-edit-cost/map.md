@@ -100,6 +100,18 @@ a line below.
   - It adds to 07's fit (stage −4.5 [−7.5, −1.7] on top).
   - Opt-in `sona_core::unheard_pieces` / `--merge-unheard-pieces`; a default needs holdout4.
   - The rest of chopped needs a note-level signal, not pitch.
+- 2026-11-24, **15 resolved** (`reports/beat-trackers.md`; rule committed before measuring, f17dad8; dev only).
+  - **Bar 1:** Beat This! (code and weights MIT) and madmom (models CC BY-NC-SA) put bar 1 on the music's bar
+    on **9/9** (today 5/9, +4 [+1, +7]) and the beat on 9/9.
+  - Both **agree with the harmonic estimator on all 9**, the 4 weak labels included. That is two independent
+    confirmations of the dev labels, but no ranking of the sources until holdout4's ear labels.
+  - Neither wins outright: both fail the pre-registered speed gate as measured (Beat This 160 s per 4-minute
+    song at load 40–62). Beat This is about 1 CPU-minute per song when pinned to one thread.
+  - **16** (Beat This as a second bar-1 source, opt-in) is filed **needs-triage**: cost and integration
+    (venv, ONNX via `ort`, or the MIT Rust port) are the user's call.
+  - **BPM:** keep sona's estimator. Trackers give the felt tempo, half the UST's notation on 4–7/10 songs.
+    Post hoc, sona's octave × a tracker's tempo makes the whole-BPM hint exact on 10/10 (sona 6/10). That
+    needs a pre-registered holdout4-tempo test.
 
 ## Fog
 

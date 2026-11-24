@@ -1,6 +1,6 @@
 # 15 — Beat and downbeat trackers for the BPM hint and bar 1
 
-Status: claimed
+Status: resolved
 Type: research
 Blocked by: none
 
@@ -69,4 +69,30 @@ to adopt it, opt-in until holdout4.
 - **Speed gate**: ≤ 120 s wall per 4-minute song on this machine (demucs already takes minutes).
 - The dev labels are unverified estimates; any winner stays **opt-in until holdout4** (ear-labelled frames,
   the rule pre-registered in 05).
+
+## Answer
+
+Report: `crates/sona-eval/reports/beat-trackers.md`; scripts in `crates/sona-eval/scripts/beat-trackers/`.
+Dev only; no holdout audio was opened.
+
+- **Bar 1:** Beat This! (code and weights MIT) and madmom (models CC BY-NC-SA 4.0) both put bar 1 on the
+  music's bar line on **9/9** (today 5/9; +4 [+1, +7]). Both are 5/5 on the corroborated songs and put the beat
+  on the music's beat cell on 9/9.
+  - Both **agree with the harmonic estimator (ADR-0031) on all 9**, including the 4 weakly corroborated labels.
+    So the dev labels now have two independent confirmations, and dev can't rank the three sources.
+- **Rule outcome:** both pass the accuracy criteria and **fail the speed gate as measured**, so there is no
+  outright winner.
+  - As measured (default threads): Beat This median 160 s wall per 4-minute song at load 40–62; madmom 510 s.
+  - Controlled runs show Beat This's failure is mostly the loaded machine: 57–60 s CPU per song on one thread,
+    and 43–100 s wall per 4-minute song at load 14–32.
+  - The tie-break (a licence sona can ship) picks Beat This. Ticket 16 is filed as **needs-triage** for the
+    user's call on cost and integration.
+- **BPM hint:** no candidate wins; keep sona's estimator. It offers the true BPM on 10/10, the trackers on
+  3–6/10.
+  - Trackers report the felt tempo, which is half the UST's notated tempo on 4–7/10 songs. The octave is a
+    notation convention that audio can't settle.
+  - Post-hoc lead: sona's octave × Beat This's (or madmom's) tempo makes the whole-BPM hint exact on 10/10
+    (sona alone 6/10). It needs a pre-registered test on holdout4-tempo.
+- Essentia (AGPL-3.0-only; MTG models CC BY-NC-SA 4.0) and librosa (ISC) have no downbeats; their beats hit
+  8/9 and 3/9.
 
