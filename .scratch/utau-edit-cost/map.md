@@ -52,6 +52,12 @@ a line below.
   (missing is only 9%). Unverified: whether joined notes are mostly same-pitch re-articulations (03).
 - 2026-11-24, **09 resolved** (merged; verified): `web/e2e/run_all.sh` passes on a clean checkout from a
   generated fixture (`web/e2e/fixture.py`); drivers find targets on the canvas instead of fixed pixels.
+- 2026-11-24, **05 resolved as opt-in** (merged 1a6f839, ADR-0031; verified): beat from `grid_phase(mix)`
+  (within 0.05 cell of the drums on 9/9), bar from harmonic change; dev music-anchored frame pass 5/9 → 9/9
+  (+4 [+1, +7]) **but circular for the bar** (the reference bar came from the same method). Confidence does
+  not flag most of A03's weak songs. Pre-registered default rule in the ticket: holdout4, ear-labelled
+  music frames (≥ 20 songs, user confirms ≥ 5), B ≥ A + 3 songs, paired-bootstrap lower bound ≥ +1, beat
+  no worse. Default unchanged (A02 byte-identity passes).
 
 ## Fog
 
