@@ -52,8 +52,13 @@ on holdout3, where the stage is out of sample; +3.8 [−0.2, +8.4] on holdout; +
 - The scalar of a stage note is no longer the soft-min of its sub-scores. The sub-scores stay the scorer's,
   so the editor's snap escape hatch (`onset_clarity`) and the "why" in the inspector are unchanged; the
   inspector still names the weakest sub-score, which for a stage note is not what lowered the scalar.
-- In the editor the heatmap now spreads: stage notes run from about 0.15 to 0.95 instead of 0.60–0.65. At
-  the default flag threshold (0.50) 2% of notes are outlined; 0.70 outlines about 15%, 0.80 about half.
+- In the editor the heatmap now spreads: on dev, stage notes run from 0.22 to 0.90 (median 0.80) instead of
+  0.60–0.65 (the top, a one-cell note the model is sure of, is 0.90, so no stage note is full green). At the
+  default flag threshold (0.50) 2.2% of notes are outlined (previously under 1%: the few near-floor notes the bleed guard caught); 0.70
+  outlines 15%, 0.80 about half.
+- Verified: a dev `--dump` re-run of `sona-eval-cellstage` gives the prototype's f32 value on all 4 700
+  notes and the same curve; its stdout (cells, edit costs) equals ticket 03's run, and the stage's notes,
+  cells, probabilities and sub-scores in the dump are unchanged.
 - The weights were fitted on dev, where the stage itself is in sample (its probabilities are sharper than
   on new songs). holdout3 shows the same gain, but nothing confirms it; holdout4 can.
 - The GAME-only path is flat for the same reason; length alone catches 46.9% of its cost at 30% on dev

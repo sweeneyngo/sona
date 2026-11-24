@@ -72,6 +72,13 @@ a line below.
   merge restarts), **11** wobble/scoop pieces, **12** single-note errors (after 07), **13** a confidence score
   that works; 06 last (its ceiling on the stage is 7–18%).
 
+- 2026-11-24, **13 resolved** (ADR-0033; verified: Rust reproduces the prototype on all 4 700 dev notes, notes
+  and cells unchanged, mutants caught): the learned stage's note confidence is now `1 − σ(2.27 − 4.44·class
+  prob + 0.58·ln cells)`. Dev, lowest 30% per song: **47.5% of cost caught** (old 30.9%, class prob 43.1%,
+  random 30%), +4.4 [+1.8, +6.0] over the class prob; holdout3 (diagnosis) +4.4 [+3.4, +5.5]. Only 2% of
+  notes fall under the editor's default 0.50 flag; the threshold and the inspector's "why" are open UI
+  questions. GAME-only is flat too (length catches 46.9%), unchanged pending a measurement.
+
 ## Fog
 
 - **Lyrics.** A pasted lyric is split into mora and laid on notes in order, so one extra or missing note

@@ -1,6 +1,8 @@
 """Note confidence for the learned cell stage (utau-edit-cost 13): which per-note signal finds the edit cost.
 
-usage: python3 -I conf.py DUMP_DIR [--model] [--per-song]
+usage: python3 -I conf.py DEV_DUMP [--model] [--per-song]   every signal's curve, LOSO models, the decision table
+       python3 -I conf.py DUMP --fit-on DEV_DUMP          the winner fitted on dev, scored on another split
+       python3 -I conf.py DUMP --ported-check             a dump from the ported Rust equals the prototype
 
 Each shipped (stage) note gets features computed from what `cell_stage_notes` has, and 03's attributed cost
 (an equal share of its component's cost). Each song flags its lowest-scored x% of notes; the pooled share of
@@ -390,7 +392,7 @@ def main():
     cands = {k: SIGNALS[k] for k in ("stage min class prob", "length (cells)", "length (s)", "expected moras (s x sona rate)", "expected moras (s x vocals rate)", "energy dip inside (dB)", "source restarts inside")}
     for keys in (("length (cells)", "stage mean class prob"), ("length (s)", "stage mean class prob"), ("expected moras (s x vocals rate)", "stage mean class prob")):
         rb = rank_blend(by_song, keys)
-        name = "rank blend: " + " + ".join(k.split(" (")[0] for k in keys)
+        name = "rank blend: " + " + ".join(keys)
         print(curve_line(name, by_song, lambda r, rb=rb: rb[id(r)]))
         cands[name] = lambda r, rb=rb: rb[id(r)]
     if "--model" in sys.argv:
