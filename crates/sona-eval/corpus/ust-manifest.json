@@ -1,5 +1,5 @@
 {
-  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl. Split 'holdout3' (added 2026-11-21): a fresh holdout of the next uploads in channel order before holdout2's oldest (2026-08-14 → 09-29), same skip-and-backfill rules (vocaloid-original only; original resolvable and within 1 s of the cover; one integer tempo across lead and other-voice files, grid 16 or 24), plus one: an upload whose UST is not in ust_share_url (Pifuyuu posted it only on BowlRoll) is skipped, because the fetch script reads only that share. 10 songs, all aligned (05), no backfill needed; unread when added. Music frame (utau-edit-cost 10, added 2026-11-24): music_beat_shift_cells and music_bar_shift_cells are the whole cells from the UST's beat lines (resp. its bar lines, every 4 beats from UST tick 0) to the music's beat (resp. the music's bar line), so the music's bar line sits at alignment_offset_s + music_bar_shift_cells × cell, mod one bar. music_frame_status is 'unverified-estimate' (seeded from crates/sona-eval/reports/bar-one.md: drums' beat, harmonic downbeat) or 'ear-checked' (confirmed by listening to a click overlay, sona-eval-frame --clicks). Seeded for the dev split only; absent means the UST's own lines are the only reference.",
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl. Split 'holdout3' (added 2026-11-21): a fresh holdout of the next uploads in channel order before holdout2's oldest (2026-08-14 → 09-29), same skip-and-backfill rules (vocaloid-original only; original resolvable and within 1 s of the cover; one integer tempo across lead and other-voice files, grid 16 or 24), plus one: an upload whose UST is not in ust_share_url (Pifuyuu posted it only on BowlRoll) is skipped, because the fetch script reads only that share. 10 songs, all aligned (05), no backfill needed; unread when added. Music frame (utau-edit-cost 10, added 2026-11-24): music_beat_shift_cells and music_bar_shift_cells are the whole cells from the UST's beat lines (resp. its bar lines, every 4 beats from UST tick 0) to the music's beat (resp. the music's bar line), so the music's bar line sits at alignment_offset_s + music_bar_shift_cells × cell, mod one bar. music_frame_status is 'unverified-estimate' (seeded from crates/sona-eval/reports/bar-one.md: drums' beat, harmonic downbeat) or 'ear-checked' (confirmed by listening to a click overlay, sona-eval-frame --clicks). Seeded for the dev split only; absent means the UST's own lines are the only reference. Split 'holdout4' (added 2026-11-24, .scratch/utau-edit-cost/issues/08-holdout4.md): the next uploads in channel order before holdout3's oldest (D-prostrate, 2026-08-14), walked from 2026-08-09 back to 2026-03-24, under holdout3's rules with the grid rule made explicit: at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more). The walk stops at the first 24 qualifying songs, a count fixed before any alignment so that at least 20 remain if the read-time alignment check flags some (it flagged 3 of 32 earlier songs). Songs that fail only the one-integer-tempo rule (a tempo change, tempos that differ across files, or a fractional BPM) go to split 'holdout4-tempo', also unread, for frame metrics; none did in this window. Every skipped upload is in 'excluded' with its reason prefixed 'holdout4 walk:'. Alignment: sona-eval-ust-align --split holdout4 --no-verify sets alignment_offset_s exactly as for the earlier splits (coarse: singing mask vs vocal-stem loudness; fine: drum-stem phase), but never runs sona's onset detector, so no sona output exists for these songs. alignment_status is therefore 'unverified (…)', which every scorer skips: the onset-delta check (ticket 05) has to be part of the pre-registered read. Unread when added.",
   "channel": "https://www.youtube.com/@pifuyuu",
   "selected_on": "2026-11-20",
   "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
@@ -1392,6 +1392,770 @@
       },
       "split": "holdout3",
       "notes": null
+    },
+    {
+      "id": "brainrot",
+      "expected_title": "brainrot",
+      "ust_zip": "brainrot.zip",
+      "ust_zip_sha256": "58608d465a73d47414fdc36b53f022d1a5e6d01d94558671aa7a610d2b6cc3f9",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [],
+      "original_url": "https://www.youtube.com/watch?v=MGQAYFfzQ6I",
+      "original_title": "うしお - brainrot (feat.宮舞モカ)",
+      "original_duration_s": 161.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=R0LNXsp0bjQ",
+      "upload_date": "2026-08-07",
+      "stratum": "vocaloid-original",
+      "voice": "宮舞モカ (Synthesizer V)",
+      "stratum_evidence": "original's title credits 宮舞モカ; tagged #synthesizerv; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 90.0,
+      "grid_division": 16,
+      "alignment_offset_s": -10.664,
+      "alignment_status": "unverified (set without sona; drum peak 5.87)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "brainrot/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "faker",
+      "expected_title": "Faker",
+      "ust_zip": "Faker.zip",
+      "ust_zip_sha256": "0634bc250890d46f2f64a0e061d5cff7e2df544c8c78f3e389d221aea74652db",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=f0uaBYHHHPM",
+      "original_title": "Faker / Konon  feat. 花隈千冬",
+      "original_duration_s": 226.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=w2SfuoXJrhA",
+      "upload_date": "2026-08-02",
+      "stratum": "vocaloid-original",
+      "voice": "花隈千冬 (Synthesizer V)",
+      "stratum_evidence": "original's title credits 花隈千冬; tagged synthesizerV; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 170.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.651,
+      "alignment_status": "unverified (set without sona; drum peak 3.07)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "faker/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "out-of-eden",
+      "expected_title": "アウト オブ エデン",
+      "ust_zip": "アウト オブ エデン.zip",
+      "ust_zip_sha256": "c7081f2aef7e444d5894febf1aed5f411ec85693583a327026aeda7bf3b2945a",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm11455035",
+      "original_title": "【鏡音レン】アウト オブ エデン【オリジナル】",
+      "original_duration_s": 321.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=jb7jhCbHKLU",
+      "upload_date": "2026-08-02",
+      "stratum": "vocaloid-original",
+      "voice": "鏡音レン (VOCALOID)",
+      "stratum_evidence": "original's title credits 鏡音レン; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 109.0,
+      "grid_division": 16,
+      "alignment_offset_s": -8.855,
+      "alignment_status": "unverified (set without sona; drum peak 5.01)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "out-of-eden/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "crimson-requiem",
+      "expected_title": "Crimson Requiem",
+      "ust_zip": "Crimson Requiem.zip",
+      "ust_zip_sha256": "91a4383a2f83966f42f6583c5e186a5086ad0df1909f1b2144fb04a85a21804e",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "scream1.ust",
+        "scream2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=TzXSQaGKViE",
+      "original_title": "Crimson Requiem / Yoshihi feat.宮舞モカ",
+      "original_duration_s": 172.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=xsNeB7vI9hw",
+      "upload_date": "2026-08-02",
+      "stratum": "vocaloid-original",
+      "voice": "宮舞モカ (Synthesizer V)",
+      "stratum_evidence": "original's title credits 宮舞モカ; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 150.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.475,
+      "alignment_status": "unverified (set without sona; drum peak 2.36)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "crimson-requiem/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "kousou",
+      "expected_title": "鏗鏘",
+      "ust_zip": "鏗鏘.zip",
+      "ust_zip_sha256": "5deadade26f6cfa2e3cce3d568fe2cb52bafea121de47d1e3bdc11b1dceb7000",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=X_s_lbKFDgc",
+      "original_title": "鏗鏘",
+      "original_duration_s": 205.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=jDJF8kKAydo",
+      "upload_date": "2026-08-01",
+      "stratum": "vocaloid-original",
+      "voice": "unnamed synthesized voice",
+      "stratum_evidence": "no singer credited; the original is a ボカコレ2022秋 TOP100 entry, and ボカコレ entries must use a synthesized voice (as for 畦道に落ちた銀河); cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 145.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.679,
+      "alignment_status": "unverified (set without sona; drum peak 2.41)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kousou/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "koishiku-nattara-te-wo-tatakou",
+      "expected_title": "恋しくなったら手を叩こう",
+      "ust_zip": "恋しくなったら手を叩こう.zip",
+      "ust_zip_sha256": "4658980933c9f22ec4ef109055cacaaa745f2860138fcc40b9e8aee88d38d89b",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=5ImdVATcfKs",
+      "original_title": "『恋しくなったら手を叩こう』 / feat.重音テトSV",
+      "original_duration_s": 158.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=AG7OD-3V1ng",
+      "upload_date": "2026-07-16",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト (Synthesizer V)",
+      "stratum_evidence": "original's title credits 重音テトSV; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 175.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.55,
+      "alignment_status": "unverified (set without sona; drum peak 2.75)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "koishiku-nattara-te-wo-tatakou/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "kibouno-light",
+      "expected_title": "Kibouno Light",
+      "ust_zip": "Kibouno Light.zip",
+      "ust_zip_sha256": "6ba2fce352a8cab192b1a860fed1f06563647efe77660261b4a280a0224d38da",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=niDC4jiN1QY",
+      "original_title": "manika - Kibouno Light feat.歌愛ユキ",
+      "original_duration_s": 67.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=NxzZ58xld7g",
+      "upload_date": "2026-07-11",
+      "stratum": "vocaloid-original",
+      "voice": "歌愛ユキ (VOCALOID)",
+      "stratum_evidence": "original's title credits 歌愛ユキ; a one-minute song, not a cut; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 150.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.399,
+      "alignment_status": "unverified (set without sona; drum peak 3.60)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kibouno-light/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "disordermade-monster",
+      "expected_title": "DISordermade monster",
+      "ust_zip": "DISordermade monster.zip",
+      "ust_zip_sha256": "c6587650f49c7c0f4d918e136492e480ce22fd220a6f4d5e04a87bef818f7608",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm13034539",
+      "original_title": "【初音ミク】 DISordermade monster 【オリジナル曲】",
+      "original_duration_s": 297.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=F6vWZQSEfno",
+      "upload_date": "2026-07-02",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク Append (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits 'Vocal: MIKU Append'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 145.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.623,
+      "alignment_status": "unverified (set without sona; drum peak 4.41)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "disordermade-monster/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "akusera",
+      "expected_title": "アクセラ",
+      "ust_zip": "アクセラ.zip",
+      "ust_zip_sha256": "8d3f840350e00baca644f9dc5fd992d7229366bf946be432d6b89b9748483598",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho1.ust",
+        "cho2.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=9q3T3_9ZWj4",
+      "original_title": "アクセラ / 初音ミク",
+      "original_duration_s": 188.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=UAWb8t1v8c0",
+      "upload_date": "2026-06-30",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク (プロセカNEXT entry); cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 108.0,
+      "grid_division": 16,
+      "alignment_offset_s": -8.965,
+      "alignment_status": "unverified (set without sona; drum peak 3.81)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "akusera/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "kono-message-wa-sakujo-saremashita",
+      "expected_title": "このメッセージは削除されました",
+      "ust_zip": "このメッセージは削除されました.zip",
+      "ust_zip_sha256": "3947e972a4b0ebd8cfc6cf88f2fe57ed11faf0d163acabc5ae3675e115a76de3",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [],
+      "original_url": "https://www.youtube.com/watch?v=jTBNb4ew8SU",
+      "original_title": "このメッセージは削除されました / 裏命",
+      "original_duration_s": 217.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=slR3EuptU3g",
+      "upload_date": "2026-06-27",
+      "stratum": "vocaloid-original",
+      "voice": "裏命 (CeVIO AI)",
+      "stratum_evidence": "original's title credits 裏命; a text-to-speech newsreader (ondoku3) speaks a part the UST does not cover; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 141.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.783,
+      "alignment_status": "unverified (set without sona; drum peak 2.91)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kono-message-wa-sakujo-saremashita/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "irrational",
+      "expected_title": "IRRATIONAL",
+      "ust_zip": "IRRATIONAL.zip",
+      "ust_zip_sha256": "ce54e558c7d5e0f4eba26c62225162195683536339e2b8a3169954aacb4857cd",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=L4i52UdUhgo",
+      "original_title": "IRRATIONAL / 北沢強兵 feat. 初音ミク",
+      "original_duration_s": 186.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=O57VCJ4-ciE",
+      "upload_date": "2026-06-23",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 170.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.7,
+      "alignment_status": "unverified (set without sona; drum peak 4.39)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "irrational/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "abekobe-love",
+      "expected_title": "Abekobe Love",
+      "ust_zip": "Abekobe Love.zip",
+      "ust_zip_sha256": "1f15bb332681b8b87342755f702162faf1ca04340437e35dfa8565abfcb96e29",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=RlTIXYu8hJE",
+      "original_title": "manika - Abekobe Love feat.歌愛ユキ",
+      "original_duration_s": 62.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=X8gJ0HwQ7rE",
+      "upload_date": "2026-06-19",
+      "stratum": "vocaloid-original",
+      "voice": "歌愛ユキ (VOCALOID)",
+      "stratum_evidence": "original's title credits 歌愛ユキ; a one-minute song, not a cut; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 160.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.073,
+      "alignment_status": "unverified (set without sona; drum peak 4.02)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "abekobe-love/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "kuchisake",
+      "expected_title": "KUCHISAKE",
+      "ust_zip": "KUCHISAKE.zip",
+      "ust_zip_sha256": "8ef7dd435e4183cfac07c6c5c60117fea57ed544d28586174b069ab0280fd14b",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust",
+        "rap.ust",
+        "scream.ust",
+        "whisper.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=CfsA-It3_Yg",
+      "original_title": "Utsu-P - KUCHISAKE feat. 重音テト",
+      "original_duration_s": 218.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=nXq2nBYz6l8",
+      "upload_date": "2026-06-14",
+      "stratum": "vocaloid-original",
+      "voice": "重音テト (Synthesizer V)",
+      "stratum_evidence": "original's title credits 重音テト; credits 'Vocal: 重音テトSV'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 136.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.109,
+      "alignment_status": "unverified (set without sona; drum peak 3.20)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "kuchisake/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "ikinuki-beat",
+      "expected_title": "Ikinuki Beat",
+      "ust_zip": "Ikinuki Beat.zip",
+      "ust_zip_sha256": "259a7add42e2cfda08422b4e934e3f9df2eab5c99ae9f3d15a6e649b72c112c3",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=FKKaq3a7WFI",
+      "original_title": "manika - Ikinuki Beat feat.歌愛ユキ",
+      "original_duration_s": 71.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=TVzoCJBQg-g",
+      "upload_date": "2026-06-09",
+      "stratum": "vocaloid-original",
+      "voice": "歌愛ユキ (VOCALOID)",
+      "stratum_evidence": "original's title credits 歌愛ユキ; a one-minute song, not a cut; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 139.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.982,
+      "alignment_status": "unverified (set without sona; drum peak 3.72)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "ikinuki-beat/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "i-sekai",
+      "expected_title": "i世界",
+      "ust_zip": "i世界.zip",
+      "ust_zip_sha256": "876d0135328523befa456fe3b9f155fb25aa4f4d4a9631ca73baf6edd1c3c8a4",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=IeYLISMxoR8",
+      "original_title": "i世界 / 初音ミク",
+      "original_duration_s": 215.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=oK-t8tH85CY",
+      "upload_date": "2026-05-12",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits 'Vocal 初音ミク'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 135.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.143,
+      "alignment_status": "unverified (set without sona; drum peak 4.73)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "i-sekai/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "i-think-i-think-too-much",
+      "expected_title": "i think i think too much",
+      "ust_zip": "i think i think too much.zip",
+      "ust_zip_sha256": "5608b3ccf93b91cc5b61ce5815a1359859bf6aa3bb0eda78ff72f70a4fc295a0",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "ahh.ust",
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=n3bh2zDN4zs",
+      "original_title": "i think i think too much / 初音ミク",
+      "original_duration_s": 170.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=oPPJLOpVjfU",
+      "upload_date": "2026-05-11",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 171.0,
+      "grid_division": 16,
+      "alignment_offset_s": -5.677,
+      "alignment_status": "unverified (set without sona; drum peak 3.52)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "i-think-i-think-too-much/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "blaze",
+      "expected_title": "BLAZE",
+      "ust_zip": "BLAZE.zip",
+      "ust_zip_sha256": "dad077b11af74c1bb90825a80a74bf18f06688ab2341b87f45cd711022ad9a12",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm6753213",
+      "original_title": "【初音ミク】BLAZE【オリジナル曲PV風】",
+      "original_duration_s": 217.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=3UvQHHpgYi8",
+      "upload_date": "2026-05-06",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 200.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.716,
+      "alignment_status": "unverified (set without sona; drum peak 3.09)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "blaze/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "endless-rock",
+      "expected_title": "Endless Rock",
+      "ust_zip": "Endless Rock.zip",
+      "ust_zip_sha256": "69932aba33dc687026d8518ccc427c5b83e799beda4c4958d97d244f4dd8d66a",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm14983386",
+      "original_title": "【鏡音リン】Endless Rock【オリジナル】",
+      "original_duration_s": 268.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=4qsYsFSga-I",
+      "upload_date": "2026-04-28",
+      "stratum": "vocaloid-original",
+      "voice": "鏡音リン (VOCALOID)",
+      "stratum_evidence": "original's title credits 鏡音リン; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 200.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.778,
+      "alignment_status": "unverified (set without sona; drum peak 2.58)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "endless-rock/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "dethrone",
+      "expected_title": "Dethrone",
+      "ust_zip": "Dethrone.zip",
+      "ust_zip_sha256": "a6dfecd2cc18fed9b5c17e3322e4b0c45d48c1cb6c610a6427296e7e1afbaeba",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=1uMPMLdkM7A",
+      "original_title": "Dethrone / kawauso feat.初音ミク",
+      "original_duration_s": 177.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=lA_1iJAw86c",
+      "upload_date": "2026-04-24",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits 'Vocal:初音ミク'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 210.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.626,
+      "alignment_status": "unverified (set without sona; drum peak 2.14)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "dethrone/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "anpan",
+      "expected_title": "アンパン",
+      "ust_zip": "アンパン.zip",
+      "ust_zip_sha256": "464587e8ccb32840b49e153f7fc99c986abae2288500c0754af82e963327da36",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust",
+        "cho-low2.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=HmtwFxbdxOE",
+      "original_title": "ATOLS - アンパン feat. 初音ミク",
+      "original_duration_s": 156.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=GmV-1ZEr32I",
+      "upload_date": "2026-04-24",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits 'Vocal: 初音ミク'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 128.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.634,
+      "alignment_status": "unverified (set without sona; drum peak 3.97)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "anpan/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "left",
+      "expected_title": "Left",
+      "ust_zip": "Left.zip",
+      "ust_zip_sha256": "5504cd5767a9dc40190fc01cef269888db8b17567ce7b4222f77cd8bd3f0ff22",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "scream.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=2RC0v4pxYvs",
+      "original_title": "Left - qurse feat.GUMI",
+      "original_duration_s": 209.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=PcMtQPZhHNs",
+      "upload_date": "2026-04-11",
+      "stratum": "vocaloid-original",
+      "voice": "GUMI (VOCALOID)",
+      "stratum_evidence": "original's title credits GUMI; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 210.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.54,
+      "alignment_status": "unverified (set without sona; drum peak 2.90)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "left/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "morning-glory",
+      "expected_title": "Morning Glory",
+      "ust_zip": "Morning Glory.zip",
+      "ust_zip_sha256": "b41fae7f575411c2e78f0f7e6e75551160694a69f1459f18c586ed33af531b68",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho-high.ust",
+        "cho-low.ust"
+      ],
+      "original_url": "https://www.nicovideo.jp/watch/sm21442471",
+      "original_title": "【初音ミク】 Morning Glory 【オリジナルMV】",
+      "original_duration_s": 259.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=ufoEgUt7rAc",
+      "upload_date": "2026-04-02",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 190.0,
+      "grid_division": 16,
+      "alignment_offset_s": -4.984,
+      "alignment_status": "unverified (set without sona; drum peak 2.80)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "morning-glory/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "idl",
+      "expected_title": "idL",
+      "ust_zip": "idL.zip",
+      "ust_zip_sha256": "9d53be1b120c771e74a65aa2ad013eb8723d40c1e79b0a4f4254f41f854c9c5a",
+      "ust_lead_files": [
+        "main1.ust",
+        "main2.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust",
+        "low.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=NfE4odIdOCw",
+      "original_title": "idL / 初音ミク",
+      "original_duration_s": 172.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=hc2yTwC1MUw",
+      "upload_date": "2026-03-26",
+      "stratum": "vocaloid-original",
+      "voice": "初音ミク (VOCALOID)",
+      "stratum_evidence": "original's title credits 初音ミク; credits '歌唱:初音ミク'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 157.0,
+      "grid_division": 16,
+      "alignment_offset_s": -6.187,
+      "alignment_status": "unverified (set without sona; drum peak 3.65)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "idl/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
+    },
+    {
+      "id": "ai",
+      "expected_title": "アイ",
+      "ust_zip": "アイ.zip",
+      "ust_zip_sha256": "e4e4463ed1ccde477abfd55ffcdbe034d379670761d85d45dcb0da9116992269",
+      "ust_lead_files": [
+        "main.ust"
+      ],
+      "ust_other_voice_files": [
+        "cho.ust"
+      ],
+      "original_url": "https://www.youtube.com/watch?v=qXm2S11S4bI",
+      "original_title": "アイ / リク feat. Ryo",
+      "original_duration_s": 224.0,
+      "cover_video_url": "https://www.youtube.com/watch?v=VGbS68rtD2Q",
+      "upload_date": "2026-03-24",
+      "stratum": "vocaloid-original",
+      "voice": "Ryo (Synthesizer V)",
+      "stratum_evidence": "credits '歌：Ryo (Synthesizer V)'; cover and original lengths agree within 1 s (no short cut)",
+      "bpm_from_ust": 135.0,
+      "grid_division": 16,
+      "alignment_offset_s": -7.161,
+      "alignment_status": "unverified (set without sona; drum peak 3.60)",
+      "stem": {
+        "model": "htdemucs",
+        "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
+        "path": "ai/vocals.wav"
+      },
+      "split": "holdout4",
+      "notes": null
     }
   ],
   "excluded": [
@@ -1484,6 +2248,436 @@
       "title": "二重らせん",
       "cover_video_url": "https://www.youtube.com/watch?v=NGyzaP2IBuw",
       "reason": "UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-21); Pifuyuu posts it only on BowlRoll"
+    },
+    {
+      "title": "ひかりの夏にひからびて",
+      "cover_video_url": "https://www.youtube.com/watch?v=A484o4ZkX3o",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "にごりえ",
+      "cover_video_url": "https://www.youtube.com/watch?v=UxxhtZD-f8c",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ハルシオン・スノウ",
+      "cover_video_url": "https://www.youtube.com/watch?v=WKZNOUabuF8",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "氷上に駆ける",
+      "cover_video_url": "https://www.youtube.com/watch?v=WIjtCR5JqeQ",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "クエスチョンマーク",
+      "cover_video_url": "https://www.youtube.com/watch?v=T4bMRnFT71w",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "乙女辞表",
+      "cover_video_url": "https://www.youtube.com/watch?v=by-zIyNDl9k",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ソーダライト",
+      "cover_video_url": "https://www.youtube.com/watch?v=4_t4wk-uDuU",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ONIRIC",
+      "cover_video_url": "https://www.youtube.com/watch?v=G81IdPES8oc",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "宵、紛れる画家の詩",
+      "cover_video_url": "https://www.youtube.com/watch?v=r52AwrExdAs",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "インダストリアル",
+      "cover_video_url": "https://www.youtube.com/watch?v=oLtdwgjvNXw",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ta-tarata!",
+      "cover_video_url": "https://www.youtube.com/watch?v=MWAwwZ3bbns",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "嘘月が綺麗ですね",
+      "cover_video_url": "https://www.youtube.com/watch?v=QuWLH2oZeVw",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "迷妄少年と小世界",
+      "cover_video_url": "https://www.youtube.com/watch?v=goKYs2EoNUo",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "返り討ち",
+      "cover_video_url": "https://www.youtube.com/watch?v=4GaULeGdoLA",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "零落",
+      "cover_video_url": "https://www.youtube.com/watch?v=UvWVPa8NkGA",
+      "reason": "holdout4 walk: grid: 87% of the lead's note starts are on 16ths and the rest on 16th-triplets; holdout splits need at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more)"
+    },
+    {
+      "title": "バベルの塔",
+      "cover_video_url": "https://www.youtube.com/watch?v=3bFEilQpEPQ",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "畜笑",
+      "cover_video_url": "https://www.youtube.com/watch?v=Yx9tjvgErUA",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ルシファー",
+      "cover_video_url": "https://www.youtube.com/watch?v=Te5QC1NQhNI",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Self Decision",
+      "cover_video_url": "https://www.youtube.com/watch?v=kaP8WYRFc1s",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "深藍夜行",
+      "cover_video_url": "https://www.youtube.com/watch?v=JZXxEJziEKk",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "誰かの形",
+      "cover_video_url": "https://www.youtube.com/watch?v=waKAH9mTI7s",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "プラスティック",
+      "cover_video_url": "https://www.youtube.com/watch?v=e07K5d9oKx0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "れびてーしょん",
+      "cover_video_url": "https://www.youtube.com/watch?v=pM4NTq_Hwjw",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Temporal drift",
+      "cover_video_url": "https://www.youtube.com/watch?v=Q14LpXE-U4w",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ワンダーラスト(Remaster ver)",
+      "cover_video_url": "https://www.youtube.com/watch?v=aEsT5D_N1aE",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "uruuru",
+      "cover_video_url": "https://www.youtube.com/watch?v=TfkcwgmdUXE",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ゼツボウドグマ",
+      "cover_video_url": "https://www.youtube.com/watch?v=OEakAgvFtns",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "イコライザ・トランキライザ",
+      "cover_video_url": "https://www.youtube.com/watch?v=r0LShQEB27M",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "この真っ白な夢の中でくらい忘れさせて。",
+      "cover_video_url": "https://www.youtube.com/watch?v=zfZ28jmdCNU",
+      "reason": "holdout4 walk: two tempos (main1, uhh*, whisper1 at 160 BPM; main2, main3 and the other voices at 180 BPM) and grid: 88% of the lead's note starts are on 16ths (main3 runs off both grids); holdout splits need at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more). It fails more than the tempo rule, so it is not in holdout4-tempo"
+    },
+    {
+      "title": "夢を諦める日",
+      "cover_video_url": "https://www.youtube.com/watch?v=YPVmHzoUO38",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "パアチド",
+      "cover_video_url": "https://www.youtube.com/watch?v=DQqSQ7-PKAY",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "This Is a Horn, Not an Ear",
+      "cover_video_url": "https://www.youtube.com/watch?v=_5qyCg1rW7s",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ヘデイク",
+      "cover_video_url": "https://www.youtube.com/watch?v=1sHXLu6S-qQ",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "継接、ハサミの使い方",
+      "cover_video_url": "https://www.youtube.com/watch?v=KV-ZttGUWEQ",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "九夏",
+      "cover_video_url": "https://www.youtube.com/watch?v=nsybk-T8shY",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "エンドロールには載らない君へ",
+      "cover_video_url": "https://www.youtube.com/watch?v=7evNhOm788w",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "No More Lies",
+      "cover_video_url": "https://www.youtube.com/watch?v=Z8PLevHHQdM",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "母胎",
+      "cover_video_url": "https://www.youtube.com/watch?v=O3dcPxkDj6g",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "out of memory",
+      "cover_video_url": "https://www.youtube.com/watch?v=iSyqQn2I6NE",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "sing for the star",
+      "cover_video_url": "https://www.youtube.com/watch?v=CMuamj-j6eI",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "凪と藍空",
+      "cover_video_url": "https://www.youtube.com/watch?v=J0IWSU8Yj-I",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "コンティニュー",
+      "cover_video_url": "https://www.youtube.com/watch?v=nTDyqehwUOw",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "オーダー、仰せのままに",
+      "cover_video_url": "https://www.youtube.com/watch?v=gYyTrJNjGJo",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "クーリエ",
+      "cover_video_url": "https://www.youtube.com/watch?v=nXX3JC1uZ5Y",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "まやかしばなし",
+      "cover_video_url": "https://www.youtube.com/watch?v=-r2cyqPsXmM",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "知らないままで",
+      "cover_video_url": "https://www.youtube.com/watch?v=WXvS06PvDzk",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ドーパ民",
+      "cover_video_url": "https://www.youtube.com/watch?v=_9yEc2czotk",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "カノン -\"Emotional\" remix-",
+      "cover_video_url": "https://www.youtube.com/watch?v=Qao7KtGtTqU",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "溶け残る青",
+      "cover_video_url": "https://www.youtube.com/watch?v=Xcbzk7cnnEg",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "心一等",
+      "cover_video_url": "https://www.youtube.com/watch?v=65HDGOjmDvk",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "入水",
+      "cover_video_url": "https://www.youtube.com/watch?v=ZK-SWqwm2so",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "火種",
+      "cover_video_url": "https://www.youtube.com/watch?v=DB1rw9gcptQ",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ヨスガ",
+      "cover_video_url": "https://www.youtube.com/watch?v=T178K63IFeA",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "花嵐",
+      "cover_video_url": "https://www.youtube.com/watch?v=ijqbm2P9Svs",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ヤメルヒモ",
+      "cover_video_url": "https://www.youtube.com/watch?v=n9J3F9F_Z-M",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Yamitsuki Bet",
+      "cover_video_url": "https://www.youtube.com/watch?v=mQoe9Kys9Bw",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "甘い病",
+      "cover_video_url": "https://www.youtube.com/watch?v=1WWEDNRSECo",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ノイズの海",
+      "cover_video_url": "https://www.youtube.com/watch?v=W17vuHciOD0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ご都合主義",
+      "cover_video_url": "https://www.youtube.com/watch?v=pzy4PLXFtlk",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "半壊",
+      "cover_video_url": "https://www.youtube.com/watch?v=HhMBIE0Fht0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "PARADOX",
+      "cover_video_url": "https://www.youtube.com/watch?v=faWeVFvBMW0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "新しい嫌",
+      "cover_video_url": "https://www.youtube.com/watch?v=IgJFgVog0OM",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "隣人は愛せない",
+      "cover_video_url": "https://www.youtube.com/watch?v=0LSzfVy-c0k",
+      "reason": "holdout4 walk: grid: mixed, 80% of the lead's note starts on 16ths and 85% on 16th-triplets; holdout splits need at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more)"
+    },
+    {
+      "title": "咖啡记录vol.3",
+      "cover_video_url": "https://www.youtube.com/watch?v=26yIU_k2OTA",
+      "reason": "holdout4 walk: not a UTAU cover (a 咖啡记录 video, no UST)"
+    },
+    {
+      "title": "咖啡记录vol.2",
+      "cover_video_url": "https://www.youtube.com/watch?v=CiKfWBwdQ6k",
+      "reason": "holdout4 walk: not a UTAU cover (a 咖啡记录 video, no UST)"
+    },
+    {
+      "title": "Highway escape",
+      "cover_video_url": "https://www.youtube.com/watch?v=gUb4N3gCNwQ",
+      "reason": "holdout4 walk: the cover (211 s) is 3 s longer than the original (208 s); holdout splits need them within 1 s"
+    },
+    {
+      "title": "咖啡记录vol.1",
+      "cover_video_url": "https://www.youtube.com/watch?v=n_mBdQzO1Zs",
+      "reason": "holdout4 walk: not a UTAU cover (a 咖啡记录 video, no UST)"
+    },
+    {
+      "title": "六月の空蝉",
+      "cover_video_url": "https://www.youtube.com/watch?v=IRZq31MHVYI",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "余命日記",
+      "cover_video_url": "https://www.youtube.com/watch?v=PUbcbFuqNX0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "asphylize",
+      "cover_video_url": "https://www.youtube.com/watch?v=AeUauNjS3EQ",
+      "reason": "holdout4 walk: the cover (173 s) is 2 s longer than the original (171 s); holdout splits need them within 1 s"
+    },
+    {
+      "title": "提灯鮟鱇",
+      "cover_video_url": "https://www.youtube.com/watch?v=xixLJPdO1R4",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "never mind",
+      "cover_video_url": "https://www.youtube.com/watch?v=OjW3bY3mWEI",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ディスクローズ・フリック",
+      "cover_video_url": "https://www.youtube.com/watch?v=bFXtMXJ3wqA",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "D/N/A -REMIX-",
+      "cover_video_url": "https://www.youtube.com/watch?v=Udl4SL0Eurs",
+      "reason": "holdout4 walk: arrangement: the cover follows ryo-shun's D/N/A -REMIX- (ボカコレ2026冬 REMIX entry), not Azari's original D/N/A"
+    },
+    {
+      "title": "トリカブト",
+      "cover_video_url": "https://www.youtube.com/watch?v=ZtFZZucevME",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "砕けて、さようなら。",
+      "cover_video_url": "https://www.youtube.com/watch?v=_htVHUehtDA",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ナタラージャ",
+      "cover_video_url": "https://www.youtube.com/watch?v=L_0QNLWHbPM",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Reanimate",
+      "cover_video_url": "https://www.youtube.com/watch?v=1PKwY1Y0uec",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "海月に群青",
+      "cover_video_url": "https://www.youtube.com/watch?v=5dG8JJ7L4_Y",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "飛翔",
+      "cover_video_url": "https://www.youtube.com/watch?v=-I_Lh6Ze6q0",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Thunder Girl",
+      "cover_video_url": "https://www.youtube.com/watch?v=OQf4LB8EfeE",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ふれる",
+      "cover_video_url": "https://www.youtube.com/watch?v=vpYySM4TJTg",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "ワード・エイト",
+      "cover_video_url": "https://www.youtube.com/watch?v=kGhBpK7F84o",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
+    },
+    {
+      "title": "Lost Forever",
+      "cover_video_url": "https://www.youtube.com/watch?v=gv2WVFapX2I",
+      "reason": "holdout4 walk: grid: 64% of the lead's note starts are on 16ths, 42% on 16th-triplets; holdout splits need at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more)"
+    },
+    {
+      "title": "あのこ行方不明",
+      "cover_video_url": "https://www.youtube.com/watch?v=RjPsx0cUuZo",
+      "reason": "holdout4 walk: grid: 80% of the lead's note starts are on 16th-triplets, 10% on 16ths; holdout splits need at least 90% of the lead's note starts on one grid, 16 or 24 (every earlier corpus song has 91% or more)"
+    },
+    {
+      "title": "エスケープアビス",
+      "cover_video_url": "https://www.youtube.com/watch?v=BtAULQcXwPs",
+      "reason": "holdout4 walk: UST not in the public OneDrive share the manifest fetches from (ust_share_url, checked 2026-11-24)"
     }
   ]
 }
