@@ -1,6 +1,6 @@
 # 13 — A confidence score that finds the expensive errors
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 03
 
