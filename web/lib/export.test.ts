@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LYRIC, TICKS_PER_QUARTER, gridPhase, toSequence, type LyricNote } from "./sequence";
+import { DEFAULT_LYRIC, TICKS_PER_QUARTER, exportSequence, type LyricNote } from "./sequence";
+import { gridPhase, type Frame } from "./frame";
+import { DIVISIONS } from "./exportCases";
 import { encodeShiftJis } from "./sjis";
 import { encodeUst, ustText } from "./ust";
 import { toYaml, ustxProject, ustxText } from "./ustx";
@@ -18,10 +20,12 @@ const notes: LyricNote[] = [
   { onset_s: 2.05, offset_s: 2.3, midi_pitch: 67 },
 ];
 
+const frameAt = (anchor: number): Frame => ({ bpm: BPM, division: 16, anchor, barOne: null });
+
 const GOLDEN = fileURLToPath(new URL("../../crates/sona-eval/fixtures/ust/sona-export.ust", import.meta.url));
 
-describe("toSequence", () => {
-  const seq = toSequence(notes, { bpm: BPM, spacing: SPACING, anchor: ANCHOR });
+describe("exportSequence, default frame", () => {
+  const seq = exportSequence(notes, frameAt(ANCHOR));
 
   it("shifts by the grid phase so notes land on whole ticks of the editor grid", () => {
     expect(gridPhase(ANCHOR, SPACING)).toBeCloseTo(PHASE_S, 9);
@@ -41,13 +45,13 @@ describe("toSequence", () => {
   });
 
   it("keeps the line monophonic and every note at least one tick long", () => {
-    const s = toSequence(
+    const s = exportSequence(
       [
         { onset_s: 0, offset_s: 1, midi_pitch: 60 },
         { onset_s: 0.5, offset_s: 0.5, midi_pitch: 62 },
         { onset_s: 0.5, offset_s: 0.75, midi_pitch: 64 },
       ],
-      { bpm: BPM, spacing: SPACING, anchor: 0 },
+      frameAt(0),
     );
     for (let i = 1; i < s.notes.length; i++) {
       expect(s.notes[i].position).toBeGreaterThanOrEqual(s.notes[i - 1].position + s.notes[i - 1].duration);
@@ -59,7 +63,7 @@ describe("toSequence", () => {
 });
 
 describe("UST export", () => {
-  const seq = toSequence(notes, { bpm: BPM, spacing: SPACING, anchor: ANCHOR });
+  const seq = exportSequence(notes, frameAt(ANCHOR));
 
   it("is contiguous: rests fill every gap, from tick 0", () => {
     const text = ustText(seq, { bpm: BPM, projectName: "golden" });
@@ -82,7 +86,8 @@ describe("UST export", () => {
         raw.push({ onset_s: t, offset_s: t + len, midi_pitch: 48 + Math.floor(rand() * 36), lyric: rand() < 0.3 ? undefined : "ら" });
         t += len + (rand() < 0.5 ? 0 : rand() < 0.5 ? 0.0011 : rand() * 0.8);
       }
-      const s = toSequence(raw, { bpm: 60 + rand() * 140, spacing: 0.1 + rand() * 0.1, anchor: rand() * 3 });
+      const frame: Frame = { bpm: 60 + rand() * 140, division: DIVISIONS[Math.floor(rand() * DIVISIONS.length)], anchor: rand() * 3, barOne: rand() < 0.5 ? null : rand() * 4 };
+      const s = exportSequence(raw, frame);
       const text = ustText(s, { bpm: 120 });
       let tick = 0;
       const sung: [number, number, number][] = [];
@@ -100,7 +105,7 @@ describe("UST export", () => {
     const { bytes, encoding } = encodeUst(seq, { bpm: BPM });
     expect(encoding).toBe("shift_jis");
     expect(new TextDecoder("shift_jis").decode(bytes)).toContain("Lyric=きゃ");
-    const odd = toSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 60, lyric: "ゔ🎵" }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+    const odd = exportSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 60, lyric: "ゔ🎵" }], frameAt(0));
     const utf = encodeUst(odd, { bpm: BPM });
     expect(utf.encoding).toBe("utf-8");
     expect(new TextDecoder().decode(utf.bytes)).toContain("Charset=UTF-8\r\n");
@@ -119,10 +124,10 @@ describe("UST export", () => {
 });
 
 describe("USTX export", () => {
-  const seq = toSequence(notes, { bpm: BPM, spacing: SPACING, anchor: ANCHOR });
+  const seq = exportSequence(notes, frameAt(ANCHOR));
 
   it("puts every note in one voice part with OpenUtau's melisma alias", () => {
-    const p = ustxProject(toSequence([...notes, { onset_s: 2.3, offset_s: 2.55, midi_pitch: 67, lyric: "ー" }], { bpm: BPM, spacing: SPACING, anchor: ANCHOR }), { bpm: BPM });
+    const p = ustxProject(exportSequence([...notes, { onset_s: 2.3, offset_s: 2.55, midi_pitch: 67, lyric: "ー" }], frameAt(ANCHOR)), { bpm: BPM });
     const part = p.voice_parts[0];
     expect(part.notes.map((n) => n.lyric)).toEqual(["さ", "くら", "きゃ", DEFAULT_LYRIC, "+~"]);
     expect(part.notes[0]).toMatchObject({ position: 960, duration: 240, tone: 64 });
@@ -150,7 +155,7 @@ describe("pitch expression export (ADR-0019)", () => {
     snapFirst: true,
     vibrato: { length: 55, period: 170, depth: 35, in: 20, out: 15, shift: 30, drift: -5 },
   };
-  const seq = toSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64, lyric: "ら", expr }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+  const seq = exportSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64, lyric: "ら", expr }], frameAt(0));
 
   // OpenUtau's UstNote.ParsePitchBend / ParseVibrato (MIT), ported for the round trip.
   function parseLikeOpenUtau(block: string) {
@@ -197,13 +202,13 @@ describe("pitch expression export (ADR-0019)", () => {
         return pt;
       });
       const e = { points, snapFirst: rand() < 0.5, vibrato: null };
-      const s = toSequence([{ onset_s: 0, offset_s: 1, midi_pitch: 60, expr: e }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+      const s = exportSequence([{ onset_s: 0, offset_s: 1, midi_pitch: 60, expr: e }], frameAt(0));
       expect(parseLikeOpenUtau(ustText(s, { bpm: BPM }).split("[#0000]")[1]).points).toEqual(points);
     }
   });
 
   it("leaves notes without an expression at OpenUtau's neutral defaults and writes no pitch lines", () => {
-    const plain = toSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64 }], { bpm: BPM, spacing: SPACING, anchor: 0 });
+    const plain = exportSequence([{ onset_s: 0, offset_s: 0.5, midi_pitch: 64 }], frameAt(0));
     expect(ustText(plain, { bpm: BPM })).not.toMatch(/PBS|VBR/);
     expect(ustxProject(plain, { bpm: BPM }).voice_parts[0].notes[0].vibrato.length).toBe(0);
   });

@@ -1,6 +1,6 @@
 # 02 — Make OpenUtau's beats and measures match the editor's (export tick 0 is chosen modulo one cell)
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: — (do after 01, which creates the single export seam; utau-edit-cost 05 needs this to have any effect)
 
@@ -61,3 +61,47 @@ puts that beat on an OpenUtau bar line (one manual check).
 
 - If the app moves to "ask for the BPM first" (utau-04), asking "where is beat 1?" on the same screen, or
   after transcription, is the natural place for the control.
+
+## Answer
+
+Done on branch `audit-a01-a02-export-frame` (from c93a284), with 01; decision in
+`docs/adr/0029-export-frame-bar-one.md`.
+
+- **The frame** (`web/lib/frame.ts`, pure): BPM, division, anchor and `barOne` (stem seconds, or `null`).
+  - `gridLines` classifies every grid line as cell, beat or bar.
+  - `tickZero` places tick 0 on a bar line: with `barOne` unset, exactly today's rule (the first grid line,
+    the anchor modulo a cell); with it set, the first bar line at or after 0 s, moved back whole bars while
+    a note starts before it (a pickup goes in the bar before, not onto tick 0).
+  - `updateFrame` applies the events: tempo, grid, ruler drag (bar 1 moves with the grid), bar 1, auto.
+- **Editor.**
+  - Bar lines (brightest) and beat lines come from the frame, and the ruler numbers the bars as OpenUtau will
+    (tick 0 = bar 1).
+  - **Shift-click on the ruler** makes the nearest grid line a bar line. The ♩ popover has **Bar 1** with
+    **At playhead** and **Auto**.
+  - Bar 1 is saved as `session.barOne` (absent = unset) and is one undo step.
+  - 4/4 only; noted in the README.
+- **Default unchanged.** Byte-identity test against SHA-256 digests the pre-frame code (c93a284) wrote:
+  - 420 sessions, all matching: the 5 committed synthetic annotations × 4 settings, plus 400 random sessions;
+  - 415 of them have a non-zero shift;
+  - golden in `web/lib/fixtures/export-default-frame.json`.
+- **Property** (`frame.test.ts`): for 1 000 random frames with a bar 1 and 500 default frames, a note on a
+  beat line exports to a multiple of 480, on a bar line to a multiple of 1920, and on no other line to
+  either. Random event sequences (200 × 25 steps) check the same after every event, plus:
+  - bar 1 stays on the grid;
+  - the chosen line is a bar line;
+  - a drag moves every line with the grid.
+- **Mutants caught:**
+  - today's modulo-a-cell tick 0: 3 tests fail;
+  - beats counted from the anchor (today's drawing): 3;
+  - a drag that leaves bar 1 behind: 1;
+  - no pickup step-back: 3;
+  - the default going through the bar rule: the byte-identity test fails.
+- **TLA+:** not added. There is one synchronous writer and no async events; the random sequences check the
+  arithmetic on the real code (ADR-0029, "Why no TLA+ model").
+- **Browser** (`web/e2e/bar_one.py`):
+  - Shift-click on the 2.3 s note: ruler bar ticks every 2.00 s through it; UST and MIDI put it at 1920 and
+    every other note on a beat;
+  - undo/redo, the session reload (same UST bytes), a 40 ms ruler drag (ticks unchanged) and At playhead
+    all pass.
+- **Not done:** the manual check in OpenUtau (choose beat 1, export, see it on an OpenUtau bar line). The
+  default bar 1 stays with 03 / utau-05.

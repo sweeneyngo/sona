@@ -1,10 +1,12 @@
 /**
- * A singing-synth project puts tick 0 on a bar line, so the notes are moved back
- * by the grid **phase** to land on the editor's grid.
+ * The one export seam: MIDI, UST and USTX are all written from the
+ * {@link Sequence} that {@link exportSequence} builds, so every format puts a
+ * note on the same tick. Tick 0 is a bar line of the editor's frame (ADR-0029).
  */
 
 import type { WorkingNote } from "./annotation";
 import type { Expression } from "./expression";
+import { tickZero, type Frame } from "./frame";
 
 export const TICKS_PER_QUARTER = 480;
 export const DEFAULT_LYRIC = "あ";
@@ -24,7 +26,7 @@ export interface SeqNote {
 
 export interface Sequence {
   notes: SeqNote[];
-  /** Seconds the notes were moved earlier to sit on the editor's grid. */
+  /** Stem time of tick 0: the seconds the notes were moved earlier. Negative when bar 1 starts before the stem. */
   shiftS: number;
 }
 
@@ -39,21 +41,14 @@ export function sequenceInSeconds(seq: Sequence, bpm: number, tpq = TICKS_PER_QU
   }));
 }
 
-/** The grid phase: where in a cell the anchor sits, in `[0, spacing)`. */
-export function gridPhase(anchor: number, spacing: number): number {
-  if (!(spacing > 0)) return 0;
-  return ((anchor % spacing) + spacing) % spacing;
-}
-
 /**
- * Convert seconds to ticks on the shifted timeline. Notes are sorted, clamped
- * at tick 0, kept monophonic (a later note trims the one it starts inside),
- * and at least one tick long.
+ * The notes in ticks from the frame's tick 0. Notes are sorted, clamped at
+ * tick 0, kept monophonic (a later note trims the one it starts inside), and at
+ * least one tick long.
  */
-export function toSequence(notes: LyricNote[], opts: { bpm: number; spacing: number; anchor: number; tpq?: number }): Sequence {
-  const tpq = opts.tpq ?? TICKS_PER_QUARTER;
-  const shiftS = gridPhase(opts.anchor, opts.spacing);
-  const ticksPerSecond = (opts.bpm / 60) * tpq;
+export function exportSequence(notes: LyricNote[], frame: Frame): Sequence {
+  const shiftS = tickZero(frame, notes.map((n) => n.onset_s));
+  const ticksPerSecond = (frame.bpm / 60) * TICKS_PER_QUARTER;
   const toTicks = (s: number) => Math.max(0, Math.round((s - shiftS) * ticksPerSecond));
   const sorted = [...notes].sort((a, b) => a.onset_s - b.onset_s);
   const out: SeqNote[] = [];

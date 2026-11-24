@@ -1,6 +1,6 @@
 # 01 — MIDI export lands off the grid and on a different timeline from UST/USTX
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: —
 
@@ -62,3 +62,29 @@ in the same place as the UST import.
 
 - Ticket 02 changes *which* grid line becomes tick 0. Do 01 first: it creates the single place where that
   rule lives.
+
+## Answer
+
+Done on branch `audit-a01-a02-export-frame` (from c93a284), with 02; decision in
+`docs/adr/0029-export-frame-bar-one.md`.
+
+- **One seam.** `web/lib/sequence.ts` `exportSequence(notes, frame)` builds the `Sequence`; MIDI, UST and
+  USTX are all written from it. `encodeMidiFile(seq, { bpm })` takes ticks (480 ppq), not seconds, so the
+  MIDI gets the shift and the overlap trim the UST had. `main.ts` builds one sequence per export
+  (`sequenceForExport`); the synth keeps stem seconds (`playbackNotes`).
+- **Lyrics and 4/4.** Each note's lyric is an `FF 05` event (UTF-8) at its note-on, and the track starts with
+  `FF 58 04 02 18 08`.
+- **Test** (`web/lib/frame.test.ts`, "MIDI, UST and USTX share one timeline"): 300 sessions (editor-snapped
+  and raw overlapping notes, with and without a bar 1). MIDI (read back, normalised by its ppq), UST and USTX
+  give the same `(tick, length, tone)` list, and MIDI and UST the same lyrics. The audit's case is a fixed
+  test: MIDI `[960,240],[1200,240]`, where the stem-seconds MIDI wrote 1008/1248. Every tick is a multiple of
+  the cell: the A02 property checks it for every line kind.
+- **Mutants caught:**
+  - MIDI shifted back to stem seconds (today's bug): 2 tests fail;
+  - overlap trim dropped: 2;
+  - MIDI without lyrics: 2.
+- **Browser** (`web/e2e/bar_one.py`, synthetic annotation, phase 50 ms): the default UST and the MIDI both
+  start at 1200 ticks (the old MIDI wrote 1248).
+- README:95 and ADR-0018:15 now describe this.
+- **Not done (needs OpenUtau by hand, map Fog):** whether OpenUtau's MIDI import reads UTF-8 `FF 05` lyrics
+  and keeps tick 0. Not recorded in the map: this ticket was told not to edit map.md.

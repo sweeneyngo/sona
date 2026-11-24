@@ -201,7 +201,8 @@
       header select {
         padding: 4px 7px;
       }
-      #key-readout {
+      #key-readout,
+      #bar-one-readout {
         font-family: var(--mono);
         font-size: 12px;
         color: var(--ink);
@@ -1120,6 +1121,12 @@
               <span class="label">Key</span>
               <output id="key-readout" title="Detected from the notes (Krumhansl–Schmuckler). Snapping is in File → Settings.">—</output>
             </div>
+            <div class="pop-row">
+              <span class="label">Bar 1</span>
+              <output id="bar-one-readout" title="Where the bar lines start. The export puts OpenUtau's bar lines on the editor's.">first grid line</output>
+              <button id="bar-one-here" class="chip" title="Make the grid line at the playhead beat 1 of a bar (or Shift-click the ruler)">At playhead</button>
+              <button id="bar-one-auto" class="chip" title="Bar 1 on the first grid line, as before" disabled>Auto</button>
+            </div>
           </div>
         </div>
         <span id="status" role="status"></span>
@@ -1310,6 +1317,9 @@
               The roll shows ~2 octaves at a time. Scroll to move pitch, Shift-scroll to
               move time, ⌘/Ctrl-scroll to zoom (double-click the ruler to reset). Click the
               top ruler to seek; drag it to shift the grid phase.
+              <span class="kbd">Shift</span>-click the ruler on the beat you hear as beat 1:
+              that line becomes a bar line. Bright lines are bars, numbered as OpenUtau
+              will number them; every export puts OpenUtau's bars and beats on these lines.
             </p>
           </section>
 
