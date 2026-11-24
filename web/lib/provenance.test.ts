@@ -69,6 +69,13 @@ describe("provenance", () => {
     expect([odd.job?.separation, odd.job?.stems?.by_hash]).toEqual([undefined, undefined]);
   });
 
+  it("keeps the lyric the job was sent, and nothing that isn't text", () => {
+    const lyric = "あめが ふる\nかぜが ふく";
+    expect(parseProvenance({ ...fromServe, job: { ...fromServe.job, lyric } })!.job?.lyric).toBe(lyric);
+    expect(parseProvenance({ ...fromServe, job: { ...fromServe.job, lyric: 3 } })!.job).not.toHaveProperty("lyric");
+    expect(parseProvenance(fromServe)!.job).not.toHaveProperty("lyric");
+  });
+
   it("leaves out job sections for a CLI annotation", () => {
     const { job: _job, ...cli } = fromServe;
     expect(detailSections(parseProvenance(cli)!).map((x) => x.title)).toEqual(["Made by", "Input", "Settings", "Models"]);

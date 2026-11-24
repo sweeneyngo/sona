@@ -48,6 +48,7 @@ const expected: Annotation = {
       models: [{ role: "separator/lead", name: "UVR.onnx", bytes: 2048, sha256: sha("d") }],
       separation: "lead",
       stems: { key: sha("e"), reused: true, separated_by: "j0", by_hash: true },
+      lyric: "あめが ふる\nかぜが ふく",
     },
   },
   bar_one: { time_s: 0.42, confidence: 0.75, harmonic: true },

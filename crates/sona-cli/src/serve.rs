@@ -8,7 +8,9 @@ use crate::http::{read_request, write_response, HttpError, Limits, Request, Resp
 use crate::jobs::{wav_rate, Engine, Input, Job, JobSpec, NotKept, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
 use crate::provenance::ToolRun;
 
-const LIMITS: Limits = Limits { max_header_bytes: 16 * 1024, max_body_bytes: 500 * 1_000_000 };
+/// The head holds a job's lyric in its query: [`MAX_LYRIC_CHARS`] kana, percent-encoded at 9 bytes each.
+const LIMITS: Limits = Limits { max_header_bytes: 64 * 1024, max_body_bytes: 500 * 1_000_000 };
+const MAX_LYRIC_CHARS: usize = 6000;
 const DEFAULT_PORT: u16 = 8977;
 const MAX_BPM: f64 = 400.0;
 
@@ -384,8 +386,32 @@ fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {
         Some(h) if h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => Some(h.to_string()),
         Some(_) => return Err(bad("upload must be the file's SHA-256: 64 lowercase hex digits")),
     };
+    let lyric = req.param("lyric").map(check_lyric).transpose().map_err(|m| bad(&m))?;
     let name: String = req.param("name").unwrap_or("upload.wav").chars().filter(|c| !c.is_control()).take(200).collect();
-    Ok(JobSpec { name, bpm, grid, separation, engine, bar_one, upload })
+    Ok(JobSpec { name, bpm, grid, separation, engine, bar_one, upload, lyric })
+}
+
+/// A job's lyric as the app takes it (lyrics-first spec): hiragana, ー, small kana and っ, with spaces and
+/// line breaks between phrases. Anything else is named, never converted.
+fn check_lyric(lyric: &str) -> Result<String, String> {
+    if lyric.trim().is_empty() {
+        return Err("the lyric is empty: leave it out, or send the song's lyric".into());
+    }
+    if lyric.chars().count() > MAX_LYRIC_CHARS {
+        return Err(format!("the lyric is over {MAX_LYRIC_CHARS} characters"));
+    }
+    let mut bad: Vec<char> = Vec::new();
+    for c in lyric.chars().filter(|&c| !(('\u{3041}'..='\u{3096}').contains(&c) || c == 'ー' || c.is_whitespace())) {
+        if !bad.contains(&c) {
+            bad.push(c);
+        }
+    }
+    if bad.is_empty() {
+        return Ok(lyric.to_string());
+    }
+    let invisible = |c: char| c.is_control() || matches!(c, '\u{200b}'..='\u{200f}' | '\u{2060}' | '\u{feff}');
+    let named: Vec<String> = bad.iter().map(|&c| if invisible(c) { format!("U+{:04X}", c as u32) } else { c.to_string() }).collect();
+    Err(format!("the lyric must be hiragana (with ー, small kana and っ), spaces and line breaks; not: {}", named.join(" ")))
 }
 
 fn job_status(job: &Job) -> serde_json::Value {

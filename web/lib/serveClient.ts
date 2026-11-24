@@ -35,6 +35,8 @@ export interface JobRequest {
   name: string;
   /** Also estimate bar 1 from the music (opt-in; needs separation). */
   barOne?: boolean;
+  /** The song's lyric, one sung line per line (lyrics-first 03); the server keeps it with the job. */
+  lyric?: string;
 }
 
 export class ServeError extends Error {
@@ -107,6 +109,7 @@ export function parseJobStatus(v: unknown): JobStatus {
 export function jobQuery(r: JobRequest, upload?: string): string {
   const q = new URLSearchParams({ bpm: String(r.bpm), grid: String(r.grid), separation: r.separation, engine: r.engine, name: r.name });
   if (r.barOne) q.set("bar_one", "1");
+  if (r.lyric !== undefined) q.set("lyric", r.lyric);
   if (upload !== undefined) q.set("upload", upload);
   return `/api/jobs?${q.toString()}`;
 }

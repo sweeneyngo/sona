@@ -26,6 +26,11 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
 - 2026-11-24 (user, after 07): **hiragana only** (no kanji reader: 11 is wontfix for now); English words
   in a Japanese song are written as the **English word on its first note, then `+`** (12); **Japanese only
   for now** (13 deferred).
+- 2026-11-24 (03): the start screen asks for the lyric beside the BPM (hiragana, ー, small kana, っ;
+  anything else named, never converted); Transcribe needs it, the fallback is shown off until 06. It goes
+  with the job (`lyric=`, kept as `job.lyric`), the notes take it in order until 04, and sessions and
+  re-transcription keep it. [ADR-0035](../../docs/adr/0035-lyrics-are-required.md),
+  [03](issues/03-lyric-on-start-screen.md)
 
 ## Fog
 

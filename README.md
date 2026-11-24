@@ -36,12 +36,16 @@ scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separa
 ```
 
 Drop a song on the page and type its BPM (decimals are fine). If you don't know it, click the detected
-tempo, or its **½×**, beside the field. **Transcribe** does the rest. A 25 s clip takes about 80 s on a
+tempo, or its **½×**, beside the field. Paste the song's **lyric** below it, in hiragana, one sung line per
+line (ー, small kana and っ are fine; katakana, kanji and romaji are named and refused, not converted).
+Transcribing needs the lyric for now: "Transcribe the lyric for me" is coming
+([ADR-0035](docs/adr/0035-lyrics-are-required.md)). The notes take it a mora each, in order, and
+**Edit → Lyrics…** keeps it. **Transcribe** does the rest. A 25 s clip takes about 80 s on a
 laptop CPU. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
 **MIDI**. Got the BPM wrong? Fix it in the **♩** popover (type it, or ½×/2×, or change the grid) and
 click **Re-transcribe at N BPM**: the server keeps the separated stems of recent songs, so a second run
 skips separation and takes only the transcription time, and the song isn't sent again (the app names it
-by its SHA-256). The new notes replace yours as one step: **Undo** brings your edited notes back. Dropping
+by its SHA-256). It sends the same lyric. The new notes replace yours as one step: **Undo** brings your edited notes back. Dropping
 a song the server already has starts the same way, without the upload
 ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md), [ADR-0032](docs/adr/0032-retranscribe-by-upload-hash.md)).
 
@@ -127,7 +131,7 @@ The app picks the best engine the server has, so nothing changes on the page.
   **File → Open files** loads an annotation from `sona transcribe` and its stem.
 
 **Lyrics and UTAU/OpenUtau export** ([ADR-0018](docs/adr/0018-scope-utau-authoring.md)):
-- **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces.
+- **Paste lyrics.** **Edit → Lyrics…** takes a whole text and fills notes in time order, one mora per note for kana: きゃ is one mora, and ー, っ and ん are their own. Romaji and English split on spaces. For a transcribed song it holds the lyric you gave on the start screen.
 - **Type lyrics.** Select a note and press **L** to type its lyric. Enter or Tab saves it and moves to the next note.
 - **Export.** **Export → UST** (UTAU; Shift-JIS, or UTF-8 when a lyric needs it), **Export → USTX** (OpenUtau) and **Export → MIDI** are written from one sequence, so every note lands on the same tick in all three, with its lyric (MIDI carries it as a lyric event, UTF-8, and a 4/4 time signature). A note without a lyric sings あ.
 - **Grid alignment.** Tick 0 of every export is a bar line of the editor. By default that is the first grid line of the stem, so the vocal starts up to one grid cell earlier than the stem, as before. Once you choose bar 1 (or drag the ruler), tick 0 is the first bar line of the stem (or the bar before it, when a pickup is sung before it), and OpenUtau's beats and bars fall on the editor's. The status line says where tick 0 is in the stem.
@@ -217,6 +221,12 @@ stem-cache entry for that hash and separation keeps the upload beside its stems.
 `separation=none`, or `--keep-stems 0`) is a 404, a server still reading its separators' versions a 409;
 the app then sends the file. The hash must be 64 lowercase hex digits (else 400), and the Host and Origin
 checks apply as to any job ([ADR-0032](docs/adr/0032-retranscribe-by-upload-hash.md)).
+
+`POST /api/jobs?…&lyric=<text>` sends the song's lyric with the job (UTF-8, percent-encoded, line breaks
+kept). It must be hiragana, ー, small kana and っ, with spaces and line breaks, up to 6000 characters;
+anything else is a 400 naming the characters. The job keeps it as `job.lyric` in its record and in the
+annotation's provenance. It is optional, so scripts and older clients work as before; the app always
+sends one ([ADR-0035](docs/adr/0035-lyrics-are-required.md)).
 
 **GAME** (openvpi's singing-transcription model; setup above) gives better notes. **GAME plus the
 learned cell stage** is the best measured (`--cell-model DIR --vocals VOCALS.wav`, or
@@ -366,7 +376,7 @@ check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md).
 - the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
 - the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
   start screen;
-- the twelve editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The three that need
+- the twelve editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The four that need
   `sona serve` run locally.
 
 ```

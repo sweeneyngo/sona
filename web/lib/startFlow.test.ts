@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { hintBpm, parseBpm, phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./startFlow";
 
 const run = (events: StartEvent[], from: StartState = { kind: "idle", error: null }) => events.reduce(startStep, from);
+const LYRIC = "あめが ふる\nかぜが ふく";
 
 describe("start flow", () => {
   it("asks for the BPM: the estimate is a hint that fills the field only when picked", () => {
     const s = run([
-      { type: "choose", song: 1, name: "a.mp3" },
+      { type: "choose", song: 1, name: "a.mp3" }, { type: "set-lyric", text: LYRIC },
       { type: "tempo", song: 1, bpm: 246.13 },
     ]);
     expect(s).toMatchObject({ kind: "ready", bpm: null, detected: 246.1 });
@@ -22,7 +23,7 @@ describe("start flow", () => {
 
   it("takes a typed decimal BPM before the estimate arrives, and keeps it when the estimate comes", () => {
     const s = run([
-      { type: "choose", song: 1, name: "a.mp3" },
+      { type: "choose", song: 1, name: "a.mp3" }, { type: "set-lyric", text: LYRIC },
       { type: "set-bpm", bpm: parseBpm("123,45") },
       { type: "transcribe", attempt: 1 },
     ]);
@@ -51,17 +52,17 @@ describe("start flow", () => {
 
   it("ignores a tempo answer for a song that was replaced while it was being detected", () => {
     const s = run([
-      { type: "choose", song: 1, name: "a.mp3" },
+      { type: "choose", song: 1, name: "a.mp3" }, { type: "set-lyric", text: LYRIC },
       { type: "set-bpm", bpm: 128 },
-      { type: "choose", song: 2, name: "b.mp3" },
+      { type: "choose", song: 2, name: "b.mp3" }, { type: "set-lyric", text: LYRIC },
       { type: "tempo", song: 1, bpm: 200 },
     ]);
-    expect(s).toEqual({ kind: "ready", song: 2, name: "b.mp3", bpm: null, detected: "pending", hash: null, file: true, error: null });
+    expect(s).toEqual({ kind: "ready", song: 2, name: "b.mp3", bpm: null, lyric: LYRIC, detected: "pending", hash: null, file: true, error: null });
     expect(run([{ type: "tempo", song: 2, bpm: 150 }], s)).toMatchObject({ kind: "ready", name: "b.mp3", bpm: null, detected: 150 });
   });
 
   it("has nothing to pick when no beat was found, and refuses to start without a usable BPM", () => {
-    const s = run([{ type: "choose", song: 1, name: "a.wav" }, { type: "tempo", song: 1, bpm: null }, { type: "use-hint", multiple: 1 }, { type: "transcribe", attempt: 1 }]);
+    const s = run([{ type: "choose", song: 1, name: "a.wav" }, { type: "set-lyric", text: LYRIC }, { type: "tempo", song: 1, bpm: null }, { type: "use-hint", multiple: 1 }, { type: "transcribe", attempt: 1 }]);
     expect(s).toMatchObject({ kind: "ready", bpm: null, detected: null });
     expect((s as { error: string }).error).toMatch(/BPM/);
     expect(run([{ type: "set-bpm", bpm: 900 }, { type: "transcribe", attempt: 1 }], s).kind).toBe("ready");
@@ -71,8 +72,8 @@ describe("start flow", () => {
 
   it("shows why the tempo couldn't be estimated, for the song on screen only, and still takes a typed BPM", () => {
     const s = run([
-      { type: "choose", song: 1, name: "a.mp3" },
-      { type: "choose", song: 2, name: "b.mp3" },
+      { type: "choose", song: 1, name: "a.mp3" }, { type: "set-lyric", text: LYRIC },
+      { type: "choose", song: 2, name: "b.mp3" }, { type: "set-lyric", text: LYRIC },
       { type: "tempo-failed", song: 1, message: "about a.mp3" },
     ]);
     expect(s).toMatchObject({ kind: "ready", song: 2, detected: "pending" });
@@ -83,23 +84,23 @@ describe("start flow", () => {
   });
 
   it("keeps one job: a new song can't be dropped while one runs, and stale progress is ignored", () => {
-    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 180 }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
-    expect(run([{ type: "choose", song: 2, name: "b" }], s)).toBe(s);
+    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "set-bpm", bpm: 180 }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
+    expect(run([{ type: "choose", song: 2, name: "b" }, { type: "set-lyric", text: LYRIC }], s)).toBe(s);
     expect(run([{ type: "set-bpm", bpm: 90 }], s)).toBe(s);
     expect(run([{ type: "progress", job: "old", phase: "done", elapsedS: 1, log: [], error: null }], s)).toBe(s);
     expect(run([{ type: "results-loaded", job: "old" }], s)).toBe(s);
   });
 
   it("comes back to the song, BPM and hint kept, after a failure or a cancel", () => {
-    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "tempo", song: 1, bpm: 180 }, { type: "set-bpm", bpm: 90 }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
+    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "tempo", song: 1, bpm: 180 }, { type: "set-bpm", bpm: 90 }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
     expect(run([{ type: "progress", job: "j1", phase: "failed", elapsedS: 9, log: [], error: "demucs crashed" }], s)).toMatchObject({ kind: "ready", bpm: 90, detected: 180, error: "It failed: demucs crashed." });
     expect(run([{ type: "cancel" }], s)).toMatchObject({ kind: "ready", bpm: 90, detected: 180, error: "Cancelled." });
-    const before = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 180 }, { type: "transcribe", attempt: 1 }]);
+    const before = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "set-bpm", bpm: 180 }, { type: "transcribe", attempt: 1 }]);
     expect(run([{ type: "failed-to-submit", attempt: 1, message: "server gone" }], before)).toMatchObject({ kind: "ready", bpm: 180, error: "server gone" });
   });
 
   it("never adopts the job of an attempt that was cancelled during its upload", () => {
-    const ready = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 180 }]);
+    const ready = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "set-bpm", bpm: 180 }]);
     const second = run([{ type: "transcribe", attempt: 1 }, { type: "cancel" }, { type: "transcribe", attempt: 2 }], ready);
     expect(run([{ type: "submitted", attempt: 1, job: "cancelled-one" }], second)).toMatchObject({ kind: "running", attempt: 2, job: null });
     expect(run([{ type: "submitted", attempt: 2, job: "mine" }], second)).toMatchObject({ kind: "running", job: "mine" });
@@ -107,7 +108,7 @@ describe("start flow", () => {
   });
 
   it("names a song the server may have by its hash, and sends the file when the server hasn't got it", () => {
-    const ready = run([{ type: "choose", song: 1, name: "a.mp3" }, { type: "set-bpm", bpm: 120 }]);
+    const ready = run([{ type: "choose", song: 1, name: "a.mp3" }, { type: "set-lyric", text: LYRIC }, { type: "set-bpm", bpm: 120 }]);
     expect(run([{ type: "transcribe", attempt: 1 }], ready)).toMatchObject({ kind: "running", sending: "upload", hash: null });
     const hashed = run([{ type: "hashed", song: 1, sha256: "a".repeat(64) }], ready);
     const going = run([{ type: "transcribe", attempt: 1 }], hashed);
@@ -120,28 +121,56 @@ describe("start flow", () => {
   });
 
   it("never takes another song's hash", () => {
-    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "choose", song: 2, name: "b" }, { type: "hashed", song: 1, sha256: "1".repeat(64) }]);
+    const s = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "choose", song: 2, name: "b" }, { type: "set-lyric", text: LYRIC }, { type: "hashed", song: 1, sha256: "1".repeat(64) }]);
     expect(s).toMatchObject({ song: 2, hash: null });
     const two = run([{ type: "hashed", song: 2, sha256: "2".repeat(64) }, { type: "set-bpm", bpm: 90 }, { type: "transcribe", attempt: 1 }], s);
     expect(two).toMatchObject({ song: 2, sending: "hash", hash: "2".repeat(64) });
-    expect(run([{ type: "cancel" }, { type: "choose", song: 3, name: "c" }], two)).toMatchObject({ song: 3, hash: null, file: true });
+    expect(run([{ type: "cancel" }, { type: "choose", song: 3, name: "c" }, { type: "set-lyric", text: LYRIC }], two)).toMatchObject({ song: 3, hash: null, file: true });
   });
 
   it("re-transcribes the editor's song by its hash, and without the file says how to send it again", () => {
     const loaded: StartState = { kind: "loaded" };
-    const again = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 61.5, hash: "c".repeat(64), file: false }], loaded);
+    const again = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 61.5, hash: "c".repeat(64), file: false, lyric: LYRIC }], loaded);
     expect(again).toMatchObject({ kind: "running", song: 7, bpm: 61.5, sending: "hash", hash: "c".repeat(64), detected: "unasked", job: null });
     const gone = run([{ type: "hash-refused", attempt: 1 }], again);
     expect(gone).toMatchObject({ kind: "ready", song: 7, bpm: 61.5, file: false });
     expect((gone as { error: string }).error).toMatch(/drop it here again/);
     expect(run([{ type: "transcribe", attempt: 2 }], gone)).toMatchObject({ kind: "running", sending: "hash" });
-    const withFile = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 61.5, hash: "c".repeat(64), file: true }, { type: "hash-refused", attempt: 1 }], loaded);
+    const withFile = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 61.5, hash: "c".repeat(64), file: true, lyric: LYRIC }, { type: "hash-refused", attempt: 1 }], loaded);
     expect(withFile).toMatchObject({ kind: "running", sending: "upload" });
-    expect(run([{ type: "retranscribe", attempt: 1, song: 7, name: "a", bpm: 900, hash: "c".repeat(64), file: false }], loaded)).toBe(loaded);
-    const busy = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 90 }, { type: "transcribe", attempt: 1 }]);
-    expect(run([{ type: "retranscribe", attempt: 2, song: 7, name: "a", bpm: 60, hash: "c".repeat(64), file: false }], busy)).toBe(busy);
-    const noWay: StartState = { kind: "ready", song: 7, name: "a", bpm: 90, detected: "unasked", hash: null, file: false, error: null };
+    expect(run([{ type: "retranscribe", attempt: 1, song: 7, name: "a", bpm: 900, hash: "c".repeat(64), file: false, lyric: LYRIC }], loaded)).toBe(loaded);
+    const busy = run([{ type: "choose", song: 1, name: "a" }, { type: "set-lyric", text: LYRIC }, { type: "set-bpm", bpm: 90 }, { type: "transcribe", attempt: 1 }]);
+    expect(run([{ type: "retranscribe", attempt: 2, song: 7, name: "a", bpm: 60, hash: "c".repeat(64), file: false, lyric: LYRIC }], busy)).toBe(busy);
+    const noWay: StartState = { kind: "ready", song: 7, name: "a", bpm: 90, lyric: LYRIC, detected: "unasked", hash: null, file: false, error: null };
     expect(run([{ type: "transcribe", attempt: 1 }], noWay)).toMatchObject({ kind: "ready", error: expect.stringMatching(/drop it here again/) });
+  });
+
+  it("asks for the lyric beside the BPM: Transcribe needs one, in hiragana, and names what it can't take", () => {
+    const ready = run([{ type: "choose", song: 1, name: "a.mp3" }, { type: "set-bpm", bpm: 120 }]);
+    expect(ready).toMatchObject({ kind: "ready", lyric: "" });
+    const none = run([{ type: "transcribe", attempt: 1 }], ready);
+    expect(none).toMatchObject({ kind: "ready", error: "Paste the song's lyric in hiragana, one sung line per line." });
+    const katakana = run([{ type: "set-lyric", text: "あめが ふる\nカゼが ふく" }, { type: "transcribe", attempt: 1 }], none);
+    expect(katakana).toMatchObject({ kind: "ready", lyric: "あめが ふる\nカゼが ふく", error: "Hiragana only for now. Line 2: カ ゼ" });
+    const going = run([{ type: "set-lyric", text: "あめが ふる\nかぜが ふく\n" }, { type: "transcribe", attempt: 1 }], katakana);
+    expect(going).toMatchObject({ kind: "running", bpm: 120, lyric: "あめが ふる\nかぜが ふく" });
+  });
+
+  it("keeps the lyric after a cancel or a failure, and a new song starts without one", () => {
+    const going = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 90 }, { type: "set-lyric", text: LYRIC }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
+    expect(run([{ type: "cancel" }], going)).toMatchObject({ kind: "ready", lyric: LYRIC });
+    expect(run([{ type: "progress", job: "j1", phase: "failed", elapsedS: 1, log: [], error: "x" }], going)).toMatchObject({ kind: "ready", lyric: LYRIC });
+    expect(run([{ type: "cancel" }, { type: "choose", song: 2, name: "b" }], going)).toMatchObject({ kind: "ready", song: 2, lyric: "" });
+    expect(run([{ type: "set-lyric", text: "ほか" }], going)).toBe(going);
+  });
+
+  it("re-transcribes with the editor's lyric, and asks for one when the notes were transcribed without it", () => {
+    const loaded: StartState = { kind: "loaded" };
+    const again = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 60, hash: "c".repeat(64), file: false, lyric: LYRIC }], loaded);
+    expect(again).toMatchObject({ kind: "running", song: 7, lyric: LYRIC, sending: "hash" });
+    const old = run([{ type: "retranscribe", attempt: 1, song: 7, name: "a.mp3", bpm: 60, hash: "c".repeat(64), file: false, lyric: null }], loaded);
+    expect(old).toMatchObject({ kind: "ready", song: 7, bpm: 60, hash: "c".repeat(64), lyric: "", error: "Paste the song's lyric in hiragana, one sung line per line." });
+    expect(run([{ type: "set-lyric", text: LYRIC }, { type: "transcribe", attempt: 2 }], old)).toMatchObject({ kind: "running", song: 7, sending: "hash", lyric: LYRIC });
   });
 
   it("stays put without sona serve, and recovers when it appears", () => {
@@ -166,6 +195,9 @@ describe("start flow", () => {
       { type: "set-bpm", bpm: 140 },
       { type: "set-bpm", bpm: 97.25 },
       { type: "set-bpm", bpm: null },
+      { type: "set-lyric", text: LYRIC },
+      { type: "set-lyric", text: "カゼ" },
+      { type: "set-lyric", text: "" },
       { type: "use-hint", multiple: 1 },
       { type: "use-hint", multiple: 0.5 },
       { type: "transcribe", attempt: 1 },
@@ -178,9 +210,10 @@ describe("start flow", () => {
       { type: "start-over" },
       { type: "hashed", song: 1, sha256: hashOf(1) },
       { type: "hashed", song: 2, sha256: hashOf(2) },
-      { type: "retranscribe", attempt: 3, song: 3, name: "c", bpm: 150, hash: hashOf(3), file: false },
-      { type: "retranscribe", attempt: 4, song: 1, name: "a", bpm: 75, hash: hashOf(1), file: true },
-      { type: "retranscribe", attempt: 5, song: 3, name: "c", bpm: 0, hash: hashOf(3), file: false },
+      { type: "retranscribe", attempt: 3, song: 3, name: "c", bpm: 150, hash: hashOf(3), file: false, lyric: LYRIC },
+      { type: "retranscribe", attempt: 4, song: 1, name: "a", bpm: 75, hash: hashOf(1), file: true, lyric: LYRIC },
+      { type: "retranscribe", attempt: 5, song: 3, name: "c", bpm: 0, hash: hashOf(3), file: false, lyric: LYRIC },
+      { type: "retranscribe", attempt: 6, song: 2, name: "b", bpm: 150, hash: hashOf(2), file: false, lyric: null },
       { type: "hash-refused", attempt: 1 },
       { type: "hash-refused", attempt: 3 },
       { type: "hash-refused", attempt: 4 },
@@ -195,11 +228,12 @@ describe("start flow", () => {
         const e = events[Math.floor(rnd() * events.length)];
         s = startStep(s, e);
         if (s.kind === "running") expect(usableBpm(s.bpm)).toBe(true);
+        if (s.kind === "running") expect(s.lyric).toBe(LYRIC);
         if (s.kind === "running" && prev.kind === "running") expect(s.song).toBe(prev.song);
         if ((s.kind === "ready" || s.kind === "running") && typeof s.detected === "number") expect(s.detected).toBe(estimateOf(s.song));
         if ((s.kind === "ready" || s.kind === "running") && typeof s.detected === "object" && s.detected !== null) expect(s.detected.error).toBe(messageOf(s.song));
         if ((e.type === "tempo" || e.type === "tempo-failed") && (s.kind === "ready" || s.kind === "running")) expect(s.bpm).toBe((prev as { bpm: number | null }).bpm);
-        if (e.type === "choose" && s.kind === "ready") expect([s.bpm, s.hash, s.file]).toEqual([null, null, true]);
+        if (e.type === "choose" && s.kind === "ready") expect([s.bpm, s.hash, s.file, s.lyric]).toEqual([null, null, true, ""]);
         if ((s.kind === "ready" || s.kind === "running") && s.hash !== null) expect(s.hash).toBe(hashOf(s.song));
         if (s.kind === "running" && s.sending === "hash") expect(s.hash).toBe(hashOf(s.song));
         if (s.kind === "running" && s.sending === "upload") expect(s.file).toBe(true);

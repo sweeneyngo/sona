@@ -653,3 +653,54 @@ fn without_a_stem_cache_every_hash_is_refused() {
     assert_eq!(status, 404, "{body}");
     assert!(body["error"].as_str().unwrap().contains("--keep-stems 0"), "{body}");
 }
+
+/// `s` as a query value: every byte but the unreserved ones percent-encoded, as a browser's URLSearchParams does.
+fn query_value(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+const LYRIC: &str = "あめが ふる\nかぜが ふく ー っ";
+
+#[test]
+fn the_lyric_travels_with_the_job_and_comes_back_with_its_notes() {
+    let srv = start("lyric", "");
+    let song = song_wav();
+    let id = submit(srv.port, &format!("bpm=120&separation=lead&name=song.wav&lyric={}", query_value(LYRIC)), &song);
+    assert_eq!(wait_final(srv.port, &id)["phase"], "done");
+    assert_eq!(annotation(srv.port, &id)["provenance"]["job"]["lyric"], LYRIC, "the annotation carries the lyric, line breaks and all");
+    let (status, record) = json(srv.port, "GET", &format!("/api/jobs/{id}/provenance"), b"");
+    assert_eq!((status, &record["job"]["lyric"]), (200, &serde_json::json!(LYRIC)), "the job's record keeps it");
+
+    let (status, job) = json(srv.port, "POST", &format!("/api/jobs?bpm=60&separation=lead&upload={}&name=song.wav&lyric={}", sha256_hex(&song), query_value(LYRIC)), b"");
+    assert_eq!(status, 201, "{job}");
+    let again = job["id"].as_str().unwrap();
+    assert_eq!(wait_final(srv.port, again)["phase"], "done");
+    assert_eq!(annotation(srv.port, again)["provenance"]["job"]["lyric"], LYRIC, "a job named by hash keeps its lyric too");
+
+    let plain = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &plain)["phase"], "done", "a job without a lyric runs as before");
+    assert!(annotation(srv.port, &plain)["provenance"]["job"].get("lyric").is_none());
+
+    let long = "あいうえお\n".repeat(1000);
+    let id = submit(srv.port, &format!("bpm=120&separation=none&name=song.wav&lyric={}", query_value(&long)), &song);
+    assert_eq!(wait_final(srv.port, &id)["phase"], "done", "a song's worth of lyric fits in the request");
+}
+
+#[test]
+fn a_lyric_sona_cannot_take_is_refused_naming_its_characters() {
+    let srv = start("badlyric", "");
+    for (lyric, named) in [("あめが\nカゼが", "カ ゼ"), ("そら 空", "空"), ("sora", "s o r a"), ("あめ、", "、")] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=none&name=song.wav&lyric={}", query_value(lyric)), &song_wav());
+        assert_eq!(status, 400, "{lyric:?}: {body}");
+        let error = body["error"].as_str().unwrap();
+        assert!(error.contains("hiragana") && error.ends_with(named), "{lyric:?}: {error}");
+    }
+    for lyric in ["", " \n "] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=none&name=song.wav&lyric={}", query_value(lyric)), &song_wav());
+        assert_eq!(status, 400, "a blank lyric: {body}");
+    }
+    let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=none&name=song.wav&lyric={}", query_value(&"あ".repeat(6001))), &song_wav());
+    assert_eq!(status, 400, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("6000"), "{body}");
+    assert_eq!(calls(&srv, "demucs"), 0);
+}

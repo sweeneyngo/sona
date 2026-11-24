@@ -85,6 +85,8 @@ pub struct JobSpec {
     pub bar_one: bool,
     /// The upload's SHA-256 when the job named it instead of sending it (ADR-0032).
     pub upload: Option<String>,
+    /// The song's lyric, kept in the job's record (lyrics-first 03).
+    pub lyric: Option<String>,
 }
 
 /// What a job runs on: the audio sent with it, or the upload a stem-cache entry kept (ADR-0032).
@@ -480,6 +482,7 @@ fn job_record(job: &Job, tools: &Tools) -> sona_core::JobRecord {
         models,
         separation: Some(job.spec.separation.label().into()),
         stems: lock(&job.stems).clone(),
+        lyric: job.spec.lyric.clone(),
     }
 }
 

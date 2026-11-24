@@ -38,7 +38,7 @@ const caps = (over: Partial<Capabilities> = {}): Capabilities => ({
 describe("re-transcribing the editor's song", () => {
   it("reads the song's hash and the job's settings from the notes' provenance", () => {
     const t = transcribedFrom(fromServe({ bpm: "246", grid: "16", engine: "game+cells", bar_one: "mix" }, { separation: "lead" }));
-    expect(t).toEqual({ hash: sha("c"), name: "song.mp3", bpm: 246, grid: 16, separation: "lead", engine: "cells", barOne: true });
+    expect(t).toEqual({ hash: sha("c"), name: "song.mp3", bpm: 246, grid: 16, separation: "lead", engine: "cells", barOne: true, lyric: null });
     expect(transcribedFrom(fromServe({ bpm: "120", grid: "none", engine: "pyin" }))).toMatchObject({ grid: null, separation: null, engine: "pyin", barOne: false });
   });
 
@@ -55,7 +55,7 @@ describe("re-transcribing the editor's song", () => {
   });
 
   it("offers a job only once the tempo or the job grid differs from the transcription's", () => {
-    const t: Transcribed = { hash: sha("c"), name: "song.mp3", bpm: 246, grid: 16, separation: "lead", engine: "cells", barOne: true };
+    const t: Transcribed = { hash: sha("c"), name: "song.mp3", bpm: 246, grid: 16, separation: "lead", engine: "cells", barOne: true, lyric: null };
     expect(retranscribeJob(t, 246, 16, caps())).toBeNull();
     expect(retranscribeJob(t, 246.02, 16, caps())).toBeNull();
     expect(retranscribeJob(t, 246, 8, caps())).toBeNull();
@@ -67,13 +67,21 @@ describe("re-transcribing the editor's song", () => {
   });
 
   it("keeps the original job's separation and engine while the server offers them", () => {
-    const t: Transcribed = { hash: sha("c"), name: "a.wav", bpm: 120, grid: 16, separation: "lead", engine: "cells", barOne: false };
+    const t: Transcribed = { hash: sha("c"), name: "a.wav", bpm: 120, grid: 16, separation: "lead", engine: "cells", barOne: false, lyric: null };
     const noCells = caps({ engines: { pyin: true, game: true, cells: false } });
     expect(retranscribeJob(t, 60, 16, noCells)).toMatchObject({ separation: "lead", engine: "game" });
     const noLead = caps({ separation: { none: true, vocals: true, lead: false } });
     expect(retranscribeJob(t, 60, 16, noLead)).toMatchObject({ separation: "vocals", engine: "game" });
     expect(retranscribeJob({ ...t, separation: null, engine: null }, 60, 16, caps())).toMatchObject({ separation: "lead", engine: "game" });
     expect(retranscribeJob({ ...t, separation: "none", barOne: true }, 60, 16, caps())).not.toHaveProperty("barOne");
+  });
+
+  it("keeps the lyric the notes were transcribed with, line breaks and all, for the next job", () => {
+    const lyric = "あめが ふる\nかぜが ふく";
+    const t = transcribedFrom(fromServe({ bpm: "120", grid: "16", engine: "game" }, { separation: "lead", lyric }));
+    expect(t?.lyric).toBe(lyric);
+    expect(retranscribeJob(t!, 60, 16, caps())).toMatchObject({ bpm: 60, lyric });
+    expect(retranscribeJob({ ...t!, lyric: null }, 60, 16, caps())).not.toHaveProperty("lyric");
   });
 
   it("labels the offer with the tempo it will use", () => {
