@@ -269,6 +269,39 @@ pub fn cells_to_notes(classes: &[usize], cands: &[Candidates], sources: &[Source
     out
 }
 
+/// Logistic weights of [`note_confidence`]: intercept, mean class probability, ln(cells). Fitted on the dev
+/// songs' shipped notes against "the note is joined or chopped" (utau-edit-cost 13, ADR-0033).
+const CONFIDENCE_WEIGHTS: [f64; 3] = [2.273766350383677, -4.442041607198855, 0.581798590291169];
+
+/// Each stage note's confidence: the chance it needs neither a split nor a merge in OpenUtau, from the
+/// model's mean top class probability over the note's cells and the note's length in cells. Long notes are
+/// where hidden moras sit and unsure cells are where pieces get cut, so both lower it. `logits` are the
+/// model's, cells × 6 from `k0`; `notes` are [`cells_to_notes`]'s on the same grid.
+pub fn note_confidence(logits: &[f32], k0: i64, spacing: f64, anchor: f64, notes: &[(f64, f64, i32)]) -> Vec<f32> {
+    let top_prob: Vec<f32> = logits
+        .chunks(6)
+        .map(|row| {
+            let top = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let e: Vec<f32> = row.iter().map(|v| (v - top).exp()).collect();
+            let z: f32 = e.iter().sum();
+            e.iter().map(|v| v / z).fold(0.0, f32::max)
+        })
+        .collect();
+    let cell = |t: f64| ((t - anchor) / spacing).round() as i64 - k0;
+    notes
+        .iter()
+        .map(|&(on, off, _)| {
+            let (start, end) = (cell(on), cell(off));
+            let cells = (end - start).max(1);
+            let (c0, c1) = (start.max(0) as usize, (end.max(0) as usize).min(top_prob.len()));
+            let mean = top_prob.get(c0..c1).filter(|p| !p.is_empty()).map_or(0.0, |p| p.iter().map(|&v| f64::from(v)).sum::<f64>() / p.len() as f64);
+            let [b0, b_prob, b_len] = CONFIDENCE_WEIGHTS;
+            let logit = b0 + b_prob * mean + b_len * (cells as f64).ln();
+            (1.0 / (1.0 + logit.exp())) as f32
+        })
+        .collect()
+}
+
 /// Round to half precision and back: the prototype cached encoder features as float16.
 pub fn to_f16_and_back(v: f32) -> f32 {
     half::f16::from_f32(v).to_f32()

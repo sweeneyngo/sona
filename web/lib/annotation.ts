@@ -42,7 +42,7 @@ export interface Note {
   offset_s: number;
   /** MIDI pitch number (0–127); 69 = A4 = 440 Hz. */
   midi_pitch: number;
-  /** Combined confidence scalar in `0..=1` (weakest-link soft-min of sub-scores). */
+  /** Combined confidence scalar in `0..=1` (weakest-link soft-min of sub-scores; the learned cell stage's own estimate for its notes, ADR-0033). */
   confidence: number;
   /** The per-dimension scores the scalar is composed from. */
   sub_scores: SubScores;

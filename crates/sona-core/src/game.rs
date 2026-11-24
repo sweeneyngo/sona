@@ -23,6 +23,8 @@ use std::sync::Mutex;
 use ort::session::Session;
 use ort::value::Tensor;
 
+use crate::annotation::{EnergyFrame, Note};
+use crate::confidence::ConfidenceScorer;
 use crate::segment::{NoteSegment, OffsetInfo, OffsetKind};
 
 /// GAME's own audio rate and frame step.
@@ -137,8 +139,16 @@ impl StageRuns {
     }
 }
 
+/// The cell stage's notes on the grid (onset, offset, MIDI) and each note's confidence
+/// ([`note_confidence`](crate::cellstage::note_confidence)), in the same order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageNotes {
+    pub notes: Vec<(f64, f64, i32)>,
+    pub confidence: Vec<f32>,
+}
+
 /// The learned cell stage: decide every cell from `k0` for `n` cells, from the GAME runs, sona's grid
-/// notes and the vocals' pitch track and energy; the result is notes on the grid (onset, offset, MIDI).
+/// notes and the vocals' pitch track and energy; the result is notes on the grid with their confidence.
 #[allow(clippy::too_many_arguments)]
 pub fn cell_stage_notes(
     model: &CellModel,
@@ -149,8 +159,8 @@ pub fn cell_stage_notes(
     spacing: f64,
     anchor: f64,
     cells: (i64, usize),
-) -> Result<Vec<(f64, f64, i32)>, GameError> {
-    use crate::cellstage::{cell_features, cells_to_notes, choose_class, StageInputs};
+) -> Result<StageNotes, GameError> {
+    use crate::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, StageInputs};
     let inputs = StageInputs {
         spacing,
         anchor,
@@ -169,7 +179,9 @@ pub fn cell_stage_notes(
         return Err(GameError::Ort(format!("the cell model expects {} features per cell, sona built {}", model.width, x.len() / n)));
     }
     let logits = model.logits(&x, n)?;
-    Ok(cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor))
+    let notes = cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor);
+    let confidence = note_confidence(&logits, k0, spacing, anchor, &notes);
+    Ok(StageNotes { notes, confidence })
 }
 
 /// The grid phase sona's grid notes sit on, in `[0, spacing)`: every note starts on a cell boundary. A
@@ -611,6 +623,25 @@ pub fn snap_to_grid(notes: &[GameNote], spacing_s: f64) -> Vec<NoteSegment> {
 pub fn stage_segments(notes: &[(f64, f64, i32)]) -> Vec<NoteSegment> {
     let midi: Vec<(f64, f64, u8)> = notes.iter().filter_map(|&(a, b, p)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p))).collect();
     grid_segments(&midi)
+}
+
+/// The cell stage's notes as annotation notes: timing, pitch and sub-scores as `scorer` gives them for
+/// [`stage_segments`], and the stage's own confidence as the scalar (ADR-0033). A note whose pitch is not a
+/// MIDI number is dropped.
+pub fn stage_annotation_notes(stage: &StageNotes, scorer: &ConfidenceScorer, envelope: &[EnergyFrame]) -> Vec<Note> {
+    let kept: Vec<(f64, f64, u8, f32)> = stage
+        .notes
+        .iter()
+        .zip(&stage.confidence)
+        .filter_map(|(&(a, b, p), &c)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p, c)))
+        .collect();
+    let midi: Vec<(f64, f64, u8)> = kept.iter().map(|&(a, b, p, _)| (a, b, p)).collect();
+    scorer
+        .score_all(&grid_segments(&midi), envelope)
+        .into_iter()
+        .zip(&kept)
+        .map(|(note, &(.., confidence))| Note { confidence: confidence.clamp(0.0, 1.0), ..note })
+        .collect()
 }
 
 /// Grid notes (onset, offset, MIDI) as note segments, each offset marked as the next onset, an energy
