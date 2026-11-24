@@ -38,6 +38,9 @@ a line below.
   9/9 (verified). The music's downbeat is only a Python prototype with no ground truth (weak on 4/9).
   Consequences: 05 becomes "beat from the mix (strong), bar from harmony (weak), opt-in"; the frame
   metric must be re-anchored to the music (ticket 10); holdout4 needs ear-labelled beat/bar 1 to score 05.
+- 2026-11-24, **A01+A02 and A04+A05 merged** (full suite green on the combination: 275 Rust tests, 156
+  web, 5 TLA+ models, clippy, corpus guard). 05's beat 1 now has somewhere to go (ADR-0029's frame); a
+  BPM fix re-runs in seconds on the server (ADR-0030), the app side is audit 10.
 
 ## Fog
 

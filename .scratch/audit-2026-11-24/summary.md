@@ -30,3 +30,15 @@ song as an aligned USTX `wave_part`, worth a look after 02.
 **Measured:** pYIN grid on a 281 s stem: 155 s wall on one core of 16 (pYIN front end dominates; profile
 before acting). Full serve job on a 158 s song: demucs 546 s, UVR 330 s, transcribe 93 s (machine loaded,
 so separation is inflated); job dir 134 MB, never deleted.
+
+## Progress
+
+- 2026-11-24: **A01, A02 resolved** (merged; ADR-0029): one export seam; MIDI on the UST/USTX ticks with
+  lyrics and 4/4; bar lines in the editor; Shift-click the ruler or ♩ → Bar 1 sets beat 1; default exports
+  byte-identical (420 sessions vs c93a284's own output).
+- 2026-11-24: **A03 resolved** (merged; `crates/sona-eval/reports/bar-one.md`).
+- 2026-11-24: **A04 (items 1, 4, 5), A05 resolved** (merged; ADR-0030): stem cache by upload hash
+  (re-run 17–23 s vs 223 s), jobs under `~/.cache/sona/jobs` with keep-20/keep-10 cleanup, panic guard,
+  tool deadlines, Origin check, 48 kHz resampling, separator progress in the UI. Left over → 10, 11, 12.
+- Needs a human in OpenUtau: MIDI import of UTF-8 lyric events and tick 0; a UST with a chosen beat 1
+  lands on an OpenUtau bar line.
