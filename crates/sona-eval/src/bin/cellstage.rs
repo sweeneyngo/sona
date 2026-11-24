@@ -28,6 +28,15 @@
 //! after `sona_core::release::trim_releases` on the vocals' energy envelope (the stage's row shows why it
 //! is not applied there). The default run is unchanged.
 //!
+//! `--lyric-placement` (with `--edit-cost`; lyrics-first 01) adds the lyric placement
+//! (`sona_eval::correction::lyric_placement`) and the edit cost of GAME's lead notes and of the stage when
+//! the lead UST's own moras land on them: pasted in order with no fit (what the app does today), and fitted
+//! by `sona_core::lyric_fit` with the phrases taken from runs of the output's touching notes (07 as ported),
+//! from the UST's phrases, or from the whole song; "rests hold moras" uses `fit_span_moras`. With
+//! `--lyric-lines DIR` too, the phrases also come from a lyric text's lines (and lines and spaces):
+//! `DIR/<id>.json` holds `line_starts` and `space_starts`, the indices of the UST notes that begin one
+//! (`scripts/lyric-placement/align_lines.py`; lyric-derived, keep it out of the repo).
+//!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
@@ -35,13 +44,14 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
-use sona_core::lyric_fit::{fit_phrase, mora_of, CellNote, Mora};
+use sona_core::lyric_fit::{fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, Mora};
 use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
 use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
 use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
+use sona_eval::correction::lyric_placement::{self, lyric_placement, LyricPlacement};
 use sona_eval::correction::EditNote;
 use sona_eval::holdout::authorize;
 use sona_eval::quantize::grid_spacing_seconds;
@@ -51,6 +61,9 @@ use sona_eval::{ust, wav};
 use serde_json::json;
 
 type Notes = Vec<(f64, f64, i32)>;
+
+/// Per landing: its title, and each song's edit cost and lyric placement.
+type LandingRows = Vec<(String, Vec<(String, EditCost)>, Vec<(String, LyricPlacement)>)>;
 
 /// The notes a user gets by pasting each phrase's lyric onto it: phrases are runs of touching notes on
 /// the grid at `anchor`; each takes the moras of `sung` (onset, offset, mora) whose midpoint lies in it.
@@ -74,6 +87,98 @@ fn fit_to_sung_phrases(notes: &Notes, sung: &[(f64, f64, Mora)], spacing: f64, a
         i = j;
     }
     fitted.iter().map(|n| (anchor + n.start as f64 * spacing, anchor + n.end as f64 * spacing, n.pitch)).collect()
+}
+
+/// The lead UST's sung notes in time order: onset, offset, MIDI pitch, lyric.
+type Lyric = (f64, f64, f64, String);
+
+/// Output notes with the index (into the UST's sung notes) of the mora each carries.
+type Placed = Vec<(f64, f64, i32, Option<usize>)>;
+
+/// How the lyric lands on the notes (lyrics-first 01).
+#[derive(Clone, Copy)]
+enum Landing<'a> {
+    /// One mora per note in order, from the first note that ends after the UST starts (the app today).
+    InOrder,
+    /// Runs of touching notes, each fitted with the UST moras whose midpoint lies inside (07 as ported).
+    SonaPhrases,
+    /// Groups of UST notes, each fitted onto the notes whose midpoint lies in its span; `rests`: the span's
+    /// rests may hold moras.
+    Groups { starts: &'a [usize], rests: bool },
+}
+
+/// `notes` on the grid at `anchor` once `sung`'s moras land on them as `how` says.
+fn land_lyric(notes: &Notes, sung: &[Lyric], how: Landing<'_>, spacing: f64, anchor: f64) -> Placed {
+    let cell = |t: f64| ((t - anchor) / spacing).round() as i64;
+    let time = |c: i64| anchor + c as f64 * spacing;
+    let cells: Vec<CellNote> = notes.iter().map(|&(a, b, p)| CellNote { start: cell(a), end: cell(b), pitch: p }).collect();
+    let kinds: Vec<Mora> = sung.iter().map(|(_, _, _, l)| mora_of(l)).collect();
+    let mut placed: Vec<(CellNote, Option<usize>)> = Vec::with_capacity(cells.len());
+    match how {
+        Landing::InOrder => {
+            let first_on = sung.first().map_or(f64::INFINITY, |s| s.0);
+            let mut next = 0;
+            for c in cells {
+                let takes = time(c.end) > first_on + 0.5 * spacing && next < sung.len();
+                placed.push((c, takes.then_some(next)));
+                next += usize::from(takes);
+            }
+        }
+        Landing::SonaPhrases => {
+            let mut mids: Vec<(i64, usize)> = sung.iter().enumerate().map(|(k, &(a, b, _, _))| (cell(a) + cell(b), k)).collect();
+            mids.sort();
+            let mut i = 0;
+            while i < cells.len() {
+                let mut j = i + 1;
+                while j < cells.len() && cells[j].start <= cells[j - 1].end {
+                    j += 1;
+                }
+                let lo = mids.partition_point(|&(m, _)| m < 2 * cells[i].start);
+                let hi = mids.partition_point(|&(m, _)| m < 2 * cells[j - 1].end);
+                let ids: Vec<usize> = mids[lo..hi].iter().map(|&(_, k)| k).collect();
+                let moras: Vec<Mora> = ids.iter().map(|&k| kinds[k]).collect();
+                placed.extend(fit_phrase_moras(&cells[i..j], &moras).into_iter().map(|(n, m)| (n, m.map(|m| ids[m]))));
+                i = j;
+            }
+        }
+        Landing::Groups { starts, rests } => {
+            let mut bounds: Vec<usize> = starts.iter().copied().filter(|&k| 0 < k && k < sung.len()).collect();
+            bounds.extend([0, sung.len()]);
+            bounds.sort_unstable();
+            bounds.dedup();
+            let groups: Vec<(usize, usize)> = bounds.windows(2).map(|w| (w[0], w[1])).collect();
+            let mut members: Vec<Vec<CellNote>> = vec![Vec::new(); groups.len()];
+            for c in cells {
+                let mid = anchor + (c.start + c.end) as f64 / 2.0 * spacing;
+                let k = groups.partition_point(|&(a, _)| sung[a].0 <= mid);
+                match k.checked_sub(1) {
+                    Some(k) if mid < sung[groups[k].1 - 1].1 => members[k].push(c),
+                    _ => placed.push((c, None)),
+                }
+            }
+            for (&(a, b), notes) in groups.iter().zip(&members) {
+                let moras = &kinds[a..b];
+                let fitted = if rests { fit_span_moras(notes, moras, (cell(sung[a].0), cell(sung[b - 1].1))) } else { fit_phrase_moras(notes, moras) };
+                placed.extend(fitted.into_iter().map(|(n, m)| (n, m.map(|m| a + m))));
+            }
+            placed.sort_by_key(|(n, _)| (n.start, n.end));
+        }
+    }
+    placed.into_iter().map(|(n, m)| (time(n.start), time(n.end), n.pitch, m)).collect()
+}
+
+/// The UST notes that begin a phrase: a run of notes touching on the UST's cells (anchor `offset`).
+fn ust_phrase_starts(sung: &[Lyric], spacing: f64, offset: f64) -> Vec<usize> {
+    let cell = |t: f64| ((t - offset) / spacing).round() as i64;
+    let mut starts = Vec::new();
+    let mut prev_end: Option<i64> = None;
+    for (k, &(a, b, _, _)) in sung.iter().enumerate() {
+        if prev_end.is_none_or(|e| cell(a) > e) {
+            starts.push(k);
+        }
+        prev_end = Some(cell(b));
+    }
+    starts
 }
 
 /// `notes` (on the grid at `anchor`) with their one-cell pieces merged where `edges` has no cut.
@@ -262,6 +367,9 @@ fn run() -> Result<(), String> {
     let with_merge = args.iter().any(|a| a == "--merge-unheard-pieces");
     let mut costs: [Vec<(String, EditCost)>; 11] = Default::default();
     let with_trim = args.iter().any(|a| a == "--trim-releases");
+    let with_placement = args.iter().any(|a| a == "--lyric-placement");
+    let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
+    let mut placements: LandingRows = Vec::new();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -317,6 +425,62 @@ fn run() -> Result<(), String> {
                     for (k, ns) in [(3, &lead_only), (4, &stage)] {
                         let fitted = fit_to_sung_phrases(ns, &sung, spacing, anchor);
                         costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&fitted), &grid)));
+                    }
+                }
+                if with_placement {
+                    let mut lyrics: Vec<Lyric> = usts
+                        .lead
+                        .iter()
+                        .flat_map(|u| u.timeline().into_iter().filter(|p| p.kind == BlockKind::Note).map(move |p| (p.start_s + offset, p.end_s + offset, f64::from(p.note_num), u.notes[p.i].lyric.clone())))
+                        .collect();
+                    lyrics.sort_by(|x, y| (x.0, x.1).partial_cmp(&(y.0, y.1)).expect("finite times"));
+                    let truth: Vec<(EditNote, &str)> = lyrics.iter().map(|(a, b, p, l)| (EditNote { onset_s: *a, offset_s: *b, midi_pitch: *p }, l.as_str())).collect();
+                    let phrase_starts = ust_phrase_starts(&lyrics, spacing, offset);
+                    let lines: Option<(Vec<usize>, Vec<usize>)> = match &lyric_lines {
+                        Some(dir) => {
+                            let path = dir.join(format!("{}.json", song.id));
+                            let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| format!("{}: {e}", path.display()))?;
+                            let list = |k: &str| v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_u64().map(|x| x as usize)).collect::<Vec<_>>()).ok_or(format!("{}: no {k}", path.display()));
+                            Some((list("line_starts")?, list("space_starts")?))
+                        }
+                        None => None,
+                    };
+                    let whole = [0usize];
+                    let mut landings: Vec<(&str, Landing<'_>)> = vec![
+                        ("pasted in order, no fit (today)", Landing::InOrder),
+                        ("fitted per run of touching notes (07 as ported)", Landing::SonaPhrases),
+                        ("fitted per UST phrase", Landing::Groups { starts: &phrase_starts, rests: false }),
+                        ("fitted per UST phrase, rests hold moras", Landing::Groups { starts: &phrase_starts, rests: true }),
+                        ("fitted as one phrase", Landing::Groups { starts: &whole, rests: false }),
+                        ("fitted as one phrase, rests hold moras", Landing::Groups { starts: &whole, rests: true }),
+                    ];
+                    let both: Vec<usize>;
+                    if let Some((line_starts, space_starts)) = &lines {
+                        both = line_starts.iter().chain(&phrase_starts).copied().collect();
+                        landings.extend([
+                            ("fitted per lyric line", Landing::Groups { starts: line_starts, rests: false }),
+                            ("fitted per lyric line, rests hold moras", Landing::Groups { starts: line_starts, rests: true }),
+                            ("fitted per lyric line and space", Landing::Groups { starts: space_starts, rests: false }),
+                            ("fitted per lyric line and space, rests hold moras", Landing::Groups { starts: space_starts, rests: true }),
+                            ("fitted per lyric line cut at UST phrases, rests hold moras", Landing::Groups { starts: &both, rests: true }),
+                        ]);
+                    }
+                    for (out, ns) in [("GAME lead + octave rule", &lead_only), ("learned cell stage", &stage)] {
+                        for (how, landing) in &landings {
+                            let title = format!("{out}, lyric {how}");
+                            let landed = land_lyric(ns, &lyrics, *landing, spacing, anchor);
+                            let notes: Notes = landed.iter().map(|&(a, b, p, _)| (a, b, p)).collect();
+                            let sung_notes: Vec<(EditNote, Option<&str>)> = landed.iter().map(|&(a, b, p, m)| (EditNote { onset_s: a, offset_s: b, midi_pitch: f64::from(p) }, m.map(|m| lyrics[m].3.as_str()))).collect();
+                            let row = match placements.iter_mut().find(|(t, _, _)| *t == title) {
+                                Some(row) => row,
+                                None => {
+                                    placements.push((title.clone(), Vec::new(), Vec::new()));
+                                    placements.last_mut().expect("pushed")
+                                }
+                            };
+                            row.1.push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&notes), &grid)));
+                            row.2.push((song.id.clone(), lyric_placement(&truth, &sung_notes, &grid)));
+                        }
                     }
                 }
                 if with_merge {
@@ -377,6 +541,10 @@ fn run() -> Result<(), String> {
         ];
         for (title, rows) in titles.iter().zip(&costs).filter(|(_, rows)| !rows.is_empty()) {
             print!("{}", edit_cost::report(title, rows));
+        }
+        for (title, costs, placed) in &placements {
+            print!("{}", edit_cost::report(title, costs));
+            print!("{}", lyric_placement::report(title, placed));
         }
     }
     Ok(())

@@ -1,6 +1,6 @@
 # 11 — Reading kanji lyrics to hiragana (opt-in, reviewed)
 
-Status: needs-triage
+Status: wontfix (user, 2026-11-24: hiragana only; no kanji reader)
 Type: task
 Blocked by: 08, 10
 

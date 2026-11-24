@@ -1,6 +1,6 @@
 # 13 — Units for languages beyond Japanese (English first)
 
-Status: needs-triage
+Status: deferred (user, 2026-11-24: Japanese only for now)
 Type: task
 Blocked by: 08, 10
 

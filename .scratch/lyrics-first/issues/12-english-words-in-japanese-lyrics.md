@@ -31,3 +31,5 @@ for the user.
 - An e2e driver: paste a mixed lyric, accept the katakana, start.
 
 ## Comments
+
+- 2026-11-24, lead: the user chose the English word on its first note, then `+` (for OpenUtau's EN-to-JA phonemizer), not katakana.
