@@ -41,6 +41,10 @@ a line below.
 - 2026-11-24, **A01+A02 and A04+A05 merged** (full suite green on the combination: 275 Rust tests, 156
   web, 5 TLA+ models, clippy, corpus guard). 05's beat 1 now has somewhere to go (ADR-0029's frame); a
   BPM fix re-runs in seconds on the server (ADR-0030), the app side is audit 10.
+- 2026-11-24, **10 resolved** (merged; verified): `sona-eval-frame` scores against the music too (manifest
+  `music_*` fields, dev only, `unverified-estimate`), and `--clicks` writes click overlays for ear-labelling.
+  Dev, music-anchored: with a typed BPM the frame passes when bar offset is 0, which is **5/9**; sona's bar 1
+  is whole beats off the music on 4/9 (the file doesn't start on the music's bar). That gap is 05's target.
 
 ## Fog
 
