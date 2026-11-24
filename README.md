@@ -282,6 +282,11 @@ The metric is the share of grid cells that match the UST.
   user pasting each phrase's kana onto its notes, fitted by `sona_core::lyric_fit`, cuts GAME lead's cost
   188.7 → 174.9 per minute (−13.9 [−30.2, −3.8]); not a default
   ([report](crates/sona-eval/reports/same-pitch-boundaries.md)).
+- **Chopped wobble and scoop pieces need a second listen** (opt-in, dev only): the pitch track can't tell
+  a one-cell glide from a short note. Merging a one-cell piece where GAME's run on the full vocals has no
+  note edge (`sona_core::unheard_pieces`) cuts GAME lead's cost 188.7 → 186.8 per minute (−1.9 [−3.2,
+  −0.9]); the stage's 180.2 → 176.3. It's small, against a ceiling of −11.3, and not a default
+  ([report](crates/sona-eval/reports/pitch-wobble.md)).
 
 How grid mode got there, on the dev songs:
 

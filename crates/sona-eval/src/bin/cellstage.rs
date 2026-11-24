@@ -21,6 +21,10 @@
 //! would get it: a phrase is a run of touching notes, and its moras are the lead UST's notes sung inside
 //! its span (by midpoint). The default run is unchanged.
 //!
+//! `--merge-unheard-pieces` (opt-in, utau-edit-cost 11) adds the edit cost of GAME's lead notes and of
+//! the stage after `sona_core::unheard_pieces::merge_unheard_pieces`, with GAME's run on the full
+//! vocals as the second listen; with `--fit-phrase-lyrics` too, also merged and then fitted.
+//!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
@@ -30,6 +34,7 @@ use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::lyric_fit::{fit_phrase, mora_of, CellNote, Mora};
 use sona_core::tempo::grid_phase;
+use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
 use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
@@ -65,6 +70,13 @@ fn fit_to_sung_phrases(notes: &Notes, sung: &[(f64, f64, Mora)], spacing: f64, a
         i = j;
     }
     fitted.iter().map(|n| (anchor + n.start as f64 * spacing, anchor + n.end as f64 * spacing, n.pitch)).collect()
+}
+
+/// `notes` (on the grid at `anchor`) with their one-cell pieces merged where `edges` has no cut.
+fn merge_unheard(notes: &Notes, edges: &[i64], spacing: f64, anchor: f64) -> Notes {
+    let cell = |t: f64| ((t - anchor) / spacing).round() as i64;
+    let cells: Vec<CellNote> = notes.iter().map(|&(a, b, p)| CellNote { start: cell(a), end: cell(b), pitch: p }).collect();
+    merge_unheard_pieces(&cells, edges).iter().map(|n| (anchor + n.start as f64 * spacing, anchor + n.end as f64 * spacing, n.pitch)).collect()
 }
 
 fn cells(reference: &Notes, est: &Notes, spacing: f64, anchor: f64) -> (usize, usize) {
@@ -243,7 +255,8 @@ fn run() -> Result<(), String> {
     let mut tot = [(0usize, 0usize); 6];
     let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
     let with_fit = args.iter().any(|a| a == "--fit-phrase-lyrics");
-    let mut costs: [Vec<(String, EditCost)>; 5] = Default::default();
+    let with_merge = args.iter().any(|a| a == "--merge-unheard-pieces");
+    let mut costs: [Vec<(String, EditCost)>; 9] = Default::default();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -290,15 +303,26 @@ fn run() -> Result<(), String> {
             if with_edit_cost && j == 1 {
                 costs[1].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&lead_only), &grid)));
                 costs[2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&stage), &grid)));
+                let sung: Vec<(f64, f64, Mora)> = usts
+                    .lead
+                    .iter()
+                    .flat_map(|u| u.timeline().into_iter().filter(|p| p.kind == BlockKind::Note).map(move |p| (p.start_s + offset, p.end_s + offset, mora_of(&u.notes[p.i].lyric))))
+                    .collect();
                 if with_fit {
-                    let sung: Vec<(f64, f64, Mora)> = usts
-                        .lead
-                        .iter()
-                        .flat_map(|u| u.timeline().into_iter().filter(|p| p.kind == BlockKind::Note).map(move |p| (p.start_s + offset, p.end_s + offset, mora_of(&u.notes[p.i].lyric))))
-                        .collect();
                     for (k, ns) in [(3, &lead_only), (4, &stage)] {
                         let fitted = fit_to_sung_phrases(ns, &sung, spacing, anchor);
                         costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&fitted), &grid)));
+                    }
+                }
+                if with_merge {
+                    let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
+                    for (k, ns) in [(5, &lead_only), (6, &stage)] {
+                        let merged = merge_unheard(ns, &edges, spacing, anchor);
+                        costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&merged), &grid)));
+                        if with_fit {
+                            let fitted = fit_to_sung_phrases(&merged, &sung, spacing, anchor);
+                            costs[k + 2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&fitted), &grid)));
+                        }
                     }
                 }
             }
@@ -333,6 +357,10 @@ fn run() -> Result<(), String> {
             "learned cell stage, onset phase (ships)",
             "GAME lead + octave rule, each phrase's lyric fitted (opt-in)",
             "learned cell stage, each phrase's lyric fitted (opt-in)",
+            "GAME lead + octave rule, unheard pieces merged (opt-in)",
+            "learned cell stage, unheard pieces merged (opt-in)",
+            "GAME lead + octave rule, unheard pieces merged, each phrase's lyric fitted (opt-in)",
+            "learned cell stage, unheard pieces merged, each phrase's lyric fitted (opt-in)",
         ];
         for (title, rows) in titles.iter().zip(&costs).filter(|(_, rows)| !rows.is_empty()) {
             print!("{}", edit_cost::report(title, rows));

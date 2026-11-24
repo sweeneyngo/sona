@@ -86,6 +86,20 @@ a line below.
   random 30%), +4.4 [+1.8, +6.0] over the class prob; holdout3 (diagnosis) +4.4 [+3.4, +5.5]. Only 2% of
   notes fall under the editor's default 0.50 flag; the threshold and the inspector's "why" are open UI
   questions. GAME-only is flat too (length catches 46.9%), unchanged pending a measurement.
+- 2026-11-24, **11 resolved** (`reports/pitch-wobble.md`; verified: Rust port = prototype on 36/36 song rows,
+  default run byte-identical, 5 mutants caught).
+  - Oracle: merging exactly the chopped 1–2 st steps and one-cell heads is worth −11.3 on GAME lead
+    (stage −17.5).
+  - The pitch track can't find them (AUC 0.55–0.65; they are 4% of small-step cuts). The ticket's rules lose
+    (+5.1 and +1.0) and eat true notes.
+  - **A second listen pays a little.** A one-cell piece merges where GAME's run on the full vocals has no
+    edge: −1.9 [−3.2, −0.9] out of fold on GAME lead, −3.9 [−7.8, −0.7] on the stage. It eats 10 true notes
+    against 17 chops fixed.
+  - Caveat: only the second rule grid passes (the first gave +0.3). The spent splits show the same sign
+    (diagnosis).
+  - It adds to 07's fit (stage −4.5 [−7.5, −1.7] on top).
+  - Opt-in `sona_core::unheard_pieces` / `--merge-unheard-pieces`; a default needs holdout4.
+  - The rest of chopped needs a note-level signal, not pitch.
 
 ## Fog
 
