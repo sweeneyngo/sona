@@ -100,6 +100,16 @@ a line below.
   - It adds to 07's fit (stage −4.5 [−7.5, −1.7] on top).
   - Opt-in `sona_core::unheard_pieces` / `--merge-unheard-pieces`; a default needs holdout4.
   - The rest of chopped needs a note-level signal, not pitch.
+- 2026-11-24, **12 resolved** (`reports/single-note-errors.md`; verified: Rust port = prototype on 18/18 song rows,
+  default run byte-identical, 4 mutants caught). Single-note errors are 22% of GAME lead's cost. Largest cause:
+  **the release**: GAME holds a note through the 2/4/6-cell rest the UST writes before the next note. Fixing it
+  is worth −9.5 [−11.5, −7.5], and clean measures go 16.2 → 23.1%; the stage has mostly learned it (−2.0). The
+  vocals' energy predicts it (AUC 0.82); pYIN voicing does not.
+  - Opt-in `sona_core::release::trim_releases` / `--trim-releases`: GAME lead 188.7 → 184.3 (−4.4 [−6.5, −2.5],
+    leave-one-song-out −3.7), clean +2.5. It raises the stage (+0.4, clean −1.1), so it is for GAME notes only.
+  - Starts and the remaining ends are symmetric rounding jitter: no bias, phase or pitch-track rule pays.
+    Octaves are amaten's. Semitone errors sit near the rounding point but the track can't say which way.
+  - Those are doubt signals for 14, not fixes. A default needs holdout4.
 
 ## Fog
 
