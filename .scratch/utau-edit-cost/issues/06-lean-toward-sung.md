@@ -1,8 +1,8 @@
 # 06 — Lean toward a note when unsure
 
-Status: needs-triage
+Status: ready-for-agent
 Type: prototype
-Blocked by: 01, 03
+Blocked by: 01, 03, 07
 
 ## What
 

@@ -61,6 +61,16 @@ a line below.
 - 2026-11-24, **correction (A09):** the learned stage's dev numbers are in-sample. The out-of-sample dev
   baseline is GAME lead + octave, 188.7 cost/min and 16.2% clean measures. Any claim about the shipped stack
   needs holdout4.
+- 2026-11-24, **03 resolved** (merged; verified: dev 180.2/188.7/338.4 reproduced from the new GAME
+  cache in 48 s, a trailing-bytes cache mutant caught). `reports/edit-cost-baseline.md`. The learned stage
+  is in-sample on dev, holdout and holdout2, **out of sample only on holdout3**: there it costs 156.3/min vs
+  GAME lead's 161.1, inside the noise. **Joined is the largest class on every split** (dev 51.5%, spent
+  splits 32–40%), caused by one note per mora: hidden notes are mostly same-pitch vowel or ん moras that no
+  source proposes. Oracles (GAME lead, dev · holdout · holdout2 · holdout3): joined 52/40/37/32%, chopped
+  14/24/14/13%, single-note 22/19/21/26%, missing 11/14/25/24%. The confidence score is flat (no better than
+  random). So: **07 re-scoped** to same-pitch boundaries (split at moras via lyrics or a spectral detector,
+  merge restarts), **11** wobble/scoop pieces, **12** single-note errors (after 07), **13** a confidence score
+  that works; 06 last (its ceiling on the stage is 7–18%).
 
 ## Fog
 
