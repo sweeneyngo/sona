@@ -27,8 +27,8 @@ not available in sona's app or CLI.
    The weights derive from Pifuyuu's USTs and from GAME (CC BY-NC-SA), so like GAME's weights they are
    built and kept locally and never committed.
 3. **End to end** (`game::StageRuns`, `cell_stage_notes`): GAME on the lead (octave-corrected) and on the
-   vocals, sona's grid mode on the vocals. **The grid phase is estimated** from sona's grid notes; the
-   prototype used the UST's true phase, which a user can't have. Cells become notes: a note holds while
+   vocals, sona's grid mode on the vocals. **The grid phase is estimated** from sona's grid notes (since
+   ADR-0027, from the vocals' onsets); the prototype used the UST's true phase, which a user can't have. Cells become notes: a note holds while
    the pitch does, and splits at a rest, a pitch change, or where the chosen source itself starts a new
    note on the same pitch.
 4. **Wired in:**

@@ -30,7 +30,7 @@ top three overall are at the end.
 | 1.4 | **More training data for GAME**: unfreeze the encoder; train on all aligned songs once holdout4 exists | Fine-tuning on 30 songs with the encoder frozen gave +0.8 (within noise) | L (CPU days) | The pre-registered rule from the fine-tune spec |
 | 1.5 | **Doubled voices and harmonies**: choose the lead when two lines overlap | 3–4% of sung cells are "harmony" errors | M | The `poly_cells` breakdown on dev |
 | 1.7 | **Train the cell stage from Rust features**: dump the port's features with labels, so retraining no longer needs the prototype's Python GAME runner | The port's features equal the prototype's exactly (ADR-0026) | S–M | A model retrained on Rust features matches the prototype on dev |
-| 1.8 | **Better grid-phase estimation**: the stage loses 0.65 points against the true phase, nearly all on one song where the phase estimate is off | maru-shite-kudasai 85.4% → 78.6% (ADR-0026) | M | Phase error against the UST offset, and cells on fresh songs |
+| 1.8 | ~~**Better grid-phase estimation**~~ **Done** ([ADR-0027](adr/0027-grid-phase-from-onsets.md)): the phase from the vocals' onsets is within 0.1 cell on 29/30 held-out songs (was 14/30), and the stage scores 78.84% on holdout3 (true phase 78.83%) | — | — | Open: whether onsets help sona's own grid decoder too |
 | 1.6 | **Lyrics in the loop** (phrase anchoring) | Perfect UST onsets plus pauses would give 90.8%, but real alignment captured none of it | L | Dev cells; abandon if the second idea also fails |
 
 ## 2. Tempo and grid

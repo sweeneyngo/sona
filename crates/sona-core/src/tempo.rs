@@ -58,10 +58,14 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> Option<f64> {
 }
 
 fn novelty(x: &[f32]) -> Vec<f64> {
-    if x.len() < N_FFT + HOP {
+    novelty_with(x, HOP)
+}
+
+fn novelty_with(x: &[f32], hop: usize) -> Vec<f64> {
+    if x.len() < N_FFT + hop {
         return Vec::new();
     }
-    let frames = (x.len() - N_FFT) / HOP;
+    let frames = (x.len() - N_FFT) / hop;
     let fft = RealFftPlanner::<f32>::new().plan_fft_forward(N_FFT);
     let window: Vec<f32> = (0..N_FFT).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (N_FFT - 1) as f32).cos()).collect();
     let mut input = fft.make_input_vec();
@@ -70,7 +74,7 @@ fn novelty(x: &[f32]) -> Vec<f64> {
     let mut flux = Vec::with_capacity(frames.saturating_sub(1));
     for f in 0..frames {
         for (i, v) in input.iter_mut().enumerate() {
-            *v = x[f * HOP + i] * window[i];
+            *v = x[f * hop + i] * window[i];
         }
         if fft.process(&mut input, &mut spectrum).is_err() {
             return Vec::new();
@@ -83,6 +87,50 @@ fn novelty(x: &[f32]) -> Vec<f64> {
     }
     let trend = moving_mean(&flux, TREND_FRAMES);
     flux.iter().zip(trend).map(|(f, t)| (f - t).max(0.0)).collect()
+}
+
+const PHASE_HOP: usize = 256;
+/// Where in the analysis window an attack shows up in the log flux: it registers as soon as it enters
+/// the Hann window's upper part, not at its centre (measured on clicks: 0.772 of the window at 22.05 and
+/// 44.1 kHz alike).
+const ONSET_IN_WINDOW: f64 = 0.772;
+const PHASE_STEPS: usize = 240;
+
+/// The grid phase of a song, in `[0, spacing)`, from its full mix (ADR-0027): the offset at which
+/// onset strength lines up best with a grid of `spacing` seconds, over the whole song. `None` without
+/// enough audio to hear onsets.
+pub fn grid_phase(samples: &[f32], sample_rate: u32, spacing: f64) -> Option<f64> {
+    let nov = novelty_with(samples, PHASE_HOP);
+    if nov.len() < 8 || !spacing.is_finite() || spacing <= 0.0 {
+        return None;
+    }
+    let fps = f64::from(sample_rate) / PHASE_HOP as f64;
+    // flux[f] compares frames f and f + 1.
+    let lag = ONSET_IN_WINDOW * N_FFT as f64 / PHASE_HOP as f64 + 1.0;
+    let duration = (nov.len() as f64 + lag) / fps;
+    let at = |t: f64| -> f64 {
+        let x = t * fps - lag;
+        if x < 0.0 || x >= (nov.len() - 1) as f64 {
+            return 0.0;
+        }
+        let i = x.floor() as usize;
+        let w = x - i as f64;
+        nov[i] * (1.0 - w) + nov[i + 1] * w
+    };
+    let score = |phase: f64| -> f64 {
+        let mut s = 0.0;
+        let mut t = phase;
+        while t < duration {
+            s += at(t);
+            t += spacing;
+        }
+        s
+    };
+    (0..PHASE_STEPS)
+        .map(|i| spacing * i as f64 / PHASE_STEPS as f64)
+        .map(|p| (p, score(p)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(p, _)| p)
 }
 
 /// The mean over a `width`-frame window from `i - width/2 + 1` to `i + width/2`, counting frames past
@@ -167,6 +215,22 @@ mod tests {
         for bpm in [90.0, 130.0, 210.0, 270.0] {
             let got = estimate_bpm(&click_track(bpm, 20.0, 16000), 16000).unwrap();
             assert!((MIN_BPM * 0.985..=MAX_BPM * 1.015).contains(&got), "{bpm} → {got}");
+        }
+    }
+
+    #[test]
+    fn finds_a_click_track_s_grid_phase() {
+        for sr in [22050, 44100] {
+        for (bpm, shift) in [(150.0, 0.031), (180.0, 0.0), (200.0, 0.051), (150.0, 0.0), (150.0, 0.05), (150.0, 0.08)] {
+            let clicks = click_track(bpm, 30.0, sr);
+            let mut x = vec![0.0f32; (shift * f64::from(sr)) as usize];
+            x.extend(clicks);
+            let spacing = 15.0 / bpm;
+            let got = grid_phase(&x, sr, spacing).unwrap();
+            let want = shift.rem_euclid(spacing);
+            let d = (got - want).rem_euclid(spacing);
+            assert!(d.min(spacing - d) < 0.002, "{sr} Hz, {bpm} BPM, shift {shift}: phase {got}, want {want}");
+        }
         }
     }
 

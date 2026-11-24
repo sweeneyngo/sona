@@ -37,3 +37,14 @@ Adopt the onset phase as the cell stage's phase if, on the 32 test songs:
 Then, reported but not part of the rule: the cell stage's cells on holdout3 with the new phase. holdout3
 is spent, so this is a re-read and confirms nothing new; the ADR-0026 gap to close is 78.18% against
 78.83%.
+
+## Result (read once, 2026-11-23; logged in the ledger)
+
+- **Scope:** 30 of the 32 test songs have an aligned UST; the tool skips the other two.
+- **Phase error:**
+  - onset phase on vocals: median 0.023 cell, within 0.1 cell on 29/30;
+  - current estimator: median 0.102 cell, within 0.1 cell on 14/30.
+
+  **Both conditions hold: adopted** (ADR-0027).
+- **Reported:** holdout3 cells with the learned stage were 78.84% with the onset phase, against 78.18%
+  before and 78.83% with the true phase.

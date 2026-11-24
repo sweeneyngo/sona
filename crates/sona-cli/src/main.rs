@@ -211,15 +211,26 @@ fn game_settings() -> Vec<(String, String)> {
 #[cfg(feature = "game")]
 #[allow(clippy::too_many_arguments)]
 fn cell_stage(annotation: &mut sona_core::Annotation, transcriber: &Transcriber, lead: &[f32], vocals_path: &str, game_dir: &str, model_dir: &str, division: u32, args: &TranscribeArgs) -> Result<(), String> {
+    use sona_core::tempo::grid_phase;
     use sona_core::game::{cell_stage_notes, cells_covering, grid_segments, grid_spacing_s, phase_of, CellModel, GameModel, GameParams, StageRuns, GAME_SAMPLE_RATE};
     let (vocals, sr) = load_wav_mono(vocals_path)?;
     if sr != GAME_SAMPLE_RATE || annotation.sample_rate != GAME_SAMPLE_RATE {
         return Err(format!("the cell stage needs {GAME_SAMPLE_RATE} Hz stems"));
     }
-    let on_vocals = Transcriber { grid: Some(grid_mode(division, args)), ..Transcriber::default() }.transcribe(&PYin::default(), &vocals, sr, annotation.bpm, Producer::Pyin);
     let spacing = grid_spacing_s(annotation.bpm, division);
+    // The grid phase from the vocals' onsets (ADR-0027); sona's vocals notes are decoded on it so every
+    // candidate shares one grid.
+    let decode = |anchor_s: Option<f64>| Transcriber { grid: Some(GridMode { anchor_s, ..grid_mode(division, args) }), ..Transcriber::default() }.transcribe(&PYin::default(), &vocals, sr, annotation.bpm, Producer::Pyin);
+    let (on_vocals, anchor) = match grid_phase(&vocals, sr, spacing) {
+        Some(phase) => (decode(Some(phase)), phase),
+        None => {
+            let a = decode(None);
+            let notes: Vec<(f64, f64, i32)> = a.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
+            let phase = phase_of(&notes, spacing);
+            (a, phase)
+        }
+    };
     let sona: Vec<(f64, f64, i32)> = on_vocals.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
-    let anchor = phase_of(&sona, spacing);
     let f0: Vec<(f64, f64)> = on_vocals.f0_contour.iter().map(|f| (f.time_s, f64::from(f.frequency_hz))).collect();
     let rms: Vec<(f64, f64)> = on_vocals.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
     let game = GameModel::load(Path::new(game_dir), GameParams::default()).map_err(|e| e.to_string())?;

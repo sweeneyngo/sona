@@ -145,7 +145,7 @@ The metric is the share of grid cells that match the UST.
 |---|---|---|
 | grid mode, pYIN (the default) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
 | GAME + octave check | 87.4% | 76.3% (holdout3) |
-| + learned per-cell stage (in the app since [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3; 78.2% with sona's own grid phase) |
+| + learned per-cell stage (in the app since [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3, with the grid phase sona estimates from onsets: [ADR-0027](docs/adr/0027-grid-phase-from-onsets.md)) |
 
 - **Ceilings** (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch per
   cell 95.6%.

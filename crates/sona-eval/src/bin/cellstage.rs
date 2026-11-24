@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use sona_core::cellstage::snap_notes;
+use sona_core::tempo::grid_phase;
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, CellModel, GameModel, GameParams, StageRuns};
 use sona_core::{GridMode, PYin, Producer, Transcriber};
 use sona_eval::holdout::authorize;
@@ -70,8 +71,8 @@ fn run() -> Result<(), String> {
         .filter(|s| stems.join(&s.id).join("lead.wav").is_file() && stems.join(&s.id).join("vocals.wav").is_file())
         .filter(|s| std::env::var("SONA_ONLY").map_or(true, |only| only.split(',').any(|o| o == s.id)))
         .collect();
-    let mut tot = [(0usize, 0usize); 4];
-    println!("{:28} {:>9} {:>9} {:>9} {:>9}", "song", "lead/est", "stage/est", "lead/UST", "stage/UST");
+    let mut tot = [(0usize, 0usize); 6];
+    println!("{:28} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}", "song", "lead/est", "stage/est", "lead/ons", "stage/ons", "lead/UST", "stage/UST");
     for song in songs {
         let offset = song.alignment_offset_s.expect("filtered");
         let usts = SongUsts::load(song, &cache).map_err(|e| e.to_string())?;
@@ -89,21 +90,30 @@ fn run() -> Result<(), String> {
         let rms: Vec<(f64, f64)> = a.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
         let duration = vocals.len() as f64 / f64::from(sr);
         let runs = StageRuns::compute(&game, &lead, &vocals, sr).map_err(|e| e.to_string())?;
-        let mut row = [(0usize, 0usize); 4];
-        for (j, anchor) in [estimated, offset.rem_euclid(spacing)].into_iter().enumerate() {
+        let truth = offset.rem_euclid(spacing);
+        let off = |p: f64| {
+            let d = (p - truth).rem_euclid(spacing) / spacing;
+            if d > 0.5 { d - 1.0 } else { d }
+        };
+        let onset = grid_phase(&vocals, sr, spacing).unwrap_or(estimated);
+        let t_on = Transcriber { grid: Some(GridMode { division, anchor_s: Some(onset), ..GridMode::sixteenths() }), ..Transcriber::default() };
+        let a_on = t_on.transcribe(&PYin::default(), &vocals, sr, bpm, Producer::Pyin);
+        let sona_on: Notes = a_on.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
+        let mut row = [(0usize, 0usize); 6];
+        for (j, (anchor, notes)) in [(estimated, &sona), (onset, &sona_on), (offset.rem_euclid(spacing), &sona)].into_iter().enumerate() {
             let lead_only = snap_notes(&runs.lead_notes, spacing, anchor);
-            let stage = cell_stage_notes(&model, &runs, &sona, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+            let stage = cell_stage_notes(&model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
             row[2 * j] = cells(&reference, &lead_only, spacing, offset);
             row[2 * j + 1] = cells(&reference, &stage, spacing, offset);
         }
         let pct = |(o, n): (usize, usize)| 100.0 * o as f64 / n.max(1) as f64;
-        println!("{:28} {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}%", song.id, pct(row[0]), pct(row[1]), pct(row[2]), pct(row[3]));
+        println!("{:28} {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}%   phase est {:+.3} ons {:+.3} cells", song.id, pct(row[0]), pct(row[1]), pct(row[2]), pct(row[3]), pct(row[4]), pct(row[5]), off(estimated), off(onset));
         for (t, r) in tot.iter_mut().zip(row) {
             t.0 += r.0;
             t.1 += r.1;
         }
     }
     let pct = |(o, n): (usize, usize)| 100.0 * o as f64 / n.max(1) as f64;
-    println!("{:28} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%   ({} cells)", "ALL", pct(tot[0]), pct(tot[1]), pct(tot[2]), pct(tot[3]), tot[0].1);
+    println!("{:28} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%   ({} cells)", "ALL", pct(tot[0]), pct(tot[1]), pct(tot[2]), pct(tot[3]), pct(tot[4]), pct(tot[5]), tot[0].1);
     Ok(())
 }
