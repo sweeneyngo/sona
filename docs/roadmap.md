@@ -1,6 +1,6 @@
 # Roadmap: the next frontiers
 
-Where sona stands on 2026-11-23, and what would move it next. Each item says what the evidence is, what it
+Where sona stands on 2026-11-24, and what would move it next. Each item says what the evidence is, what it
 would cost, and how to tell whether it worked. Items are ranked by value for cost within each area; the
 top three overall are at the end.
 
@@ -8,24 +8,32 @@ top three overall are at the end.
 
 - **Notes.** Cell accuracy against Pifuyuu's USTs:
   - 87% on dev, with GAME plus the octave rule;
-  - **78.8%** on the last fresh test, holdout3, for the full stack, which includes the learned stage, now in
-    Rust (ADR-0026);
-  - 72.5% for the default pYIN grid mode.
+  - **78.8%** on the last fresh test, holdout3, for the full stack, which includes the learned stage. It
+    is in Rust and runs in the app and CLI where its weights exist (ADR-0026), on a grid phase from the
+    vocals' onsets (ADR-0027);
+  - 72.5% for pYIN grid mode, which is what a fresh install runs.
 
   Measured ceilings (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch
   per cell 95.6%. Fine-tuning GAME on 30 songs gave +0.8 (not adopted). Every holdout is spent.
-- **Tempo.** The user gives the BPM; the estimate from the mix is a hint (ADR-0028). It is exact on 75% of fresh songs, within an octave on 97%, never at half
-  (ADR-0022).
+- **Edit cost** (the current target, below). On dev the shipped stack costs **180.2** weighted edits per
+  minute [95%: 115.9, 256.5] and leaves **23.8%** of 4/4 measures clean [13.8, 33.9]; joined notes are 53%
+  of the cost (`.scratch/utau-edit-cost/issues/01-edit-cost-metric.md`). The stage was trained on the dev
+  songs, so these numbers flatter it.
+- **Tempo and bar 1.** The user types the BPM; the estimate from the mix is a hint (ADR-0028). It is exact
+  on 75% of fresh songs, within an octave on 97%, never at half (ADR-0022). Every export's tick 0 is a bar
+  line of the editor, and the user can set bar 1 (ADR-0029). Bar 1 from the music is opt-in (ADR-0031).
 - **Pitch.** Fitted glides and vibrato are 9–30% closer to the singer than flat notes (ADR-0019). They can
   be dragged on the roll, and the singer's own pitch exports as a `pitd` curve (ADR-0021).
-- **App.** Drop a song, then Transcribe; it runs locally through `sona serve` (ADR-0020, ADR-0022).
+- **App.** Drop a song, type its BPM, then Transcribe; it runs locally through `sona serve` (ADR-0020,
+  ADR-0028). Undo/redo covers every edit (ADR-0025). Separated stems are cached, so a second run of the same
+  song skips separation (ADR-0030).
 
 ## 1. Transcription
 
 | # | Frontier | Evidence | Cost | How to tell |
 |---|---|---|---|---|
 | 1.1 | ✅ **Done (ADR-0026).** **Port the learned cell stage to Rust** (ONNX through `ort`) so the 78.8% stack ships in the app and CLI | It confirmed +2.2 on holdout3 but exists only as a Python prototype | M | Bit-for-bit parity with the prototype on dev, then the same dev numbers |
-| 1.2 | **Fresh test songs (holdout4)**: a BowlRoll fetcher for the rest of Pifuyuu's USTs | Every split is spent, so nothing new can be confirmed | M | A manifest with ≥ 10 new aligned songs and a pre-registered read |
+| 1.2 | **Fresh test songs (holdout4)**: older songs from Pifuyuu's OneDrive share, which lists 460 UST zips of which 42 are used (not BowlRoll: its terms forbid mechanical collection). Ticket: utau-edit-cost 08 | Every split is spent, so nothing new can be confirmed | M | A manifest with ≥ 20 new aligned songs and a pre-registered read |
 | 1.3 | **Sung vs rest** (the 91.4% ceiling): breath and consonant gaps, his note-end conventions | It is the largest gap between today and a ceiling | M–L | Dev cells, then holdout4 |
 | 1.4 | **More training data for GAME**: unfreeze the encoder; train on all aligned songs once holdout4 exists | Fine-tuning on 30 songs with the encoder frozen gave +0.8 (within noise) | L (CPU days) | The pre-registered rule from the fine-tune spec |
 | 1.5 | **Doubled voices and harmonies**: choose the lead when two lines overlap | 3–4% of sung cells are "harmony" errors | M | The `poly_cells` breakdown on dev |
@@ -39,7 +47,7 @@ top three overall are at the end.
 |---|---|---|---|---|
 | 2.1 | **Choose the octave** (½× or 1×) from the vocal's note lengths after transcription, and offer it as a one-click "sounds too fast?" hint | 7 of 8 test misses are slow songs read at double; on dev, note length separates them only partly (8/10 with oracle notes) | S–M | Exact tempo on a fresh set, ≥ 80% |
 | 2.2 | **Tempo changes and time signatures**: detect a tempo map, export it to UST/USTX | Today every song has one tempo | M | Corpus songs with tempo changes (none yet: needs data) |
-| 2.3 | **Grid phase from the mix** (downbeats), not only from the vocal | The phase is estimated from vocal onsets today | S | Phase error against the UST's alignment offset |
+| 2.3 | ~~**Grid phase from the mix** (downbeats)~~ **Done, opt-in** ([ADR-0031](adr/0031-bar-one-from-the-music.md)): the beat from the mix, bar 1 from harmonic change; dev frame pass 5/9 → 9/9, but circular for the bar | No labelled bar 1 exists to confirm it | — | Open: the default needs ear-labelled frames on holdout4 (utau-edit-cost 08) |
 
 ## 3. Pitch controls
 
@@ -48,7 +56,7 @@ top three overall are at the end.
 | 3.1 | **Ignore consonant dips** in the fit and in `pitd` (voicing plus a spectral consonant cue) | Most of the remaining fit error sits at note edges | M | Curve error on held-out songs |
 | 3.2 | **Smooth and simplify `pitd`** with an adjustable amount, so the curve is editable in OpenUtau | It is written every 5 ticks and simplified to 2 cents | S | Point count against curve error |
 | 3.3 | **Point shapes** (in/out/linear) on the roll, plus multi-note pitch edits | Only the shapes from the fit exist; edits are one note at a time | S | Browser driver plus property tests |
-| 3.4 | **MIDI pitch bends** from `renderPitch` | MIDI export is notes only | S | Round-trip through a MIDI reader |
+| 3.4 | **MIDI pitch bends** from `renderPitch` | MIDI export carries notes, lyrics and a 4/4 time signature (ADR-0029), no pitch | S | Round-trip through a MIDI reader |
 
 ## 4. App and UI
 
@@ -74,7 +82,7 @@ top three overall are at the end.
 |---|---|---|---|---|
 | 6.1 | ✅ **Done (ADR-0023).** **Seed GAME's segmenter** in sona (fixed `seed` on its random node at load) so a song always gives the same notes | Unseeded runs vary by about 2 notes in 70, and by 0.3–0.7 points of cell accuracy | S | Same notes on reruns; seeded dev numbers recorded |
 | 6.2 | ✅ **Done (ADR-0024).** **Structured job logs**: per-phase timings, tool versions, model hashes and the seed in each job, with a log download in the app | The job log is a tail of child output | S | Every job's log answers "what produced this?" |
-| 6.3 | **Errors a user can act on**: a missing separator or model, an unreadable file, out of disk, each with the fix | Some errors still surface as raw tool output | S | Fault-injection tests in `tests/serve.rs` |
+| 6.3 | **Errors a user can act on**: missing separators, ffmpeg and first-use downloads, and tempo errors now say what to do (audit A12). Left: why GAME or the cell model is greyed out, out of disk | Some errors still surface as raw tool output | S | Fault-injection tests in `crates/sona-cli/tests/serve.rs` |
 | 6.4 | **Browser drivers in CI.** The ten editor drivers run in CI (job `e2e`, `scripts/ci/e2e.sh`: a Vite dev server, the synthetic fixture). Left: `song_to_notes` and `cancel_and_retry` against `sona serve` with stub separators | The two serve drivers run locally only (`web/e2e/`) | S–M | Both green in CI |
 | 6.5 | **Eval dashboards**: per-song history across commits for cells, tempo and curve error | Numbers live in reports and commit messages | M | — |
 
@@ -83,11 +91,14 @@ top three overall are at the end.
 The target moved from cell accuracy to **how hard sona's mistakes are to fix in OpenUtau**: pitch and
 length errors are cheap there, while a wrong BPM or notes in the wrong measures are the hardest fixes.
 Spec, map and tickets: [`.scratch/utau-edit-cost/`](../.scratch/utau-edit-cost/spec.md). It reorders
-the list below: 2.3 (beat 1 of the measure) and chopped/joined notes come before more cell-accuracy work.
+the list above: 2.3 (beat 1 of the measure) and chopped/joined notes come before more cell-accuracy work.
+Done so far: the metric (utau 01), frame metrics (02, 10), the BPM first (04, ADR-0028), bar 1 from the
+music, opt-in (05, ADR-0031). Next: the baseline taxonomy (03), chopped and joined notes (07; joined is half
+the cost), holdout4 (08).
 
 ## Top three overall
 
-1. ~~1.1, port the learned stage~~: done (ADR-0026); the app now runs the 78% stack.
+1. ~~1.1, port the learned stage~~: done (ADR-0026); the app runs the 78% stack where its weights exist.
 2. ~~6.1 + 6.2, seed GAME and log provenance~~: done (ADR-0023, ADR-0024).
 3. **1.2, holdout4**: nothing else in section 1 can be confirmed without it.
 

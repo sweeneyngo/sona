@@ -1,7 +1,9 @@
 # One-click generation: `sona serve`
 
 **Status: Accepted (2026-11-22).** This is the third milestone of ADR-0018. Amended by ADR-0030 (stem
-cache, jobs folder and clean-up, panics and tool deadlines).
+cache, jobs folder and clean-up, panics and tool deadlines). The **＋ From audio** dialog (decision 5) was
+replaced by ADR-0022's start screen (BPM first since ADR-0028); `POST /api/jobs` also takes `engine=cells`
+(ADR-0026) and `bar_one=1` (ADR-0031), and `POST /api/tempo` came with ADR-0022.
 
 ## Context
 

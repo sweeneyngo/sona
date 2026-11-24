@@ -3,7 +3,6 @@
 Status: accepted, 2026-11-24. Amends [ADR-0020](0020-one-click-generation-sona-serve.md) (jobs folder,
 failure handling) and [ADR-0024](0024-provenance.md) (the stem-cache key waits for the tool probe).
 Tickets: `.scratch/audit-2026-11-24/issues/04-cheap-retranscribe.md`, `05-serve-worker-failure-modes.md`.
-(Numbered 0030 on its branch; the number may change at merge.)
 
 ## Context
 

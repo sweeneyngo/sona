@@ -6,8 +6,9 @@
 //! raw, unquantized `.mid` as a convenience — *not* the authoritative export,
 //! which the web review surface produces from the JSON (ADR-0004).
 //!
-//! Argument parsing is hand-rolled: the surface is one subcommand and three
-//! options, so a dependency-free parser keeps the build as lean as the core's.
+//! `sona serve` hosts the review surface and runs jobs (`serve`, `jobs`). Argument
+//! parsing is hand-rolled: two subcommands with about a dozen options each, so a
+//! dependency-free parser keeps the build as lean as the core's.
 
 use std::fs::File;
 use std::io::BufWriter;

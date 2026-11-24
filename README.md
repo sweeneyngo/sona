@@ -83,8 +83,9 @@ The app picks the best engine the server has, so nothing changes on the page.
 - **"no tempo: …" beside the BPM field:** the server couldn't read the file to estimate its tempo, and the
   rest of the line says why. "ffmpeg could not read the file" means the file is damaged or not audio:
   convert it to WAV. You can still type the BPM yourself.
-- **GAME is greyed out under Options:** the binary must be built with `--features game`, and `ORT_DYLIB_PATH` must be
-  set in the shell that runs `sona serve`.
+- **GAME is greyed out under Options:** the binary must be built with `--features game`, started with
+  `sona serve --game DIR`, and `ORT_DYLIB_PATH` must be set in the shell that runs it. **GAME + learned**
+  also needs `--cell-model DIR` (holding `cellstage.onnx` and `cellstage.json`) and lead separation.
 - **Port 8977 is taken:** `sona serve --port 9000`.
 - **"… was stopped after N s, its time limit":** a separator or ffmpeg ran far longer than the song
   should take and was stopped. If the machine is only slow, raise `--tool-timeout` (seconds) or
@@ -136,7 +137,8 @@ The app picks the best engine the server has, so nothing changes on the page.
 
 ## Command line
 
-`sona transcribe` takes a **mono WAV vocal stem** and a **BPM**, and prints the annotation JSON:
+`sona transcribe` takes a **WAV vocal stem** (stereo is averaged to mono) and a **BPM**, and prints the
+annotation JSON:
 
 ```bash
 # print the annotation JSON
@@ -156,30 +158,37 @@ cargo run --release -p sona-cli --features game -- transcribe lead.wav --bpm 198
     --game ~/models/GAME-1.0.3-medium-onnx > annotation.json
 ```
 
+`sona --help` (or `sona transcribe --help`, `sona serve --help`) prints every option; the transcribe ones:
+
 ```
-Usage: sona transcribe <STEM.wav> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue] [--game <DIR> [--no-octave-check]]]
-
-Transcribes an isolated mono vocal stem to an annotation JSON (stdout).
-
-Arguments:
-  <STEM.wav>        Isolated mono vocal stem (extract with UVR or similar first).
-
-Options:
-  --bpm <BPM>       Tempo, required (finite, > 0). Carried into the JSON as a UI grid seed only.
-  --midi <PATH>     Also write a raw, unquantized MIDI file. The authoritative,
-                    snapped MIDI is exported from the web review surface, not here.
-  --grid <16|24>    Decode notes per grid cell at --bpm (ADR-0015) instead of frame by
-                    frame; the phase is estimated. Needs an exact, single tempo.
-  --no-salience     With --grid: turn off harmonic-salience pitch evidence, which
-                    follows the lead where other voices sing (on by default, ADR-0016).
-  --no-spectral-cue With --grid: turn off the spectral cue that splits held pitches
-                    at syllable changes (on by default, ADR-0016).
-  --game <DIR>      With --grid: take the notes from openvpi GAME (experimental, ADR-0017;
-                    build with --features game, set ORT_DYLIB_PATH, 44.1 kHz stem).
-  --no-octave-check With --game: skip the subharmonic octave check (on by default).
-  --bar-one <MIX>   Also estimate bar 1 from the full mix MIX (a WAV at the stem's rate)
-                    and the vocals (--vocals, else the stem), into the JSON's `bar_one`
-                    (experimental, opt-in; ADR-0031).
+OPTIONS (transcribe):
+    --bpm <BPM>      Tempo, carried into the annotation for the UI's grid (required)
+    --midi <PATH>    Also write a raw, unquantized .mid alongside the JSON
+    --grid <16|24>   Decode notes on a 16th (16) or 16th-triplet (24) grid at --bpm,
+                     for grid-locked material such as Vocaloid songs (phase is estimated)
+    --no-salience    With --grid: turn off harmonic-salience pitch evidence, which
+                     follows the lead where other voices sing (on by default, ADR-0016)
+    --no-spectral-cue
+                     With --grid: turn off the spectral model that splits held pitches
+                     at syllable changes (on by default, ADR-0016)
+    --game <DIR>     With --grid: take the notes from openvpi GAME instead (experimental,
+                     ADR-0017). DIR is a GAME ONNX release folder you downloaded
+                     (e.g. GAME-1.0.3-medium-onnx; weights are CC BY-NC-SA, non-commercial).
+                     Needs a build with `--features game`, ORT_DYLIB_PATH set to an ONNX
+                     Runtime library, and a 44.1 kHz stem (a lead-vocal stem works best)
+    --no-octave-check
+                     With --game: skip the subharmonic octave check (on by default)
+    --cell-model <DIR>
+                     With --game: let the learned cell stage choose each cell (ADR-0026). DIR is a
+                     folder from crates/sona-eval/scripts/cellstage/export_onnx.py; the stem is then
+                     the lead, and --vocals names the vocals stem it was separated from
+    --vocals <WAV>   With --cell-model: the vocals stem (demucs) beside the lead stem; with
+                     --bar-one: the vocals stem the mix is measured without (default: the stem)
+    --bar-one <MIX>  Also estimate where bar 1 falls in the music (experimental, opt-in): the beat
+                     from the full mix MIX (a WAV at the stem's rate), the bar from its harmony
+                     without the vocals. Written to the annotation's `bar_one`; at --grid, else 16
+    -h, --help       Print this usage
+    -V, --version    Print version
 ```
 
 `--grid` is the mode for UST/Vocaloid-style material. It includes harmonic-salience pitch evidence and
@@ -188,9 +197,10 @@ separate lead-vocal stem added nothing (it does help GAME).
 
 `sona serve` hosts the app and runs jobs: demucs, then the UVR karaoke lead, then pYIN or GAME notes. It
 listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
-Options: `--port`, `--demucs-venv`, `--separator-venv`, `--game DIR`, and for disk and time:
-- `--cache-dir` (default `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`, never RAM-backed `/tmp`): jobs and
-  the stem cache;
+Options: `--port`, `--web-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`, `--cell-model DIR`,
+and for disk and time:
+- `--cache-dir` (default `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`, never RAM-backed `/tmp`): jobs
+  (`--jobs-dir` to put them elsewhere) and the stem cache;
 - `--keep-jobs N` (20) finished jobs and `--keep-stems N` (10) separated songs are kept; older ones are
   deleted between jobs, never a queued or running one;
 - `--tool-timeout S` (600) / `--tool-timeout-ratio R` (20 s per second of audio): a hung tool fails its
@@ -204,7 +214,9 @@ weights exist only on the machine that trained them. A fresh install runs pYIN g
 add it.
 
 The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
-score with four sub-scores per note, the f0 contour and the energy envelope.
+score with four sub-scores per note, the f0 contour and the energy envelope. Two optional fields are
+left out below: `provenance` (what produced it, ADR-0024) and `bar_one` (only with `--bar-one`, ADR-0031).
+The TypeScript side is `web/lib/annotation.ts`.
 
 ```jsonc
 {
@@ -230,17 +242,17 @@ score with four sub-scores per note, the f0 contour and the energy envelope.
 
 ## How well it works
 
-All numbers come from pre-registered rules, read once on songs nothing was tuned on. The process is in
-[`docs/dev-workflow.md`](docs/dev-workflow.md).
+Every fresh-test number comes from a pre-registered rule, read once on songs nothing was tuned on; dev
+numbers are where the tuning happened. The process is in [`docs/dev-workflow.md`](docs/dev-workflow.md).
 
 **Notes against Pifuyuu's hand-made USTs** (42 Vocaloid songs; the USTs stay local, never committed).
 The metric is the share of grid cells that match the UST.
 
 | | dev (9 songs, tuned on) | fresh test |
 |---|---|---|
-| grid mode, pYIN (the default) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
+| grid mode, pYIN (what a fresh install runs) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
 | GAME + octave check | 87.4% | 76.3% (holdout3) |
-| + learned per-cell stage (not distributed; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3, with the grid phase sona estimates from onsets: [ADR-0027](docs/adr/0027-grid-phase-from-onsets.md)) |
+| + learned per-cell stage (not distributed; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — (trained on them) | **78.8%** (holdout3, with the grid phase sona estimates from onsets: [ADR-0027](docs/adr/0027-grid-phase-from-onsets.md)) |
 
 - **Ceilings** (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch per
   cell 95.6%.
@@ -251,6 +263,10 @@ The metric is the share of grid cells that match the UST.
 - **Reproducible:** GAME's random boundary sampling is seeded and its kernels are deterministic, so
   the same song always gives the same notes; seeded dev is 87.1%
   ([ADR-0023](docs/adr/0023-deterministic-game.md)).
+- **Edit cost in OpenUtau** (the current target; dev only, no fresh read yet): each error weighted by how
+  hard it is to fix there. The shipped stack costs 180.2 edits per minute and leaves 23.8% of 4/4 measures
+  clean; pYIN grid mode 338.4 and 3.1%. Notes joined into one are half the cost. The stack was trained on
+  these songs, so its numbers flatter it ([ticket](.scratch/utau-edit-cost/issues/01-edit-cost-metric.md)).
 
 How grid mode got there, on the dev songs:
 
@@ -259,7 +275,7 @@ How grid mode got there, on the dev songs:
 | note-HMM, vocal stem | 0.341 | 0.133 | 53.3% |
 | grid mode, vocal stem | 0.474 | 0.256 | 67.0% |
 | grid mode, lead-vocal stem | 0.518 | 0.285 | 76.0% |
-| **grid mode (with salience + spectral cue, now the default), vocal stem** | **0.611** | **0.388** | **79.5%** |
+| **grid mode (with salience + spectral cue, now grid mode's default), vocal stem** | **0.611** | **0.388** | **79.5%** |
 | grid mode (with salience + spectral cue), lead-vocal stem | 0.596 | 0.369 | 80.7% |
 
 **Tempo** from the full mix ([ADR-0022](docs/adr/0022-tempo-estimation-and-one-step-start.md)): exact on
@@ -289,10 +305,10 @@ follow `mir_eval` and are reimplemented in Rust.
    Python environments, never inside the crates.
 2. **Tempo:** spectral flux, then autocorrelation, then a comb searched in 140–280 BPM (ADR-0022).
 3. **Notes**, in the Rust core:
-   - the default is grid mode, which decodes one state per grid cell with pYIN pitch, harmonic salience
-     and a spectral syllable cue (ADR-0015, ADR-0016);
-   - optionally GAME notes with an octave check (ADR-0017);
-   - the original note-HMM path serves grid-free material (ADR-0010).
+   - the app (`sona serve`) always uses grid mode, which decodes one state per grid cell with pYIN pitch,
+     harmonic salience and a spectral syllable cue (ADR-0015, ADR-0016);
+   - optionally GAME notes with an octave check (ADR-0017), and the learned cell stage on top (ADR-0026);
+   - `sona transcribe` without `--grid` runs the original grid-free note-HMM (ADR-0010).
 4. **Interpretation**, in the browser: snapping to a live grid and key, per-note confidence, lyrics,
    pitch fitting, handles and the pen (ADR-0003/0004, ADR-0018 to ADR-0021).
 5. **Export:**
@@ -311,9 +327,9 @@ check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md).
 - clippy with warnings as errors;
 - the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
 - the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
-  start screen.
-
-The browser drivers (`web/e2e/`) run locally.
+  start screen;
+- the ten editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The two that need
+  `sona serve` run locally.
 
 ```
 sona/

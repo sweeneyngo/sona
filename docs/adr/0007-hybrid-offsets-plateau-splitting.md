@@ -1,5 +1,7 @@
 # Segmentation: hybrid offsets, earliest-candidate-wins; pitch-plateau splitting
 
+**Status: Superseded** by [ADR-0010](0010-note-hmm-segmentation.md) (the note-HMM); the knobs named below no longer exist.
+
 The spec's pipeline stage 3 (ticket 05) turns the f0 contour + onsets + energy
 envelope into note events, and calls it the highest-error area. Two decisions had
 to be made concrete: how a note's **offset** is chosen, and how a **legato pitch

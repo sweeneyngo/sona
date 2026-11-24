@@ -8,11 +8,11 @@ A tool for transcribing a single isolated vocal line into MIDI and singing-synth
 The core split. *Perception* = the Rust core's job: audio → raw note events (onset/offset in seconds), pitch, confidence, f0 contour, energy envelope. *Interpretation* = the UI's job: grid anchoring, quantization/snap, correction, lyrics, and MIDI/UST/USTX export. The core's output is invariant to musical settings.
 
 **Annotation JSON**:
-The primary artifact and the core↔UI contract: raw note events + confidence (scalar + sub-scores) + f0 contour + energy envelope + BPM. MIDI is derived from it (raw MIDI optionally from the core; the authoritative corrected MIDI is exported by the UI). Any producer that emits this JSON — including basic-pitch via an adapter — can be auditioned in the review surface.
+The primary artifact and the core↔UI contract: raw note events + confidence (scalar + sub-scores) + f0 contour + energy envelope + BPM, plus optional provenance (ADR-0024) and `bar_one` (ADR-0031). Rust types in `crates/sona-core/src/annotation.rs`, TypeScript in `web/lib/annotation.ts`. MIDI is derived from it (raw MIDI optionally from the core; the authoritative corrected MIDI is exported by the UI). Any producer that emits this JSON can be auditioned in the review surface.
 _Avoid_: "the MIDI output" as the primary artifact
 
 **Comparison harness**:
-How "outperform basic-pitch" and "understand each backend" get measured: every producer — the pYIN backend, the CREPE backend, and basic-pitch (via a thin adapter mapping its note probabilities to sona's confidence) — emits the annotation JSON, so all are auditioned by ear in the same review surface over the same stem. v1 ships **single-load** comparison (load one, listen, load the next); a side-by-side colored overlay is a fast-follow.
+How "outperform basic-pitch" and "understand each backend" were planned to be measured: every producer emits the annotation JSON, so all can be auditioned in the same review surface over the same stem, one at a time (single-load). The contract names `pyin`, `crepe`, `basic-pitch` and `game`; only pYIN and GAME exist (the CREPE backend and the basic-pitch adapter were never built, ADR-0001). Since ADR-0011 backends are compared by metrics on labelled data (Vocadito, then Pifuyuu's USTs), with listening as a check.
 
 **Vocal stem**:
 The single-voice audio input to sona: extracted from a final mix (via UVR or similar), so it carries compression and separation artifacts. Not a dry/close-mic studio recording — but for the *target material* it is dry-ish in style (see below), so the dominant noise source is **UVR separation bleed/artifacts, not reverb tails.**
@@ -27,11 +27,11 @@ sona's task: recover a sequence of single, non-overlapping notes (pitch, onset, 
 _Avoid_: polyphonic transcription, AMT (those describe basic-pitch's harder, generalist problem)
 
 **Outperform**:
-Beat basic-pitch *on isolated vocal stems specifically* — cleaner note boundaries and fewer spurious notes when both are fed the same stem — not beat it at its own polyphonic, instrument-agnostic problem. Judged **by ear** through the review surface, not by an automated metric or public dataset. The practical yardstick is "how much manual correction did the output need."
-_Avoid_: "better than basic-pitch" (unqualified), mir_eval/COnP/COnPOff (deliberately not used)
+Beat basic-pitch *on isolated vocal stems specifically* — cleaner note boundaries and fewer spurious notes when both are fed the same stem — not beat it at its own polyphonic, instrument-agnostic problem. The practical yardstick is "how much manual correction did the output need". First judged by ear; since ADR-0011 measured: COnP/COnPOff on Vocadito, then the share of grid cells matching Pifuyuu's USTs, and now the edit cost of fixing the result in OpenUtau (`sona_eval::correction::edit_cost`).
+_Avoid_: "better than basic-pitch" (unqualified)
 
 **Review surface**:
-A web piano-roll where the user listens to sona's output against the stem, corrects flagged notes, attaches lyrics, and exports MIDI, UST or USTX. Modeled (as reference, not copy) on onlinesequencer.net — BPM, grid, time signature, playback, export. Two jobs in one: (1) sona's *measurement instrument* (evaluation is by ear, so this is how every backend and tweak gets judged), and (2) where the remaining ~20% of manual correction happens before export. Fed by the headless Rust core's JSON output; the core itself has no UI.
+A web piano-roll where the user listens to sona's output against the stem, corrects flagged notes, attaches lyrics, and exports MIDI, UST or USTX. Modeled (as reference, not copy) on onlinesequencer.net — BPM, grid, bars (4/4 only; there is no time-signature setting), playback, export. Two jobs in one: (1) where a result is heard and checked by ear (the numbers come from the eval harness, ADR-0011), and (2) where the remaining ~20% of manual correction happens before export. Fed by the headless Rust core's JSON output; the core itself has no UI.
 _Avoid_: viewer (it also edits), DAW plugin
 
 **Confidence (per note)**:
@@ -43,15 +43,15 @@ Composed as **per-dimension sub-scores** (pitch stability, voicing/bleed, onset 
 The onset and offset of a single note. Offsets are the hardest sub-problem, made worse by wet stems: reverb/delay tails keep energy alive after the singer stops, so acoustic decay ≠ musical note end. For the target material (staccato Vocaloid) offsets are easier — sharp energy drops to the noise floor.
 
 **Tempo**:
-A single fixed BPM, user-supplied, for v1. Beat-by-beat / tempo-change tracking is deliberately deferred — Vocaloid material is single-tempo and grid-locked.
-_Avoid_: beat tracking, tempogram (out of v1 scope)
+A single fixed BPM, typed by the user ([ADR-0028](docs/adr/0028-ask-for-the-bpm-first.md)); the estimate from the mix ([ADR-0022](docs/adr/0022-tempo-estimation-and-one-step-start.md)) is only a hint. Tempo changes are deferred (roadmap 2.2) — Vocaloid material is single-tempo and grid-locked. The mix's beat is tracked only to place bar 1, opt-in (ADR-0031).
+_Avoid_: tempo map, tempogram (out of scope)
 
 **Grid mode**:
-An opt-in producer ([ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) for grid-locked material. Given the BPM and a division (16 or 24 cells per whole note), the core decodes notes per grid cell, not per frame, and estimates the phase itself. Its notes already sit on grid lines, so the UI's auto-anchored snap leaves them unchanged. It is the one place the core is *not* invariant to musical settings, deliberately and only when asked. The default path stays grid-free.
+A producer ([ADR-0015](docs/adr/0015-grid-conditioned-cell-decoding.md)) for grid-locked material. Given the BPM and a division (16 or 24 cells per whole note), the core decodes notes per grid cell, not per frame, and estimates the phase itself. Its notes already sit on grid lines, so the UI's auto-anchored snap leaves them unchanged. It is the one place the core is *not* invariant to musical settings, deliberately. `sona serve` (the app) runs it on every job; `sona transcribe` runs it only with `--grid`, and is grid-free otherwise. GAME and the learned cell stage are snapped to the same kind of grid.
 _Avoid_: "quantized output" for grid mode (nothing is snapped after the fact; the grid is the decode's state space)
 
 **Grid anchor (phase)**:
-Where the quantization grid sits in time — distinct from BPM, which only sets grid *spacing*. Auto-derived by assuming the first detected onset lands on a grid line; overridable by dragging the grid offset in the review surface (needed for pickup notes / leading silence). Getting phase wrong makes hard-snap quantization actively harmful.
+Where the quantization grid sits in time — distinct from BPM, which only sets grid *spacing*. Auto-derived by assuming the first detected onset lands on a grid line; overridable by dragging the ruler in the review surface, which pins bar 1 and carries it along ([ADR-0029](docs/adr/0029-export-frame-bar-one.md)); before any drag or Shift-click, exports use only the anchor's phase within a cell. Pickup notes and leading silence are placed by choosing bar 1 (see Frame). Getting phase wrong makes hard-snap quantization actively harmful.
 
 **Frame (bar 1)**:
 The BPM, the grid (division + anchor) and **bar 1**, a downbeat in stem seconds ([ADR-0029](docs/adr/0029-export-frame-bar-one.md)). The review surface draws cell, beat and bar lines from it, and every export (MIDI, UST, USTX) puts tick 0 on one of its bar lines, so OpenUtau's beats and measures are the editor's. Bar 1 is unset by default (then it is the first grid line at or after 0 s, the pre-frame rule); Shift-click on the ruler sets it, and a ruler drag carries it along with the grid. 4/4 only. With the opt-in **bar 1 from the music** ([ADR-0031](docs/adr/0031-bar-one-from-the-music.md)), the annotation's `bar_one` (the mix's beat, the bar from harmonic change, a confidence) is where bar 1 starts and where Auto returns.

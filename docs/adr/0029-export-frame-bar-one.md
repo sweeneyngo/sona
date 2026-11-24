@@ -1,6 +1,7 @@
 # ADR-0029: One export seam, and a frame whose bar lines are OpenUtau's
 
-Status: accepted, 2026-11-24. Amends [ADR-0018](0018-scope-utau-authoring.md) (grid alignment). Tickets:
+Status: accepted, 2026-11-24. Amends [ADR-0018](0018-scope-utau-authoring.md) (grid alignment). Amended by
+[ADR-0031](0031-bar-one-from-the-music.md): when the annotation has `bar_one`, bar 1 starts there and **Auto** returns to it. Tickets:
 `.scratch/audit-2026-11-24/issues/01-midi-export-off-grid.md` (A01) and `02-export-frame-follows-editor.md` (A02).
 
 ## Context

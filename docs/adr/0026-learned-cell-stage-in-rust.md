@@ -1,6 +1,7 @@
 # ADR-0026: The learned cell stage, ported to Rust
 
-Status: accepted (2026-11-23)
+Status: accepted (2026-11-23). The grid phase (decision 3) amended by [ADR-0027](0027-grid-phase-from-onsets.md):
+it comes from the vocals' onsets.
 
 ## Context
 
