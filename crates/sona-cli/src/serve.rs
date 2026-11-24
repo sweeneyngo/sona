@@ -357,8 +357,16 @@ fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {
         "cells" => Engine::Cells,
         _ => return Err(bad("engine must be pyin, game or cells")),
     };
+    let bar_one = match req.param("bar_one").unwrap_or("0") {
+        "0" => false,
+        "1" => true,
+        _ => return Err(bad("bar_one must be 0 or 1")),
+    };
+    if bar_one && separation == Separation::None {
+        return Err(bad("bar_one needs the full song: choose vocals or lead separation"));
+    }
     let name: String = req.param("name").unwrap_or("upload.wav").chars().filter(|c| !c.is_control()).take(200).collect();
-    Ok(JobSpec { name, bpm, grid, separation, engine })
+    Ok(JobSpec { name, bpm, grid, separation, engine, bar_one })
 }
 
 fn job_status(job: &Job) -> serde_json::Value {

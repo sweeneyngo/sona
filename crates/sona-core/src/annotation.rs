@@ -43,6 +43,22 @@ pub struct Annotation {
     /// What produced this annotation (ADR-0024). Optional, so older annotations still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+    /// Bar 1 estimated from the music (utau-edit-cost 05): only with the opt-in (`sona transcribe
+    /// --bar-one MIX`, `sona serve` `bar_one=1`); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bar_one: Option<BarOneEstimate>,
+}
+
+/// Where bar 1 falls in the music, in stem seconds (`sona_core::bar_one`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BarOneEstimate {
+    /// The first bar line at or after 0 s, on a grid line.
+    pub time_s: f64,
+    /// Share of the song's 8-bar blocks whose harmonic vote agrees, in `0..=1`.
+    pub confidence: f64,
+    /// `true` when `time_s` is the harmonic bar line; `false` when the harmony was too weak and it is
+    /// the first beat.
+    pub harmonic: bool,
 }
 
 /// Everything needed to answer "what produced this?": the build, the exact input and model files, the
@@ -209,6 +225,7 @@ mod tests {
                 EnergyFrame { time_s: 0.26, rms: 0.14 },
             ],
             provenance: None,
+            bar_one: None,
         }
     }
 
@@ -218,6 +235,16 @@ mod tests {
         let json = serde_json::to_string(&original).expect("serialize");
         let decoded: Annotation = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn bar_one_is_absent_from_the_json_unless_estimated() {
+        let plain = serde_json::to_value(sample_annotation()).unwrap();
+        assert!(plain.get("bar_one").is_none(), "{plain}");
+        let with = Annotation { bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }), ..sample_annotation() };
+        let json = serde_json::to_value(&with).unwrap();
+        assert_eq!(json["bar_one"], serde_json::json!({ "time_s": 0.42, "confidence": 0.75, "harmonic": true }));
+        assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
     }
 
     #[test]

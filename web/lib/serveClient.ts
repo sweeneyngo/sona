@@ -31,6 +31,8 @@ export interface JobRequest {
   separation: Separation;
   engine: Engine;
   name: string;
+  /** Also estimate bar 1 from the music (opt-in; needs separation). */
+  barOne?: boolean;
 }
 
 export class ServeError extends Error {}
@@ -94,6 +96,7 @@ export function parseJobStatus(v: unknown): JobStatus {
 
 export function jobQuery(r: JobRequest): string {
   const q = new URLSearchParams({ bpm: String(r.bpm), grid: String(r.grid), separation: r.separation, engine: r.engine, name: r.name });
+  if (r.barOne) q.set("bar_one", "1");
   return `/api/jobs?${q.toString()}`;
 }
 

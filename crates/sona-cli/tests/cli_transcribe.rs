@@ -224,3 +224,69 @@ fn the_cell_stage_needs_game_and_the_vocals_stem() {
         assert!(String::from_utf8_lossy(&out.stderr).contains(expect), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
     }
 }
+
+/// 12 s at 120 BPM: a sung tone on every 8th from `first_s`, and a mix with a drum hit on every beat.
+fn song_and_vocals(first_s: f32) -> (Vec<f32>, Vec<f32>) {
+    let n = 12 * SR as usize;
+    let mut vocals = vec![0.0f32; n];
+    let mut mix = vec![0.0f32; n];
+    let mut seed = 3u32;
+    for e in 0..46 {
+        let at = ((first_s + e as f32 * 0.25) * SR as f32) as usize;
+        for (i, s) in tone(if e % 4 < 2 { 440.0 } else { 523.25 }, 0.2, 0.4).into_iter().enumerate() {
+            vocals[at + i] += s * (-(i as f32) / SR as f32 * 12.0).exp();
+        }
+        if e % 2 == 0 {
+            for i in 0..(0.06 * SR as f32) as usize {
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let noise = (seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5;
+                mix[at + i] += 0.8 * (-(i as f32) / SR as f32 * 60.0).exp() * noise;
+            }
+        }
+    }
+    mix.iter_mut().zip(&vocals).for_each(|(m, v)| *m += v);
+    (mix, vocals)
+}
+
+#[test]
+fn bar_one_is_estimated_only_when_asked_for() {
+    let (mix, vocals) = song_and_vocals(0.1);
+    let (mix_wav, vocals_wav) = (tmp("bar_one_mix.wav"), tmp("bar_one_vocals.wav"));
+    write_wav(&mix_wav, &mix);
+    write_wav(&vocals_wav, &vocals);
+    let v = vocals_wav.to_str().unwrap();
+    let run = |extra: &[&str]| -> serde_json::Value {
+        let mut args = vec!["transcribe", v, "--bpm", "120", "--grid", "16"];
+        args.extend(extra);
+        let out = sona().args(&args).output().expect("run sona");
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let plain = run(&[]);
+    assert!(plain.get("bar_one").is_none(), "{}", plain["bar_one"]);
+    assert!(plain["provenance"]["settings"].get("bar_one").is_none());
+    let with = run(&["--bar-one", mix_wav.to_str().unwrap()]);
+    let b = &with["bar_one"];
+    let t = b["time_s"].as_f64().unwrap();
+    assert!((t - 0.1).abs() < 0.005, "6 bars are too few to vote on the bar, so bar 1 is the first beat: {b}");
+    assert_eq!(b["harmonic"], false, "{b}");
+    assert_eq!(b["confidence"].as_f64(), Some(0.0), "{b}");
+    assert_eq!(with["provenance"]["settings"]["bar_one"], "mix");
+    assert_eq!(with["notes"], plain["notes"], "the notes don't depend on bar 1");
+}
+
+#[test]
+fn bar_one_needs_the_mix_at_the_vocals_rate() {
+    let vocals = tmp("bar_one_rate_vocals.wav");
+    write_wav(&vocals, &two_note_stem());
+    let mix = tmp("bar_one_rate_mix.wav");
+    let spec = hound::WavSpec { channels: 1, sample_rate: 22_050, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let mut w = hound::WavWriter::create(&mix, spec).unwrap();
+    for _ in 0..22_050 {
+        w.write_sample(0i16).unwrap();
+    }
+    w.finalize().unwrap();
+    let out = sona().args(["transcribe", vocals.to_str().unwrap(), "--bpm", "120", "--bar-one", mix.to_str().unwrap()]).output().expect("run sona");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("22050 Hz"), "{}", String::from_utf8_lossy(&out.stderr));
+}

@@ -324,6 +324,7 @@ fn transcribe(cfg: &Cfg, it: &Item) -> Annotation {
         f0_contour: Vec::new(),
         energy_envelope: Vec::new(),
         provenance: None,
+        bar_one: None,
     }
 }
 

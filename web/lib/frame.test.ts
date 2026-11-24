@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DIVISIONS, fixtureSessions, lcg, randomSessions, readMidi, snapLikeTheEditor, type RawNote } from "./exportCases";
-import { barNumber, barSeconds, cellSeconds, downbeat, gridLines, gridPhase, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./frame";
+import { barNumber, barOneLabel, barSeconds, cellSeconds, downbeat, gridLines, gridPhase, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./frame";
 import { snapTime } from "./grid";
 import { encodeMidiFile } from "./midi";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type LyricNote, type Sequence } from "./sequence";
@@ -248,5 +248,51 @@ describe("export helpers", () => {
       [0.25, 0.5],
       [0.5, 0.75],
     ]);
+  });
+});
+
+describe("bar 1 estimated from the music (utau-edit-cost 05)", () => {
+  it("reads the annotation's bar_one only when it is well formed", () => {
+    expect(parseBarOne(undefined)).toBeNull();
+    expect(parseBarOne(null)).toBeNull();
+    expect(parseBarOne({ time_s: 0.4, confidence: 0.8 })).toBeNull();
+    expect(parseBarOne({ time_s: NaN, confidence: 0.8, harmonic: true })).toBeNull();
+    expect(parseBarOne({ time_s: 0.4, confidence: 1.5, harmonic: true })).toBeNull();
+    expect(parseBarOne({ time_s: "0.4", confidence: 0.8, harmonic: true })).toBeNull();
+    expect(parseBarOne({ time_s: 0.4, confidence: 0.8, harmonic: false, extra: 1 })).toEqual({ time_s: 0.4, confidence: 0.8, harmonic: false });
+  });
+
+  it("Auto goes back to the estimate when there is one, and to the default rule when there isn't (property)", () => {
+    const rand = lcg(505);
+    const misses: string[] = [];
+    for (let trial = 0; trial < 500; trial++) {
+      const start: Frame = { bpm: randomBpm(rand), division: randomDivision(rand), anchor: rand() * 3, barOne: rand() < 0.5 ? null : rand() * 20 };
+      const estimate = rand() * 4;
+      const f = updateFrame(start, { type: "auto-bar-one", estimate });
+      const cell = cellSeconds(f);
+      const line = snapTime(estimate, cell, f.anchor);
+      const t0 = tickZero(f, [line]);
+      const bars = (line - t0) / barSeconds(f);
+      if (f.barOne !== estimate) misses.push(`bar 1 ${f.barOne} is not the estimate ${estimate}`);
+      if (Math.abs(downbeat(f) - line) > 1e-9) misses.push(`downbeat ${downbeat(f)} is not the grid line ${line} nearest the estimate`);
+      if (Math.abs(bars - Math.round(bars)) > 1e-6) misses.push(`the estimate's line ${line} is not a bar line (tick 0 ${t0})`);
+      const { notes, kinds } = notesOnLines(f, rand);
+      misses.push(...linesExportMisses(f, notes, kinds));
+      for (const none of [undefined, null]) {
+        const back = updateFrame(start, { type: "auto-bar-one", estimate: none });
+        if (back.barOne !== null || tickZero(back, [10]) !== gridPhase(back.anchor, cellSeconds(back))) misses.push("auto without an estimate is not the default rule");
+      }
+    }
+    expect(misses.slice(0, 5)).toEqual([]);
+  });
+
+  it("says where bar 1 came from, so an estimate is never silent", () => {
+    const f: Frame = { bpm: 120, division: 16, anchor: 0.01, barOne: 0.26 };
+    const est = { time_s: 0.26, confidence: 0.85, harmonic: true };
+    expect(barOneLabel({ ...f, barOne: null }, est)).toBe("first grid line");
+    expect(barOneLabel(f, est)).toBe("0.260 s · from the music (85%)");
+    expect(barOneLabel(f, { ...est, harmonic: false, confidence: 0.25 })).toBe("0.260 s · the music's beat (bar unsure, 25%)");
+    expect(barOneLabel({ ...f, barOne: 2.26 }, est)).toBe("2.260 s");
+    expect(barOneLabel(f, null)).toBe("0.260 s");
   });
 });

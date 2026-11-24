@@ -97,6 +97,18 @@ export interface Annotation {
   energy_envelope: EnergyFrame[];
   /** What produced it (ADR-0024); absent in older annotations. */
   provenance?: Provenance;
+  /** Bar 1 estimated from the music (utau-edit-cost 05); only when the job asked for it. */
+  bar_one?: BarOneEstimate;
+}
+
+/** Where bar 1 falls in the music, in stem seconds (`BarOneEstimate` in the Rust core). */
+export interface BarOneEstimate {
+  /** The first bar line at or after 0 s, on a grid line. */
+  time_s: number;
+  /** Share of the song's 8-bar blocks whose harmonic vote agrees, in `0..=1`. */
+  confidence: number;
+  /** `false` when the harmony was too weak and `time_s` is the music's first beat. */
+  harmonic: boolean;
 }
 
 /**

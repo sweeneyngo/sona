@@ -19,6 +19,13 @@
 //! otherwise; `--seconds 0` keeps the whole song. It reads no sona output, so it is safe for
 //! labelling a holdout by ear (`reports/bar-one.md`, "Ear-labelling the music frame").
 //!
+//! `--estimate-bar-one` scores bar 1 from the music (`sona_core::bar_one`, utau-edit-cost 05) against
+//! the manifest's music frame, at the UST's exact tempo (a typed BPM, so the frame passes exactly
+//! when the bar offset is 0): today's tick 0, the oracle with the music's own beat (first beat at or
+//! after 0 s, and at or before), the estimator's beat alone, its harmonic bar, and the shipped rule
+//! (harmonic bar, beat when the confidence is low). The music's bar is itself a harmonic estimate,
+//! so the bar columns are circular until it is checked by ear.
+//!
 //! `--bar-one` prints the bar-one study's table instead (`reports/bar-one.md`): where sona's tick 0
 //! lands under today's rule and under "nearest grid line to 0 s", against the UST's bar line nearest
 //! 0 s, and the beat phase `grid_phase` finds at one-beat spacing on the drums stem and on the mix,
@@ -26,7 +33,8 @@
 use std::process::ExitCode;
 use sona_core::tempo::grid_phase;
 use sona_eval::frame::{
-    cells_after, drift_beats, measure, nearest_tick0_s, overlay_clicks, sona_tick0_s, BarOffset, Frame, TempoMultiple, BEATS_PER_BAR, DRIFT_PASS_BEATS,
+    cells_after, drift_beats, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, sona_tick0_from_audio, sona_tick0_s, song_bootstrap, BarOffset, Frame,
+    TempoMultiple, BEATS_PER_BAR, BOOTSTRAP_ITERS, DRIFT_PASS_BEATS,
 };
 use sona_eval::quantize::grid_spacing_seconds;
 use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest};
@@ -62,6 +70,9 @@ fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--bar-one") {
         return bar_one();
+    }
+    if args.iter().any(|a| a == "--estimate-bar-one") {
+        return estimate_bar_one();
     }
     if args.iter().any(|a| a == "--clicks") {
         return clicks(&args);
@@ -225,5 +236,82 @@ fn bar_one() -> Result<(), String> {
     }
     println!("\ntoday = first grid line at or after 0 s (the export); nearest = grid line nearest 0 s");
     println!("today-UST, near-UST: cells after the UST bar line nearest 0 s; drums/mix beat: grid_phase at one beat, cells after the UST's beat lines");
+    Ok(())
+}
+
+/// The bar-1 estimator against the music frame: one row per dev song, bar offsets in beats.
+fn estimate_bar_one() -> Result<(), String> {
+    let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
+    let audio = manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default();
+    let stems = stems_dir();
+    const RULES: [&str; 6] = ["today", "beat@>=0", "beat@<=0", "est beat", "est harm", "shipped"];
+    println!(
+        "{:28} {:>4} {:>6} {:>6} {:>6} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>5} {:>5}",
+        "song", "grid", "ref", "est", "beat", RULES[0], RULES[1], RULES[2], RULES[3], RULES[4], RULES[5], "conf", "from"
+    );
+    println!("{:28} {:>4} {:>6} {:>6} {:>6}   (whole beats off the music's bar line, residual in beats)", "", "", "bar", "bar", "Δcell");
+    let mut rows: Vec<[bool; 6]> = Vec::new();
+    for song in manifest.songs.iter().filter(|s| s.split.as_deref() == Some("dev")) {
+        let (Some(offset), Some(bpm), Some(music)) = (song.alignment_offset_s, song.bpm_from_ust, song.music_frame()) else { continue };
+        if !song.alignment_status.as_deref().is_some_and(|a| a.starts_with("aligned")) {
+            continue;
+        }
+        let division = song.grid_division.unwrap_or(16);
+        let cell = grid_spacing_seconds(bpm, f64::from(division));
+        let beat = 60.0 / bpm;
+        let (mix, msr) = wav::read_mono(&audio.join(format!("{}.wav", song.id))).map_err(|e| format!("{}: {e}", song.id))?;
+        let (vocals, vsr) = wav::read_mono(&stems.join(&song.id).join("vocals.wav")).map_err(|e| format!("{}: {e}", song.id))?;
+        if msr != vsr {
+            return Err(format!("{}: mix {msr} Hz, vocals {vsr} Hz", song.id));
+        }
+        let today = sona_tick0_from_audio(&vocals, vsr, bpm, division).ok_or_else(|| format!("{}: no vocal onsets", song.id))?;
+        let est = sona_core::bar_one::estimate(&mix, &vocals, msr, bpm, division).ok_or_else(|| format!("{}: no estimate", song.id))?;
+        let ref_beat = music.beat_line_s(offset, cell).rem_euclid(beat);
+        let ref_before = if ref_beat > 1e-9 { ref_beat - beat } else { ref_beat };
+        let tick0s = [today, ref_beat, ref_before, est.beat_s, est.beat_s + est.harmonic_beat as f64 * beat, est.bar_s];
+        let offsets: Vec<BarOffset> = tick0s.iter().map(|&t| music_bar_offset(t, offset, bpm, division, music)).collect();
+        let cells_per_beat = (f64::from(division) / 4.0).round();
+        let beat_cells = cells_after(est.beat_s, music.beat_line_s(offset, cell), beat, cell);
+        let beat_cells = if beat_cells > cells_per_beat / 2.0 { beat_cells - cells_per_beat } else { beat_cells };
+        let cells_per_bar = cells_per_beat * BEATS_PER_BAR;
+        let est_bar = cells_after(est.beat_s + est.harmonic_beat as f64 * beat, offset, BEATS_PER_BAR * beat, cell).round().rem_euclid(cells_per_bar);
+        let cellsfmt = |b: &BarOffset| format!("{}{:+.2}", b.beats, b.residual_beats);
+        println!(
+            "{:28} {:>4} {:>6} {:>6} {:>+6.2} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>5.2} {:>5}",
+            song.id,
+            division,
+            music.bar_shift_cells,
+            est_bar,
+            beat_cells,
+            cellsfmt(&offsets[0]),
+            cellsfmt(&offsets[1]),
+            cellsfmt(&offsets[2]),
+            cellsfmt(&offsets[3]),
+            cellsfmt(&offsets[4]),
+            cellsfmt(&offsets[5]),
+            est.confidence,
+            if est.from_harmony() { "harm" } else { "beat" },
+        );
+        let mut pass = [false; 6];
+        for (p, b) in pass.iter_mut().zip(&offsets) {
+            *p = b.beats == 0;
+        }
+        rows.push(pass);
+    }
+    let n = rows.len();
+    println!("\n{n} songs, typed (UST) BPM: frame pass = bar offset 0 against the music's bar line ({BOOTSTRAP_ITERS} song resamples, 95%)");
+    let as_f = |i: usize| -> Vec<f64> { rows.iter().map(|r| f64::from(u8::from(r[i]))).collect() };
+    for (i, rule) in RULES.iter().enumerate() {
+        let (lo, hi) = song_bootstrap(&as_f(i));
+        let diff: Vec<f64> = rows.iter().map(|r| f64::from(u8::from(r[i])) - f64::from(u8::from(r[0]))).collect();
+        let (dlo, dhi) = song_bootstrap(&diff);
+        println!(
+            "  {rule:<9} {}/{n}  [{lo:.0}, {hi:.0}]   vs today {:+}  [{dlo:+.0}, {dhi:+.0}]",
+            rows.iter().filter(|r| r[i]).count(),
+            diff.iter().sum::<f64>(),
+        );
+    }
+    println!("ref bar / est bar: cells after the UST's bar line; beat Δcell: the estimator's beat minus the music's, in cells");
+    println!("beat@>=0 / beat@<=0: the music's own beat (manifest) as bar 1, the first at or after 0 s / at or before (oracle for the beat alone)");
     Ok(())
 }

@@ -49,6 +49,13 @@ describe("serve client boundary", () => {
     expect(params.getAll("engine")).toHaveLength(1);
   });
 
+  it("asks for bar 1 only when the job opts in, and leaves the default query as it was", () => {
+    const base = { bpm: 128, grid: 16, separation: "vocals", engine: "pyin", name: "a.wav" } as const;
+    expect(jobQuery(base)).toBe("/api/jobs?bpm=128&grid=16&separation=vocals&engine=pyin&name=a.wav");
+    expect(jobQuery({ ...base, barOne: false })).toBe(jobQuery(base));
+    expect(new URLSearchParams(jobQuery({ ...base, barOne: true }).split("?")[1]).get("bar_one")).toBe("1");
+  });
+
   describe("the tempo estimate", () => {
     afterEach(() => vi.unstubAllGlobals());
     const answering = (res: () => Response) => vi.stubGlobal("fetch", async () => res());

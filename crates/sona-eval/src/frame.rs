@@ -238,3 +238,29 @@ pub fn overlay_clicks(audio: &[f32], sample_rate: u32, bar_line_s: f64, beat_s: 
     }
     out
 }
+
+/// Where a tick 0 at `tick0_s` sits against the music's bar line, at the true tempo.
+pub fn music_bar_offset(tick0_s: f64, ust_tick0_s: f64, bpm: f64, division: u32, music: MusicFrame) -> BarOffset {
+    bar_offset(tick0_s, music.bar_line_s(ust_tick0_s, grid_spacing_seconds(bpm, f64::from(division))), bpm)
+}
+
+/// Song resamples in [`song_bootstrap`].
+pub const BOOTSTRAP_ITERS: usize = 10_000;
+
+/// 95% percentile interval of `Σ score` over songs resampled with replacement (fixed seed).
+pub fn song_bootstrap(scores: &[f64]) -> (f64, f64) {
+    if scores.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut draws: Vec<f64> = (0..BOOTSTRAP_ITERS).map(|_| (0..scores.len()).map(|_| scores[(next() % scores.len() as u64) as usize]).sum()).collect();
+    draws.sort_by(f64::total_cmp);
+    let q = |p: f64| draws[((draws.len() - 1) as f64 * p).round() as usize];
+    (q(0.025), q(0.975))
+}

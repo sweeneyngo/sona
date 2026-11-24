@@ -98,6 +98,7 @@ impl Transcriber {
             f0_contour,
             energy_envelope: onset_result.energy_envelope,
             provenance: None,
+            bar_one: None,
         }
     }
 
