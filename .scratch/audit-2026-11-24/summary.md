@@ -44,3 +44,4 @@ so separation is inflated); job dir 134 MB, never deleted.
   lands on an OpenUtau bar line.
 - 2026-11-24: **A06 resolved** (merged): invariants now fuzz GAME's `snap_to_grid` (+ octave check), the cell stage's `snap_notes`/`cells_to_notes`, and the stage minus the model; no violations found; runs in CI without weights.
 - 2026-11-24: **A13 resolved** (merged via PR #1, CI green including the new `e2e` job): the 10 editor browser drivers run in CI through `scripts/ci/e2e.sh`.
+- 2026-11-24: **A12 resolved** (merged): the start screen and `sona serve` say what's missing (ffmpeg, venvs) and what downloads on first use (demucs weights, UVR model); tempo errors show the server's reason. GAME/cell-model greying still unexplained (left).
