@@ -1,6 +1,6 @@
 # 13 — Run the editor browser drivers in CI
 
-Status: resolved (pending a green CI run on the pushed branch)
+Status: resolved (CI green on PR #1)
 Type: task
 Blocked by: —
 

@@ -43,3 +43,4 @@ so separation is inflated); job dir 134 MB, never deleted.
 - Needs a human in OpenUtau: MIDI import of UTF-8 lyric events and tick 0; a UST with a chosen beat 1
   lands on an OpenUtau bar line.
 - 2026-11-24: **A06 resolved** (merged): invariants now fuzz GAME's `snap_to_grid` (+ octave check), the cell stage's `snap_notes`/`cells_to_notes`, and the stage minus the model; no violations found; runs in CI without weights.
+- 2026-11-24: **A13 resolved** (merged via PR #1, CI green including the new `e2e` job): the 10 editor browser drivers run in CI through `scripts/ci/e2e.sh`.
