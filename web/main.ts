@@ -28,7 +28,7 @@ import { detectKey, keyName } from "./lib/key";
 import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
 import { encodeMidiFile } from "./lib/midi";
-import { assignLyrics, checkLyric, splitLyrics } from "./lib/lyrics";
+import { assignLyrics, checkLyric, lyricsInOrder } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
 import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
 import { DEFAULT_DIVISION, GRIDS, JOB_GRIDS, isDivision, jobDivision } from "./lib/grid";
@@ -1930,13 +1930,23 @@ el.lyricEditor.addEventListener("blur", () => {
   }
 });
 
+/** The Lyrics box's moras, a note each in order; none while it holds a character the rule refuses. */
+function lyricsBoxMoras(): string[] {
+  const c = checkLyric(el.lyricsText.value);
+  return c.kind === "ok" ? lyricsInOrder(c.lyric) : [];
+}
+
 function updateLyricsPreview(): void {
-  const tokens = splitLyrics(el.lyricsText.value);
+  const c = checkLyric(el.lyricsText.value);
+  const tokens = lyricsBoxMoras();
   const total = workingNotes.length;
   const sung = workingNotes.filter((n) => n.lyric).length;
   el.lyricsPreview.textContent =
-    `${tokens.length} token${tokens.length === 1 ? "" : "s"} · ${total} notes (${sung} with lyrics)` +
-    (tokens.length ? ` · starts: ${tokens.slice(0, 12).join(" ")}${tokens.length > 12 ? " …" : ""}` : "");
+    c.kind === "bad"
+      ? c.message
+      : `${tokens.length} mora${tokens.length === 1 ? "" : "s"} · ${total} notes (${sung} with lyrics)` +
+        (tokens.length ? ` · starts: ${tokens.slice(0, 12).join(" ")}${tokens.length > 12 ? " …" : ""}` : "");
+  el.lyricsPreview.classList.toggle("bad", c.kind === "bad");
   el.lyricsFromSelected.disabled = !selectedNote || !tokens.length;
   el.lyricsFromStart.disabled = !tokens.length;
 }
@@ -1951,7 +1961,7 @@ function layLyricTokens(tokens: string[], from: number): { placed: number; lefto
 
 function fillLyrics(from: WorkingNote | null): void {
   const start = from ? Math.max(0, notesInTimeOrder().indexOf(from)) : 0;
-  const { placed, leftover } = layLyricTokens(splitLyrics(el.lyricsText.value), start);
+  const { placed, leftover } = layLyricTokens(lyricsBoxMoras(), start);
   markDirty();
   setModal(el.lyricsOverlay, false);
   redraw();
@@ -1969,7 +1979,7 @@ function showSongLyric(): string | null {
 function laySongLyric(): string {
   const lyric = showSongLyric();
   if (lyric === null) return "";
-  const { placed, leftover } = layLyricTokens(splitLyrics(lyric), 0);
+  const { placed, leftover } = layLyricTokens(lyricsInOrder(lyric), 0);
   return ` · lyric on ${placed} notes` + (leftover ? `, ${leftover} moras left over` : "");
 }
 
@@ -2415,7 +2425,7 @@ function renderStart(): void {
 function showLyricCheck(text: string): void {
   const c = checkLyric(text);
   const lines = c.kind === "ok" ? c.lyric.split("\n").filter((l) => l.trim()).length : 0;
-  const moras = c.kind === "ok" ? splitLyrics(c.lyric).length : 0;
+  const moras = c.kind === "ok" ? lyricsInOrder(c.lyric).length : 0;
   el.songLyricCheck.textContent =
     c.kind === "bad" ? c.message : c.kind === "empty" ? "Each line is a phrase; sona puts one mora on each note." : `${lines} line${lines === 1 ? "" : "s"} · ${moras} moras`;
   el.songLyricCheck.classList.toggle("bad", c.kind === "bad");
