@@ -27,7 +27,7 @@ expect() {
   if [ "$want" = "$got" ]; then echo "  pass  $label ($got)"; else echo "  FAIL  $label: wanted $want, got $got"; fail=1; fi
 }
 
-echo "Rules (every path, 3 songs, 3 tempos):"
+echo "Rules (every path, 3 songs, 3 tempos, jobs by hash or upload):"
 expect "StartFlow.cfg" ok "$(violated_invariant "$here/StartFlow.tla" "$here/StartFlow.cfg")"
 [ "${1:-}" = "--quick" ] && { rm -rf "$tmp"; exit $fail; }
 
@@ -44,5 +44,9 @@ mutant stale-tempo-wins      TempoIsForTheShownSong "s/ \/\\\\ song = s \/\\\\ h
 mutant start-without-tempo   JobsHaveATempo         "s/kind = \"ready\" \/\\\\ Usable(bpm) \/\\\\ jobs < 2/kind = \"ready\" \/\\\\ jobs < 2/"
 mutant estimate-becomes-bpm  BpmIsYours             "s/\/\\\\ bpm' = bpm$/\/\\\\ bpm' = IF kind = \"ready\" THEN t ELSE bpm/"
 mutant bpm-carries-over      BpmIsYours             "s/bpm' = NoTempo \/\\\\ hint' = NoTempo/bpm' = bpm \/\\\\ hint' = NoTempo/"
+mutant stale-hash-wins       HashIsForTheShownSong  "s/ \/\\\\ song = s \/\\\\ hashFor = 0/ \/\\\\ hashFor = 0/"
+mutant hash-carries-over     HashIsForTheShownSong  "s/hashFor' = 0 \/\\\\ hashing'/hashFor' = hashFor \/\\\\ hashing'/"
+mutant hash-of-another-song  HashJobsNameTheirSong  "s/sending' = \"hash\" \/\\\\ jobHash' = editorSong/sending' = \"hash\" \/\\\\ jobHash' = hashFor/"
+mutant upload-without-file   UploadsSendTheSong     "s/IF fileFor = song/IF TRUE/"
 rm -rf "$tmp"
 exit $fail

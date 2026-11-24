@@ -37,7 +37,14 @@ export interface JobRequest {
   barOne?: boolean;
 }
 
-export class ServeError extends Error {}
+export class ServeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null = null,
+  ) {
+    super(message);
+  }
+}
 
 const PHASES: readonly Phase[] = ["queued", "decoding", "separating-vocals", "separating-lead", "transcribing", "done", "failed", "cancelled"];
 const FINAL: readonly Phase[] = ["done", "failed", "cancelled"];
@@ -96,9 +103,11 @@ export function parseJobStatus(v: unknown): JobStatus {
   };
 }
 
-export function jobQuery(r: JobRequest): string {
+/** The job's query; `upload` names the song by its SHA-256 instead of sending it (ADR-0032). */
+export function jobQuery(r: JobRequest, upload?: string): string {
   const q = new URLSearchParams({ bpm: String(r.bpm), grid: String(r.grid), separation: r.separation, engine: r.engine, name: r.name });
   if (r.barOne) q.set("bar_one", "1");
+  if (upload !== undefined) q.set("upload", upload);
   return `/api/jobs?${q.toString()}`;
 }
 
@@ -112,7 +121,7 @@ async function call(path: string, init?: RequestInit): Promise<unknown> {
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const msg = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
-    throw new ServeError(msg);
+    throw new ServeError(msg, res.status);
   }
   return body;
 }
@@ -132,6 +141,32 @@ export async function fetchJobOrCancel(id: string): Promise<JobStatus> {
   }
 }
 export const submitJob = async (r: JobRequest, audio: Blob): Promise<JobStatus> => parseJobStatus(await call(jobQuery(r), { method: "POST", body: audio }));
+
+/** A job that names its song by SHA-256 and sends no audio (ADR-0032). When the server hasn't got the
+ * song's stems (404) or can't tell yet (409), its reason comes back as `refused`: send the file instead. */
+export async function submitJobByHash(r: JobRequest, sha256: string): Promise<JobStatus | { refused: string }> {
+  try {
+    return parseJobStatus(await call(jobQuery(r, sha256), { method: "POST" }));
+  } catch (err) {
+    if (err instanceof ServeError && (err.status === 404 || err.status === 409)) return { refused: err.message };
+    throw err;
+  }
+}
+
+/** A SHA-256 as the server writes it: 64 lowercase hex digits. */
+export const isSha256 = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+
+/** The file's SHA-256 as the server writes it, or null where the browser can't hash (no secure context). */
+export async function songHash(file: Blob): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  try {
+    const digest = new Uint8Array(await subtle.digest("SHA-256", await file.arrayBuffer()));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchTempo(audio: Blob, name: string): Promise<number | null> {
   const o = record(await call(`/api/tempo?${new URLSearchParams({ name }).toString()}`, { method: "POST", body: audio }));

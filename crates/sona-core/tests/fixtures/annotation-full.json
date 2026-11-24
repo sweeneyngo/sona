@@ -88,10 +88,12 @@
           "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       ],
+      "separation": "lead",
       "stems": {
         "key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "reused": true,
-        "separated_by": "j0"
+        "separated_by": "j0",
+        "by_hash": true
       }
     }
   },

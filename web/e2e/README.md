@@ -2,7 +2,7 @@
 
 Playwright scripts that use the real app the way a person does, print what they observed, and exit non-zero
 when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was verified. CI runs the editor drivers (job `e2e`,
-`scripts/ci/e2e.sh`); the two that need `sona serve` run locally only (`docs/roadmap.md`, 6.4).
+`scripts/ci/e2e.sh`); the three that need `sona serve` run locally only (`docs/roadmap.md`, 6.4).
 
 | Driver | Checks |
 |---|---|
@@ -14,6 +14,7 @@ when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was ver
 | `lyrics_export.py` | Paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
 | `fit_and_export.py` | Fit pitch, edit a vibrato, export UST/USTX; a session reload exports the same UST. |
 | `cancel_and_retry.py` | A decimal BPM typed right after the drop (`123,5`) is the job's BPM; Cancel stops the server job, keeps the song and BPM, and a retry starts at once. Needs `sona serve`. |
+| `retranscribe.py` | Transcribe names the dropped song by its hash and sends the file only when refused; after a lyric edit and ½×, **Re-transcribe at 60 BPM** sends the hash alone, the new notes load, one Undo brings back the edited notes (and their transcription), Redo the new ones. Needs `sona serve` (stub separators are enough). |
 | `undo_redo.py` | A tempo burst, a note drag, a lyric and a pen stroke undo one step each and redo exactly; Ctrl+Z in a text field leaves the document alone; reopening a file starts a fresh history. |
 | `stale_hover.py` | Delete after a scroll acts on what is under the mouse now. |
 | `lite_autosave.py` | With storage forced full, pen edits survive a reload and resume. |
@@ -37,7 +38,7 @@ With nothing else set, the editor drivers use a **synthetic fixture** that `fixt
 held note with vibrato and a falling tail, as an annotation with its f0 contour and a three-harmonic stem
 that sings it. Nothing is committed and no recording is involved.
 
-To run on your own material, or to run `song_to_notes` and `cancel_and_retry`:
+To run on your own material, or to run `song_to_notes`, `cancel_and_retry` and `retranscribe`:
 
 ```sh
 cargo run --release -p sona-cli -- serve               # song_to_notes, cancel_and_retry (build web/dist first)

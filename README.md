@@ -38,9 +38,12 @@ scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separa
 Drop a song on the page and type its BPM (decimals are fine). If you don't know it, click the detected
 tempo, or its **½×**, beside the field. **Transcribe** does the rest. A 25 s clip takes about 80 s on a
 laptop CPU. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
-**MIDI**. Got the BPM wrong? Drop the same song again with the right one: the server keeps the separated
-stems of recent songs, so a second run (another BPM, ½×, grid or engine) skips separation and takes only
-the transcription time ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md)).
+**MIDI**. Got the BPM wrong? Fix it in the **♩** popover (type it, or ½×/2×, or change the grid) and
+click **Re-transcribe at N BPM**: the server keeps the separated stems of recent songs, so a second run
+skips separation and takes only the transcription time, and the song isn't sent again (the app names it
+by its SHA-256). The new notes replace yours as one step: **Undo** brings your edited notes back. Dropping
+a song the server already has starts the same way, without the upload
+([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md), [ADR-0032](docs/adr/0032-retranscribe-by-upload-hash.md)).
 
 ### Better notes with GAME (optional)
 
@@ -206,6 +209,12 @@ and for disk and time:
 - `--tool-timeout S` (600) / `--tool-timeout-ratio R` (20 s per second of audio): a hung tool fails its
   job instead of blocking the queue. A panic fails only its job, too ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md)).
 
+`POST /api/jobs?…&upload=<sha256>` with an empty body runs a job on an upload the server already has: the
+stem-cache entry for that hash and separation keeps the upload beside its stems. A hash it hasn't got (or
+`separation=none`, or `--keep-stems 0`) is a 404, a server still reading its separators' versions a 409;
+the app then sends the file. The hash must be 64 lowercase hex digits (else 400), and the Host and Origin
+checks apply as to any job ([ADR-0032](docs/adr/0032-retranscribe-by-upload-hash.md)).
+
 **GAME** (openvpi's singing-transcription model; setup above) gives better notes. **GAME plus the
 learned cell stage** is the best measured (`--cell-model DIR --vocals VOCALS.wav`, or
 `sona serve --cell-model DIR`; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)), but the stage
@@ -329,7 +338,7 @@ check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md).
 - the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
 - the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
   start screen;
-- the eleven editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The two that need
+- the eleven editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The three that need
   `sona serve` run locally.
 
 ```

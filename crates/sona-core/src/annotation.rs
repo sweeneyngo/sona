@@ -101,6 +101,9 @@ pub struct JobRecord {
     pub tools: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub models: Vec<FileFingerprint>,
+    /// The separation the job asked for: `none`, `vocals` or `lead` (ADR-0032); absent in older records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separation: Option<String>,
     /// Where the separated stems came from (ADR-0030); absent when the job separated nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stems: Option<StemSource>,
@@ -115,6 +118,10 @@ pub struct StemSource {
     pub reused: bool,
     /// The job that ran the separators.
     pub separated_by: String,
+    /// `true` when the job sent no audio but named its upload by hash, which the server took from the
+    /// stem cache (ADR-0032).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub by_hash: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -269,7 +276,8 @@ mod tests {
                     steps: vec![StepTime { step: "transcribing".into(), seconds: 1.5 }],
                     tools: [("demucs".to_string(), "4.0.1".to_string())].into(),
                     models: vec![file("separator/lead", "UVR.onnx", 2_048, 'd')],
-                    stems: Some(StemSource { key: "e".repeat(64), reused: true, separated_by: "j0".into() }),
+                    separation: Some("lead".into()),
+                    stems: Some(StemSource { key: "e".repeat(64), reused: true, separated_by: "j0".into(), by_hash: true }),
                 }),
             }),
             bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }),

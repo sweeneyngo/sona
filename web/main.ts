@@ -43,7 +43,8 @@ import { detailSections } from "./lib/provenance";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, renderPitch, type Expression } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
-import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
+import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, songHash, submitJob, submitJobByHash, type Capabilities, type Engine, type JobRequest, type JobStatus, type Separation } from "./lib/serveClient";
+import { retranscribeJob, retranscribeLabel, transcribedFrom } from "./lib/retranscribe";
 import { hintBpm, parseBpm, phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
@@ -163,6 +164,8 @@ const el = {
   tempoPop: document.getElementById("tempo-pop") as HTMLDivElement,
   bpmHalf: document.getElementById("bpm-half") as HTMLButtonElement,
   bpmDouble: document.getElementById("bpm-double") as HTMLButtonElement,
+  retranscribeRow: document.getElementById("retranscribe-row") as HTMLDivElement,
+  retranscribe: document.getElementById("retranscribe") as HTMLButtonElement,
   exprVib: document.getElementById("expr-vib") as HTMLButtonElement,
   exprExactToggle: document.getElementById("expr-exact-toggle") as HTMLButtonElement,
   exprExact: document.getElementById("expr-exact") as HTMLSpanElement,
@@ -239,6 +242,10 @@ let workingNotes: WorkingNote[] = [];
 let baselineNotes: Note[] = [];
 /** Decoded stem, for playback and for the total roll duration. */
 let audioBuffer: AudioBuffer | null = null;
+/** Each transcription's stem, so undoing a re-transcription brings back the audio with the notes. */
+const stemOf = new WeakMap<Annotation, AudioBuffer | null>();
+/** What `sona serve` offers; null until it answers (or without it). */
+let serveCaps: Capabilities | null = null;
 /** Rendering geometry, rebuilt on load and resize. Null until data arrives. */
 let scale: Scale | null = null;
 /** Screen rects of drawn notes, for hover/hit-testing. Each carries its working note. */
@@ -347,10 +354,12 @@ function applyLoadedJson(parsed: any): boolean {
 async function loadStemBytes(bytes: ArrayBuffer): Promise<void> {
   try {
     audioBuffer = await ensureAudioContext().decodeAudioData(bytes);
+    if (annotation) stemOf.set(annotation, audioBuffer);
     setStatus(`Audio loaded`);
     rebuild();
   } catch (err) {
     audioBuffer = null;
+    if (annotation) stemOf.set(annotation, null);
     setStatus(`Could not decode audio: ${(err as Error).message}`, true);
     rebuild();
   }
@@ -567,6 +576,15 @@ function syncTempoChip(): void {
   const grid = el.division.selectedOptions[0]?.textContent ?? `1/${division}`;
   el.tempoChipText.textContent = `${Math.round(bpm * 10) / 10} · ${grid}`;
   syncBarOne();
+  const job = retranscription();
+  el.retranscribeRow.hidden = !job;
+  if (job) el.retranscribe.textContent = retranscribeLabel(job.bpm);
+}
+
+/** The job that transcribes the editor's song again at the tempo and grid set now (ADR-0032). */
+function retranscription(): JobRequest | null {
+  const t = transcribedFrom(annotation);
+  return t && serveCaps ? retranscribeJob(t, bpm, division, serveCaps) : null;
 }
 
 function setTempoPop(open: boolean): void {
@@ -585,6 +603,7 @@ function scaleBpm(k: number): void {
 el.tempoChip.addEventListener("click", () => setTempoPop(el.tempoPop.hidden));
 el.bpmHalf.addEventListener("click", () => scaleBpm(0.5));
 el.bpmDouble.addEventListener("click", () => scaleBpm(2));
+el.retranscribe.addEventListener("click", () => void retranscribe());
 el.tempoPop.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     e.stopPropagation();
@@ -1612,19 +1631,27 @@ function markDirty(source?: string): void {
 interface DocState {
   doc: string;
   contour: F0Frame[] | null;
+  /** The transcription the notes belong to: a re-transcription replaces it, and undo puts it back. */
+  source: { annotation: Annotation | null; baseline: Note[] };
 }
 
 const contourShare = new SharedSnapshot<F0Frame>();
 
 function captureDoc(): DocState {
   const doc = docText(workingNotes, currentSettings());
-  return { doc, contour: annotation ? contourShare.capture(annotation.f0_contour) : null };
+  return { doc, contour: annotation ? contourShare.capture(annotation.f0_contour) : null, source: { annotation, baseline: baselineNotes } };
 }
 
 function restoreDoc(s: DocState): void {
   // The bar holds on to the note it shows while it has focus; that note is about to be replaced.
   if (exprBarHasFocus()) (document.activeElement as HTMLElement).blur();
   noteShownInExprBar = null;
+  if (s.source.annotation !== annotation) {
+    stopPlayback();
+    annotation = s.source.annotation;
+    baselineNotes = s.source.baseline;
+    audioBuffer = annotation ? (stemOf.get(annotation) ?? null) : null;
+  }
   const d = parseDoc(s.doc);
   workingNotes = d.notes;
   applySettings(d.settings);
@@ -1638,7 +1665,11 @@ function restoreDoc(s: DocState): void {
   rebuild();
 }
 
-const edits = new Undo<DocState>({ capture: captureDoc, restore: restoreDoc, equal: (a, b) => a.doc === b.doc && a.contour === b.contour });
+const edits = new Undo<DocState>({
+  capture: captureDoc,
+  restore: restoreDoc,
+  equal: (a, b) => a.doc === b.doc && a.contour === b.contour && a.source.annotation === b.source.annotation,
+});
 
 /** A field with its own text undo (the browser's): everything else gets the document's undo. */
 function editsText(el: Element | null): boolean {
@@ -2275,8 +2306,12 @@ el.startResume.addEventListener("click", () => {
 
 let startShown = false;
 let startState: StartState = { kind: "idle", error: null };
-let serveCaps: Capabilities | null = null;
 let songBlob: File | null = null;
+/** The start-flow song `songBlob` is, and its SHA-256 once hashed. */
+let songBlobSong = 0;
+let songBlobHash: string | null = null;
+/** The attempt that re-transcribes the editor's song, and the editor grid to keep when it loads. */
+let retranscribing: { attempt: number; division: number } | null = null;
 let songCounter = 0;
 let pollTimer: number | null = null;
 
@@ -2298,7 +2333,7 @@ function renderStart(): void {
     el.songName.textContent = s.name;
     if (document.activeElement !== el.songBpm) el.songBpm.value = s.bpm === null ? "" : String(s.bpm);
     const d = s.detected;
-    el.songHintText.textContent = d === "pending" ? "finding the tempo…" : d === null ? "no steady beat found" : typeof d === "number" ? "detected ≈" : `no tempo: ${d.error}`;
+    el.songHintText.textContent = d === "pending" ? "finding the tempo…" : d === "unasked" ? "" : d === null ? "no steady beat found" : typeof d === "number" ? "detected ≈" : `no tempo: ${d.error}`;
     el.songHintFull.hidden = el.songHintHalf.hidden = typeof d !== "number";
     if (typeof d === "number") {
       el.songHintFull.textContent = String(hintBpm(d, 1));
@@ -2313,7 +2348,7 @@ function renderStart(): void {
   el.songRunning.hidden = s.kind !== "running";
   if (s.kind === "running") {
     el.songRunningName.textContent = s.name;
-    el.songPhase.textContent = s.job === null ? "Uploading…" : `${PHASE_LABEL[s.phase]} · ${Math.round(s.elapsedS)} s`;
+    el.songPhase.textContent = s.job === null ? (s.sending === "hash" ? "Starting…" : "Uploading…") : `${PHASE_LABEL[s.phase]} · ${Math.round(s.elapsedS)} s`;
     el.songBpm.blur();
     el.songBar.style.width = `${Math.max(4, phaseProgress(s.phase, el.songSeparation.value as Separation) * 100)}%`;
     el.songLog.textContent = s.log.join("\n") || "Nothing logged yet.";
@@ -2343,6 +2378,7 @@ function applyCapabilities(caps: Capabilities): void {
   );
   syncBarOneOption();
   dispatchStart({ type: "serve-found" });
+  syncTempoChip();
 }
 
 /** Bar 1 from the music needs the full song beside its vocals, so not an upload that is already a stem. */
@@ -2355,8 +2391,15 @@ async function chooseSong(file: File): Promise<void> {
   if (startState.kind === "running" || startState.kind === "unavailable") return;
   const song = ++songCounter;
   songBlob = file;
+  songBlobSong = song;
+  songBlobHash = null;
   dispatchStart({ type: "choose", song, name: file.name });
   el.songBpm.focus();
+  void songHash(file).then((sha256) => {
+    if (sha256 === null || songBlobSong !== song) return;
+    songBlobHash = sha256;
+    dispatchStart({ type: "hashed", song, sha256 });
+  });
   const answer = serveCaps?.tempo ? await estimateTempo(file, file.name) : { error: "this sona serve can't estimate tempo" };
   dispatchStart("error" in answer ? { type: "tempo-failed", song, message: answer.error } : { type: "tempo", song, bpm: answer.bpm });
 }
@@ -2370,19 +2413,54 @@ async function transcribeSong(): Promise<void> {
   const attempt = ++attempts;
   dispatchStart({ type: "transcribe", attempt });
   const s = startState;
-  if (!awaitingJob(attempt) || s.kind !== "running" || !songBlob) return;
-  const grid = jobDivision(el.songGrid.value);
+  if (!awaitingJob(attempt) || s.kind !== "running") return;
+  const separation = el.songSeparation.value as Separation;
+  const barOneWanted = el.songBarOne.checked && separation !== "none";
+  await submitSong(attempt, { bpm: s.bpm, grid: jobDivision(el.songGrid.value), separation, engine: el.songEngine.value as Engine, name: s.name, ...(barOneWanted ? { barOne: true } : {}) });
+}
+
+/** Transcribe the editor's song again at the tempo and grid set in the popover, by its hash (ADR-0032). */
+async function retranscribe(): Promise<void> {
+  const t = transcribedFrom(annotation);
+  const job = retranscription();
+  if (!t || !job || startState.kind === "running") return;
+  const file = songBlob !== null && songBlobHash === t.hash;
+  const song = file ? songBlobSong : ++songCounter;
+  const attempt = ++attempts;
+  retranscribing = { attempt, division };
+  el.songSeparation.value = job.separation;
+  el.songEngine.value = job.engine;
+  el.songGrid.value = String(job.grid);
+  el.songBarOne.checked = job.barOne === true;
+  syncBarOneOption();
+  setTempoPop(false);
+  dispatchStart({ type: "retranscribe", attempt, song, name: job.name, bpm: job.bpm, hash: t.hash, file });
+  showStart(true);
+  await submitSong(attempt, job);
+}
+
+/** Send the attempt's job: by the song's hash when the start flow says so, the file when it says upload. */
+async function submitSong(attempt: number, req: JobRequest): Promise<void> {
   try {
-    const separation = el.songSeparation.value as Separation;
-    const barOneWanted = el.songBarOne.checked && separation !== "none";
-    const job = await submitJob({ bpm: s.bpm, grid, separation, engine: el.songEngine.value as Engine, name: s.name, ...(barOneWanted ? { barOne: true } : {}) }, songBlob);
+    let job: JobStatus | null = null;
+    const s = startState;
+    if (s.kind === "running" && s.sending === "hash" && s.hash !== null) {
+      const answer = await submitJobByHash(req, s.hash);
+      if ("refused" in answer) dispatchStart({ type: "hash-refused", attempt });
+      else job = answer;
+    }
+    if (!job) {
+      const now = startState;
+      if (!awaitingJob(attempt) || now.kind !== "running" || now.sending !== "upload" || !songBlob) return;
+      job = await submitJob(req, songBlob);
+    }
     if (!awaitingJob(attempt)) {
       await cancelJob(job.id).catch(() => undefined);
       return;
     }
     dispatchStart({ type: "submitted", attempt, job: job.id });
     showJobProgress(job);
-    pollJob(job.id, s.bpm, grid);
+    pollJob(job.id, req.bpm, req.grid);
   } catch (err) {
     dispatchStart({ type: "failed-to-submit", attempt, message: (err as Error).message });
   }
@@ -2408,6 +2486,8 @@ function pollJob(id: string, jobBpm: number, grid: number): void {
 }
 
 async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promise<void> {
+  const redo = startState.kind === "running" && retranscribing?.attempt === startState.attempt ? retranscribing : null;
+  if (redo) return loadRetranscription(j, jobBpm, redo.division);
   if (dirty && !window.confirm(`Replace the current notes with the ones from “${j.name}”? Your unsaved edits stay in the autosave.`)) {
     dispatchStart({ type: "progress", job: j.id, phase: "cancelled", elapsedS: j.elapsedS, log: j.log, error: null });
     return;
@@ -2434,6 +2514,53 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   rebuild();
   syncBarOne();
   setStatus(`${workingNotes.length} notes${annotation?.bar_one ? ` · bar 1: ${el.barOneReadout.textContent}` : ""}`);
+}
+
+/**
+ * Put a re-transcription in place of the editor's notes as one undoable step: Undo brings back the
+ * notes, settings, pitch line and audio from before, so nothing is asked first (ADR-0032).
+ */
+async function loadRetranscription(j: JobStatus, jobBpm: number, keepDivision: number): Promise<void> {
+  const { annotation: raw, stem } = await fetchResults(j.id);
+  if (!watching(j.id)) return;
+  let next: Annotation;
+  let notes: WorkingNote[];
+  try {
+    next = normalizeAnnotation(raw);
+    notes = workingNotesFrom((raw as { notes: unknown[] }).notes);
+  } catch {
+    dispatchStart({ type: "progress", job: j.id, phase: "failed", elapsedS: j.elapsedS, log: j.log, error: "the result couldn't be read" });
+    return;
+  }
+  let audio: AudioBuffer | null = null;
+  try {
+    audio = await ensureAudioContext().decodeAudioData(stem);
+  } catch {
+    audio = audioBuffer;
+  }
+  if (!watching(j.id)) return;
+  stopPlayback();
+  if (exprBarHasFocus()) (document.activeElement as HTMLElement).blur();
+  noteShownInExprBar = null;
+  closeLyricEditor();
+  const chosenBarOne = barOne !== null && barOne !== (annotation?.bar_one?.time_s ?? null) ? barOne : null;
+  annotation = next;
+  workingNotes = notes;
+  baselineNotes = baselineFrom(raw);
+  audioBuffer = audio;
+  stemOf.set(next, audio);
+  selectedNote = null;
+  invalidateEffective();
+  const fresh = settingsOnLoad(raw, next, notes, currentSettings());
+  applySettings({ ...fresh, bpm: jobBpm, division: keepDivision, barOne: chosenBarOne ?? fresh.barOne });
+  fitAll();
+  markDirty();
+  retranscribing = null;
+  dispatchStart({ type: "results-loaded", job: j.id });
+  startShown = false;
+  rebuild();
+  syncBarOne();
+  setStatus(`${workingNotes.length} notes at ${Math.round(jobBpm * 10) / 10} BPM · Undo brings back the notes before`);
 }
 
 el.songFile.addEventListener("change", () => {

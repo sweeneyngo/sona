@@ -519,6 +519,9 @@
         align-items: center;
         gap: 8px;
       }
+      .pop-row[hidden] {
+        display: none;
+      }
       .tempo-row label,
       .pop-row label,
       .pop-row .label {
@@ -1132,6 +1135,10 @@
               <label for="division">Grid</label>
               <select id="division"></select>
             </div>
+            <div id="retranscribe-row" class="pop-row" hidden>
+              <span class="label"></span>
+              <button id="retranscribe" class="chip" title="Transcribe the song again at this tempo and grid. sona serve reuses the separated vocals, so it is quick; Undo brings back the notes you have now.">Re-transcribe</button>
+            </div>
             <div class="pop-row">
               <span class="label">Key</span>
               <output id="key-readout" title="Detected from the notes (Krumhansl–Schmuckler). Snapping is in File → Settings.">—</output>
@@ -1296,7 +1303,9 @@
               The <b>♩</b> button holds the tempo (½×, 2×), the grid (1/16T is the triplet one)
               and <b>Bar 1</b>. Bar 1 starts on the first grid line, or where the music put it;
               <span class="kbd">Shift</span>-click the ruler, or <b>At playhead</b>, moves it, and
-              <b>Auto</b> puts it back. Bright lines
+              <b>Auto</b> puts it back. After a tempo or grid change, <b>Re-transcribe at N BPM</b>
+              redoes the notes on the new grid from the vocals sona serve already separated, without
+              sending the song again; <b>Undo</b> brings back the notes you had. Bright lines
               are bars, numbered as OpenUtau will number them: every export puts OpenUtau's bars
               and beats on these lines. After an export, the status line says where bar 1
               falls in the stem.

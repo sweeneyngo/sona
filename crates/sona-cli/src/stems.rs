@@ -31,6 +31,10 @@ fn is_entry_name(name: &str) -> bool {
     name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+fn find_upload(entry: &Path) -> Option<PathBuf> {
+    fs::read_dir(entry).ok()?.flatten().map(|e| e.path()).find(|p| p.is_file() && p.file_stem().is_some_and(|s| s == "input"))
+}
+
 /// Hard-link `from` to `to` (a copy where links aren't possible), replacing `to`.
 pub fn link_or_copy(from: &Path, to: &Path) -> std::io::Result<()> {
     let _ = fs::remove_file(to);
@@ -63,6 +67,30 @@ impl StemCache {
         }
         let _ = fs::write(entry.join(USED_FILE), crate::provenance::now_unix_s().to_string());
         Some(by)
+    }
+
+    /// The upload a complete entry was separated from: what a job that names its upload by hash runs on
+    /// (ADR-0032). `None` on a miss, or for an entry from before uploads were kept.
+    pub fn upload(&self, key: &StemKey, files: &[&str]) -> Option<PathBuf> {
+        if !self.enabled() {
+            return None;
+        }
+        let entry = self.dir.join(&key.hex);
+        let record: serde_json::Value = serde_json::from_slice(&fs::read(entry.join(KEY_FILE)).ok()?).ok()?;
+        if record["key"] != serde_json::json!(key.fields) || !files.iter().all(|f| entry.join(f).is_file()) {
+            return None;
+        }
+        find_upload(&entry)
+    }
+
+    /// Keep the upload `input` (an `input.<ext>` file) in the entry under `key`, if it has none yet.
+    pub fn keep_upload(&self, key: &StemKey, input: &Path) -> Result<(), String> {
+        let entry = self.dir.join(&key.hex);
+        if !self.enabled() || !entry.is_dir() || find_upload(&entry).is_some() {
+            return Ok(());
+        }
+        let name = input.file_name().ok_or("the upload has no file name")?;
+        link_or_copy(input, &entry.join(name)).map_err(|e| e.to_string())
     }
 
     /// Keep `files` from `src` under `key`, as separated by job `job_id`, then evict down to the limit.
@@ -152,6 +180,15 @@ mod tests {
         assert_eq!(cache.restore(&key("c"), &["stem.wav"], &out).as_deref(), Some("job2"));
         assert_eq!(cache.restore(&key("c"), &["stem.wav", "vocals.wav"], &out), None, "an entry without every file is a miss");
         assert_eq!(StemCache::new(root.join("stems"), 0).restore(&key("c"), &["stem.wav"], &out), None, "keep 0 is off");
+        assert_eq!(cache.upload(&key("c"), &["stem.wav"]), None, "an entry from before uploads were kept has none");
+        fs::write(job.join("input.mp3"), "song c").unwrap();
+        cache.keep_upload(&key("c"), &job.join("input.mp3")).unwrap();
+        let upload = cache.upload(&key("c"), &["stem.wav"]).expect("the upload is kept");
+        assert_eq!((upload.file_name().unwrap().to_str(), fs::read_to_string(&upload).unwrap().as_str()), (Some("input.mp3"), "song c"));
+        assert_eq!(cache.upload(&key("c"), &["stem.wav", "vocals.wav"]), None, "nor for an entry without every stem");
+        assert_eq!(cache.upload(&key("b"), &["stem.wav"]), None);
+        cache.keep_upload(&key("b"), &job.join("input.mp3")).unwrap();
+        assert_eq!(cache.upload(&key("b"), &["stem.wav"]), None, "no entry, nothing kept");
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -58,6 +58,17 @@ describe("provenance", () => {
     expect(detailSections(parseProvenance({ ...fromServe, job: noStems })!).map((x) => x.title)).not.toContain("Stems");
   });
 
+  it("keeps the job's separation and a job named by hash, and says so in Details", () => {
+    const byHash = { ...fromServe, job: { ...fromServe.job, separation: "lead", stems: { ...fromServe.job.stems, by_hash: true } } };
+    const p = parseProvenance(byHash)!;
+    expect([p.job?.separation, p.job?.stems?.by_hash]).toEqual(["lead", true]);
+    expect(parseProvenance(JSON.parse(JSON.stringify(p)))).toEqual(p);
+    const stems = Object.fromEntries(detailSections(p).find((x) => x.title === "Stems")!.rows);
+    expect(stems.upload).toBe("named by hash, not sent again");
+    const odd = parseProvenance({ ...fromServe, job: { ...fromServe.job, separation: "karaoke", stems: { ...fromServe.job.stems, by_hash: "yes" } } })!;
+    expect([odd.job?.separation, odd.job?.stems?.by_hash]).toEqual([undefined, undefined]);
+  });
+
   it("leaves out job sections for a CLI annotation", () => {
     const { job: _job, ...cli } = fromServe;
     expect(detailSections(parseProvenance(cli)!).map((x) => x.title)).toEqual(["Made by", "Input", "Settings", "Models"]);
