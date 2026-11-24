@@ -69,9 +69,13 @@ fn start(tag: &str, demucs_extra: &str) -> Server {
 }
 
 /// `sona serve` on a free port, with stub separators and its cache (jobs and stems) in a fresh folder.
+/// Its ffmpeg is the one on `PATH`; where there is none, `-version` alone answers, so the start-up probe
+/// passes and the tests that need a real ffmpeg skip themselves as before.
 fn start_with(tag: &str, demucs_extra: &str, args: &[&str], env: &[(&str, &str)]) -> Server {
     let dir = temp_dir(tag);
     let (demucs, sep) = stub_separators(&dir.0, demucs_extra);
+    let ffmpeg = dir.0.join("bin/ffmpeg-or-stub");
+    script(&ffmpeg, "if [ \"$1\" = -version ] && ! command -v ffmpeg >/dev/null 2>&1; then echo 'ffmpeg version stub'; exit 0; fi\nexec ffmpeg \"$@\"");
     let mut child = Command::new(env!("CARGO_BIN_EXE_sona"))
         .args(["serve", "--port", "0", "--web-dir"])
         .arg(&dir.0)
@@ -82,6 +86,7 @@ fn start_with(tag: &str, demucs_extra: &str, args: &[&str], env: &[(&str, &str)]
         .arg("--separator-venv")
         .arg(&sep)
         .args(args)
+        .env("SONA_FFMPEG", &ffmpeg)
         .envs(env.iter().copied())
         .stdout(Stdio::piped())
         .spawn()
@@ -152,10 +157,13 @@ fn wait_final_within(port: u16, id: &str, limit: Duration) -> serde_json::Value 
 
 #[test]
 fn a_song_goes_through_lead_separation_to_an_annotation_and_stem() {
-    let srv = start("lead", "");
+    let srv = start("lead", "command -v ffmpeg-or-stub >/dev/null || { echo 'the ffmpeg sona was given is not on the separator PATH' >&2; exit 3; }");
     let (status, caps) = json(srv.port, "GET", "/api/capabilities", b"");
     assert_eq!(status, 200);
-    assert_eq!(caps["separation"]["lead"], true);
+    assert_eq!(caps["separation"]["lead"], true, "a lead model that isn't downloaded yet doesn't turn lead off: {caps}");
+    let model = setup_note(&caps, "lead-model").expect("the stub venv has no model file");
+    assert_eq!(model["status"], "first-use");
+    assert!(model["message"].as_str().unwrap().contains("UVR_MDXNET_KARA_2.onnx"), "{model}");
     let (status, job) = json(srv.port, "POST", "/api/jobs?bpm=120&grid=16&separation=lead&engine=pyin&name=song.wav", &song_wav());
     assert_eq!(status, 201, "{job}");
     let id = job["id"].as_str().unwrap();
@@ -294,8 +302,10 @@ fn estimates_a_songs_tempo_from_wav_and_through_ffmpeg() {
     assert!(body["error"].as_str().unwrap().contains("--cell-model"), "{body}");
     let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"");
     assert_eq!(status, 400);
-    let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"not audio at all");
+    let (status, body) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"not audio at all");
     assert_eq!(status, 422);
+    let error = body["error"].as_str().unwrap();
+    assert!(error.starts_with("ffmpeg could not read the file: ") && !error.contains("/scratch/") && !error.contains('\n'), "one line, without the server's scratch path: {error}");
 }
 
 fn submit(port: u16, query: &str, audio: &[u8]) -> String {
@@ -456,4 +466,63 @@ fn help_works_on_both_subcommands_and_a_missing_separator_says_what_to_do() {
     assert_eq!(status, 409);
     let error = body["error"].as_str().unwrap();
     assert!(error.contains("setup-separators.sh") && error.contains("--demucs-venv") && error.contains("sona serve --help"), "{error}");
+}
+
+fn setup_note<'a>(caps: &'a serde_json::Value, piece: &str) -> Option<&'a serde_json::Value> {
+    caps["setup"].as_array().unwrap().iter().find(|n| n["piece"] == piece)
+}
+
+#[test]
+fn without_ffmpeg_separation_is_off_and_a_file_that_needs_it_is_refused_with_the_fix() {
+    let srv = start_with("noffmpeg", "", &[], &[("SONA_FFMPEG", "/nonexistent/ffmpeg")]);
+    let (_, caps) = json(srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!(caps["separation"], serde_json::json!({ "none": true, "vocals": false, "lead": false }), "{caps}");
+    let note = setup_note(&caps, "ffmpeg").expect("ffmpeg is reported");
+    assert_eq!((note["status"].as_str(), note["blocks"].clone()), (Some("missing"), serde_json::json!(["vocals", "lead"])));
+    assert!(note["message"].as_str().unwrap().contains("install ffmpeg"), "{note}");
+    for sep in ["vocals", "lead"] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation={sep}&name=song.wav"), &song_wav());
+        assert_eq!(status, 409, "{body}");
+        assert!(body["error"].as_str().unwrap().contains("install ffmpeg"), "{body}");
+    }
+    for (name, audio) in [("song48k.wav", song_wav_at(48_000)), ("song.mp3", b"ID3 not really an mp3".to_vec())] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=none&name={name}"), &audio);
+        assert_eq!(status, 409, "{name}: {body}");
+        assert!(body["error"].as_str().unwrap().contains("install ffmpeg"), "{body}");
+    }
+    let id = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song_wav());
+    assert_eq!(wait_final(srv.port, &id)["phase"], "done", "a 44.1 kHz WAV needs no ffmpeg");
+    if caps["tempo"] == true {
+        let (status, body) = json(srv.port, "POST", "/api/tempo?name=x.mp3", b"ID3 not really an mp3");
+        assert_eq!(status, 422);
+        assert!(body["error"].as_str().unwrap().contains("install ffmpeg"), "{body}");
+        assert_eq!(json(srv.port, "POST", "/api/tempo?name=clicks.wav", &click_wav(120.0, 6.0)).0, 200, "any WAV is read without ffmpeg");
+    }
+}
+
+#[test]
+fn a_missing_lead_separator_or_model_is_reported_with_its_fix() {
+    let torch = temp_dir("torch-home");
+    let srv = start_with("nolead", "", &["--separator-venv", "/nonexistent/separator-venv"], &[("TORCH_HOME", torch.0.to_str().unwrap())]);
+    let (_, caps) = json(srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!((caps["separation"]["vocals"].as_bool(), caps["separation"]["lead"].as_bool()), (Some(true), Some(false)), "{caps}");
+    let sep = setup_note(&caps, "separator").expect("the separator is reported");
+    assert_eq!(sep["status"], "missing");
+    assert_eq!(caps["setup"][0]["piece"], "separator", "what is missing comes before what downloads on first use");
+    let message = sep["message"].as_str().unwrap();
+    assert!(message.contains("setup-separators.sh lead") && message.contains("--separator-venv"), "{message}");
+    assert!(setup_note(&caps, "lead-model").is_none(), "the missing venv covers its model");
+    let weights = setup_note(&caps, "demucs-weights").expect("no weights in this TORCH_HOME");
+    assert_eq!((weights["status"].as_str(), weights["blocks"].clone()), (Some("first-use"), serde_json::json!([])));
+
+    let (status, body) = json(srv.port, "POST", "/api/jobs?bpm=120&separation=lead&name=song.wav", &song_wav());
+    assert_eq!(status, 409);
+    let error = body["error"].as_str().unwrap();
+    assert!(error.contains("setup-separators.sh lead") && error.contains("--separator-venv") && error.contains("sona serve --help"), "{error}");
+
+    let checkpoint = torch.0.join("hub/checkpoints/955717e8-8726e21a.th");
+    std::fs::create_dir_all(checkpoint.parent().unwrap()).unwrap();
+    std::fs::write(&checkpoint, b"weights").unwrap();
+    let (_, caps) = json(srv.port, "GET", "/api/capabilities", b"");
+    assert!(setup_note(&caps, "demucs-weights").is_none(), "weights that arrive while serving count at once: {caps}");
 }

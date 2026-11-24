@@ -2,7 +2,9 @@
 
 `StartFlow.tla` models the start screen (`web/lib/startFlow.ts`, ADR-0028): you drop a song and type its
 BPM; meanwhile `sona serve` estimates the tempo asynchronously (answers arrive late and out of order) and
-the estimate is shown as a hint you may pick; one transcription job runs.
+the estimate is shown as a hint you may pick; one transcription job runs. An answer with no tempo,
+whether no beat was found or the server couldn't read the file (`tempo-failed`, which shows its reason),
+is the model's `NoTempo`.
 
 Rules, checked on every path with 3 songs and 3 tempos:
 - **TempoIsForTheShownSong:** the estimate on screen was detected for the song on screen, never for one

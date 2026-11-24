@@ -41,7 +41,7 @@ import { detailSections, parseProvenance, type Provenance } from "./lib/provenan
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
-import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJobOrCancel, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
+import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
 import { hintBpm, parseBpm, phaseProgress, startStep, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
@@ -154,6 +154,7 @@ const el = {
   songBar: document.getElementById("song-bar") as HTMLDivElement,
   songPhase: document.getElementById("song-phase") as HTMLParagraphElement,
   songLog: document.getElementById("song-log") as HTMLPreElement,
+  setupNotes: document.getElementById("setup-notes") as HTMLUListElement,
   tempoChip: document.getElementById("tempo-chip") as HTMLButtonElement,
   tempoChipText: document.getElementById("tempo-chip-text") as HTMLSpanElement,
   tempoPop: document.getElementById("tempo-pop") as HTMLDivElement,
@@ -2472,7 +2473,7 @@ function renderStart(): void {
     el.songName.textContent = s.name;
     if (document.activeElement !== el.songBpm) el.songBpm.value = s.bpm === null ? "" : String(s.bpm);
     const d = s.detected;
-    el.songHintText.textContent = d === "pending" ? "finding the tempo…" : d === null ? "no steady beat found" : "detected ≈";
+    el.songHintText.textContent = d === "pending" ? "finding the tempo…" : d === null ? "no steady beat found" : typeof d === "number" ? "detected ≈" : `no tempo: ${d.error}`;
     el.songHintFull.hidden = el.songHintHalf.hidden = typeof d !== "number";
     if (typeof d === "number") {
       el.songHintFull.textContent = String(hintBpm(d, 1));
@@ -2483,6 +2484,7 @@ function renderStart(): void {
     el.songError.hidden = !s.error;
     el.songError.textContent = s.error ?? "";
   }
+  el.setupNotes.hidden = !serveCaps?.setup.length || (s.kind !== "idle" && s.kind !== "ready");
   el.songRunning.hidden = s.kind !== "running";
   if (s.kind === "running") {
     el.songRunningName.textContent = s.name;
@@ -2506,6 +2508,14 @@ function applyCapabilities(caps: Capabilities): void {
   for (const opt of Array.from(el.songEngine.options)) opt.disabled = !caps.engines[opt.value as Engine];
   el.songSeparation.value = d.separation;
   el.songEngine.value = d.engine;
+  el.setupNotes.replaceChildren(
+    ...caps.setup.map((n) => {
+      const li = document.createElement("li");
+      li.textContent = n.message;
+      li.classList.toggle("missing", n.status === "missing");
+      return li;
+    }),
+  );
   dispatchStart({ type: "serve-found" });
 }
 
@@ -2515,15 +2525,8 @@ async function chooseSong(file: File): Promise<void> {
   songBlob = file;
   dispatchStart({ type: "choose", song, name: file.name });
   el.songBpm.focus();
-  let found: number | null = null;
-  if (serveCaps?.tempo) {
-    try {
-      found = await fetchTempo(file, file.name);
-    } catch {
-      found = null;
-    }
-  }
-  dispatchStart({ type: "tempo", song, bpm: found });
+  const answer = serveCaps?.tempo ? await estimateTempo(file, file.name) : { error: "this sona serve can't estimate tempo" };
+  dispatchStart("error" in answer ? { type: "tempo-failed", song, message: answer.error } : { type: "tempo", song, bpm: answer.bpm });
 }
 
 let attempts = 0;

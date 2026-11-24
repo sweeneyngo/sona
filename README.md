@@ -15,7 +15,8 @@ way, and on Windows use WSL2 (neither is tested).
 - [Rust](https://rustup.rs) via rustup. The pinned toolchain (1.88) installs itself on the first build.
 - [Node.js](https://nodejs.org) 22 or newer.
 - Python 3.10, 3.11 or 3.12, for the vocal separators.
-- [ffmpeg](https://ffmpeg.org) on your `PATH`, to read MP3, FLAC and other non-WAV files.
+- [ffmpeg](https://ffmpeg.org) on your `PATH`, to read MP3, FLAC and other non-WAV files. Separation
+  needs it too.
 - About 5 GB of disk and an internet connection for the first run (the separators and their models
   download once).
 
@@ -25,7 +26,7 @@ way, and on Windows use WSL2 (neither is tested).
 git clone https://github.com/sweeneyngo/sona.git && cd sona
 cargo build --release                       # the `sona` binary
 (cd web && npm install && npm run build)    # the app that `sona serve` hosts
-scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separator (~4 GB, CPU)
+scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separator and their models (~4 GB, CPU)
 ```
 
 **Run:**
@@ -36,7 +37,7 @@ scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separa
 
 Drop a song on the page and type its BPM (decimals are fine). If you don't know it, click the detected
 tempo, or its **½×**, beside the field. **Transcribe** does the rest. A 25 s clip takes about 80 s on a
-laptop CPU; the first job is slower while the separator models download. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
+laptop CPU. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
 **MIDI**. Got the BPM wrong? Drop the same song again with the right one: the server keeps the separated
 stems of recent songs, so a second run (another BPM, ½×, grid or engine) skips separation and takes only
 the transcription time ([ADR-0030](docs/adr/0030-stem-cache-cleanup-and-job-failures.md)).
@@ -68,10 +69,20 @@ The app picks the best engine the server has, so nothing changes on the page.
 
 - **The page says "Start sona serve to transcribe":** the page isn't talking to `sona serve`. Open it
   from http://127.0.0.1:8977, not from a file.
-- **Under Options, only "Already a stem" can be chosen:** `scripts/setup-separators.sh` didn't
-  finish. Rerun it; if your Python isn't found, set `SONA_PYTHON=/path/to/python3.12`. Custom
-  locations go to `sona serve --demucs-venv DIR --separator-venv DIR`.
-- **"ffmpeg could not read the file":** install ffmpeg, or drop a WAV.
+- **The start screen lists something below the drop zone:** `sona serve` checks what separation needs
+  when it starts, and each line says what is missing and what to do. Options it needs are greyed out.
+  `sona serve` prints the same lines.
+  - *"Vocal separation (or Lead isolation) isn't installed":* `scripts/setup-separators.sh` didn't
+    finish. Rerun it; if your Python isn't found, set `SONA_PYTHON=/path/to/python3.12`. Custom
+    locations go to `sona serve --demucs-venv DIR --separator-venv DIR`.
+  - *"ffmpeg doesn't run":* install ffmpeg and restart `sona serve` (or point `SONA_FFMPEG` at it).
+    Until then separation is off, and only 44.1 kHz WAV files can be transcribed.
+  - *"… download during the first separation":* not an error. The demucs weights or the lead model
+    aren't on disk yet, so the first job downloads them, which needs the internet.
+    `scripts/setup-separators.sh` downloads them now.
+- **"no tempo: …" beside the BPM field:** the server couldn't read the file to estimate its tempo, and the
+  rest of the line says why. "ffmpeg could not read the file" means the file is damaged or not audio:
+  convert it to WAV. You can still type the BPM yourself.
 - **GAME is greyed out under Options:** the binary must be built with `--features game`, and `ORT_DYLIB_PATH` must be
   set in the shell that runs `sona serve`.
 - **Port 8977 is taken:** `sona serve --port 9000`.

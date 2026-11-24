@@ -18,7 +18,8 @@ Runtime and user-downloaded weights. None of that can run inside a browser.
 
 1. **A `sona serve` subcommand** (`crates/sona-cli/src/{serve,jobs,http}.rs`) serves the built review
    surface and a small job API. It listens on 127.0.0.1 only:
-   - `GET /api/capabilities`: which separations and note engines this machine has.
+   - `GET /api/capabilities`: which separations and note engines this machine has, and what separation
+     still needs (ADR-0030).
    - `POST /api/jobs?bpm&grid&separation&engine&name`, with the audio file as the request body.
    - `GET /api/jobs/{id}`: phase, elapsed time, log tail, error.
    - `DELETE /api/jobs/{id}`: cancel.

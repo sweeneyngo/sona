@@ -2,10 +2,18 @@ export type Separation = "none" | "vocals" | "lead";
 export type Engine = "pyin" | "game" | "cells";
 export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-lead" | "transcribing" | "done" | "failed" | "cancelled";
 
+/** Something separation still needs: `missing` turns options off, `first-use` only means a download. */
+export interface SetupNote {
+  piece: string;
+  status: "missing" | "first-use";
+  message: string;
+}
+
 export interface Capabilities {
   separation: Record<Separation, boolean>;
   engines: Record<Engine, boolean>;
   tempo: boolean;
+  setup: SetupNote[];
 }
 
 export interface JobStatus {
@@ -53,9 +61,21 @@ function bools<K extends string>(v: unknown, keys: readonly K[]): Record<K, bool
   return Object.fromEntries(keys.map((k) => [k, o[k] === true])) as Record<K, boolean>;
 }
 
+function parseSetupNote(v: unknown): SetupNote[] {
+  if (typeof v !== "object" || v === null) return [];
+  const o = v as Record<string, unknown>;
+  if (typeof o.piece !== "string" || typeof o.message !== "string" || (o.status !== "missing" && o.status !== "first-use")) return [];
+  return [{ piece: o.piece, status: o.status, message: o.message }];
+}
+
 export function parseCapabilities(v: unknown): Capabilities {
   const o = record(v);
-  return { separation: bools(o.separation, ["none", "vocals", "lead"] as const), engines: bools(o.engines, ["pyin", "game", "cells"] as const), tempo: o.tempo === true };
+  return {
+    separation: bools(o.separation, ["none", "vocals", "lead"] as const),
+    engines: bools(o.engines, ["pyin", "game", "cells"] as const),
+    tempo: o.tempo === true,
+    setup: Array.isArray(o.setup) ? o.setup.flatMap(parseSetupNote) : [],
+  };
 }
 
 export function parseJobStatus(v: unknown): JobStatus {
@@ -111,6 +131,18 @@ export const submitJob = async (r: JobRequest, audio: Blob): Promise<JobStatus> 
 export async function fetchTempo(audio: Blob, name: string): Promise<number | null> {
   const o = record(await call(`/api/tempo?${new URLSearchParams({ name }).toString()}`, { method: "POST", body: audio }));
   return typeof o.bpm === "number" && Number.isFinite(o.bpm) ? o.bpm : null;
+}
+
+export type TempoAnswer = { bpm: number | null } | { error: string };
+
+/** The tempo estimate (null when no steady beat was found), or why there is none: the server's own
+ * words for a file it couldn't read, or a server it couldn't reach. */
+export async function estimateTempo(audio: Blob, name: string): Promise<TempoAnswer> {
+  try {
+    return { bpm: await fetchTempo(audio, name) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export function defaultJob(caps: Capabilities): { separation: Separation; engine: Engine } {

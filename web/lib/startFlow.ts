@@ -3,8 +3,8 @@ import type { Phase } from "./serveClient";
 export const MIN_BPM = 20;
 export const MAX_BPM = 400;
 
-/** The tempo estimate for the song on screen: still coming, none found, or the estimate. */
-export type Detected = number | null | "pending";
+/** The tempo estimate for the song on screen: still coming, none found, the estimate, or why it failed. */
+export type Detected = number | null | "pending" | { error: string };
 
 export type HintMultiple = 1 | 0.5;
 
@@ -20,6 +20,7 @@ export type StartEvent =
   | { type: "serve-found" }
   | { type: "choose"; song: number; name: string }
   | { type: "tempo"; song: number; bpm: number | null }
+  | { type: "tempo-failed"; song: number; message: string }
   | { type: "set-bpm"; bpm: number | null }
   | { type: "use-hint"; multiple: HintMultiple }
   | { type: "transcribe"; attempt: number }
@@ -54,8 +55,9 @@ export function startStep(s: StartState, e: StartEvent): StartState {
       if (s.kind === "running" || s.kind === "unavailable") return s;
       return { kind: "ready", song: e.song, name: e.name, bpm: null, detected: "pending", error: null };
     case "tempo":
+    case "tempo-failed":
       if ((s.kind !== "ready" && s.kind !== "running") || s.song !== e.song || s.detected !== "pending") return s;
-      return { ...s, detected: e.bpm === null ? null : round1(e.bpm) };
+      return { ...s, detected: e.type === "tempo-failed" ? { error: e.message } : e.bpm === null ? null : round1(e.bpm) };
     case "set-bpm":
       return s.kind === "ready" ? { ...s, bpm: e.bpm, error: null } : s;
     case "use-hint":

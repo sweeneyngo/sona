@@ -67,6 +67,13 @@ Tickets: `.scratch/audit-2026-11-24/issues/04-cheap-retranscribe.md`, `05-serve-
      "already a stem" upload no longer breaks GAME, and pYIN's sample-sized frames mean the same everywhere.
    - `sona serve --help` and `sona transcribe -h` print the usage. The 409 for a missing separator names
      `scripts/setup-separators.sh` and the venv flags.
+   - `/api/capabilities` lists what separation still needs under `setup`, each with its fix (audit 12).
+     ffmpeg is probed once at start-up (`ffmpeg -version`, 5 s limit). The venvs, the htdemucs weights in
+     torch's cache and the lead model are checked on each request with a file test, so a first download
+     or a setup run shows without a restart. A missing ffmpeg or venv turns off the separations it
+     blocks, and the 409 repeats its fix. Missing weights or a missing lead model only mean a download on
+     the first job, so they don't. Without ffmpeg, an upload that isn't a 44.1 kHz WAV is refused before
+     it is queued. The start screen lists the notes, and the tempo hint shows `/api/tempo`'s error.
    - `/api/*` requests whose `Origin` is present and not the server's own are refused, beside ADR-0020's
      Host check. The Vite dev proxy passes its own pages on as the server's.
 

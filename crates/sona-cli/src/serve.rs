@@ -1,10 +1,11 @@
 use std::net::{TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::http::{read_request, write_response, HttpError, Limits, Request, Response};
-use crate::jobs::{Engine, Job, JobSpec, Phase, Queue, Separation, Settings, ToolTimeout, Tools};
+use crate::jobs::{wav_rate, Engine, Job, JobSpec, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
 
 const LIMITS: Limits = Limits { max_header_bytes: 16 * 1024, max_body_bytes: 500 * 1_000_000 };
 const DEFAULT_PORT: u16 = 8977;
@@ -24,6 +25,13 @@ fn home() -> PathBuf {
 /// `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`: on disk, where `/tmp` may be RAM (ADR-0030).
 fn default_cache_dir() -> PathBuf {
     std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).unwrap_or_else(|| home().join(".cache")).join("sona")
+}
+
+/// Where demucs 4.0.1's torch keeps the htdemucs weights it downloads on first use: `$TORCH_HOME/hub/checkpoints`,
+/// `TORCH_HOME` defaulting to `$XDG_CACHE_HOME/torch`, else `~/.cache/torch`.
+fn demucs_weights() -> PathBuf {
+    let torch = std::env::var_os("TORCH_HOME").map(PathBuf::from).unwrap_or_else(|| std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".cache")).join("torch"));
+    torch.join("hub/checkpoints/955717e8-8726e21a.th")
 }
 
 pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
@@ -75,7 +83,8 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
         separator_bin: separator_venv.join("bin/audio-separator"),
         separator_models: separator_venv.join("models"),
         lead_model: std::env::var("SONA_LEAD_MODEL").unwrap_or_else(|_| "UVR_MDXNET_KARA_2.onnx".into()),
-        ffmpeg: PathBuf::from("ffmpeg"),
+        ffmpeg: std::env::var_os("SONA_FFMPEG").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg")),
+        demucs_weights: demucs_weights(),
         game_dir,
         cell_model,
     };
@@ -87,7 +96,20 @@ struct Server {
     port: u16,
     web_dir: Option<PathBuf>,
     tools: Tools,
+    /// Whether `ffmpeg -version` ran at start-up.
+    ffmpeg_runs: bool,
     queue: Arc<Queue>,
+}
+
+const FFMPEG_FIX: &str = "install ffmpeg and restart sona serve";
+
+/// Something separation needs that isn't there yet. A missing piece turns off the separations it
+/// `blocks`; a first-use one only means a download when a job first needs it.
+struct SetupNote {
+    piece: &'static str,
+    missing: bool,
+    blocks: &'static [&'static str],
+    message: String,
 }
 
 pub fn run_serve(args: &[String]) -> Result<(), String> {
@@ -95,14 +117,18 @@ pub fn run_serve(args: &[String]) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", a.port)).map_err(|e| format!("binding 127.0.0.1:{}: {e}", a.port))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let jobs_dir = a.settings.jobs_dir.clone();
+    let ffmpeg_runs = crate::provenance::tool_stdout(Command::new(&a.tools.ffmpeg).arg("-version"), Duration::from_secs(5)).is_some();
     let queue = Queue::start(a.settings, a.tools.clone()).map_err(|e| format!("jobs dir {}: {e}", jobs_dir.display()))?;
-    let server = Arc::new(Server { port, web_dir: a.web_dir, tools: a.tools, queue });
+    let server = Arc::new(Server { port, web_dir: a.web_dir, tools: a.tools, ffmpeg_runs, queue });
     println!("sona: serving http://127.0.0.1:{port}");
     if server.web_dir.is_none() {
         println!("sona: no web build found (run `npm run build` in web/, or pass --web-dir); the API still works");
     }
     use std::io::Write;
     let _ = std::io::stdout().flush();
+    for note in server.setup() {
+        let _ = writeln!(std::io::stderr(), "sona: {}", note.message);
+    }
     for stream in listener.incoming().flatten() {
         let server = server.clone();
         std::thread::spawn(move || server.handle(stream));
@@ -120,15 +146,69 @@ impl Server {
         let _ = write_response(&stream, &response);
     }
 
+    /// What separation still needs: ffmpeg as probed at start-up, and the venvs and model files as they
+    /// are now, so running scripts/setup-separators.sh or a first download shows without a restart.
+    fn setup(&self) -> Vec<SetupNote> {
+        let t = &self.tools;
+        let mut notes = Vec::new();
+        if !self.ffmpeg_runs {
+            notes.push(SetupNote {
+                piece: "ffmpeg",
+                missing: true,
+                blocks: &["vocals", "lead"],
+                message: format!("ffmpeg doesn't run ({}): {FFMPEG_FIX}. Until then, separation is off and only 44.1 kHz WAV files can be read.", t.ffmpeg.display()),
+            });
+        }
+        if !t.demucs_python.is_file() {
+            notes.push(SetupNote {
+                piece: "demucs",
+                missing: true,
+                blocks: &["vocals", "lead"],
+                message: format!("Vocal separation isn't installed (no {}): run scripts/setup-separators.sh, or start sona serve with --demucs-venv DIR.", t.demucs_python.display()),
+            });
+        } else if !t.demucs_weights.is_file() {
+            notes.push(SetupNote {
+                piece: "demucs-weights",
+                missing: false,
+                blocks: &[],
+                message: "The demucs weights (84 MB) download during the first separation, which needs the internet; scripts/setup-separators.sh fetches them now.".into(),
+            });
+        }
+        if !t.separator_bin.is_file() {
+            notes.push(SetupNote {
+                piece: "separator",
+                missing: true,
+                blocks: &["lead"],
+                message: format!("Lead isolation isn't installed (no {}): run scripts/setup-separators.sh lead, or start sona serve with --separator-venv DIR.", t.separator_bin.display()),
+            });
+        } else if !t.separator_models.join(&t.lead_model).is_file() {
+            notes.push(SetupNote {
+                piece: "lead-model",
+                missing: false,
+                blocks: &[],
+                message: format!("The lead model {} downloads during the first lead isolation, which needs the internet; scripts/setup-separators.sh lead fetches it now.", t.lead_model),
+            });
+        }
+        notes.sort_by_key(|n| !n.missing);
+        notes
+    }
+
     fn capabilities(&self) -> serde_json::Value {
-        let demucs = self.tools.demucs_python.is_file();
-        let lead = demucs && self.tools.separator_bin.is_file();
+        let notes = self.setup();
+        let open = |sep: &str| !notes.iter().any(|n| n.blocks.contains(&sep));
+        let (vocals, lead) = (open("vocals"), open("lead"));
         let game = cfg!(feature = "game") && self.tools.game_dir.is_some() && std::env::var_os("ORT_DYLIB_PATH").is_some();
         let cells = game && lead && self.tools.cell_model.as_ref().is_some_and(|d| d.join("cellstage.onnx").is_file() && d.join("cellstage.json").is_file());
         serde_json::json!({
-            "separation": { "none": true, "vocals": demucs, "lead": lead },
+            "separation": { "none": true, "vocals": vocals, "lead": lead },
             "engines": { "pyin": true, "game": game, "cells": cells },
             "tempo": cfg!(feature = "spectral"),
+            "setup": notes.iter().map(|n| serde_json::json!({
+                "piece": n.piece,
+                "status": if n.missing { "missing" } else { "first-use" },
+                "blocks": n.blocks,
+                "message": n.message,
+            })).collect::<Vec<_>>(),
         })
     }
 
@@ -198,10 +278,8 @@ impl Server {
             Separation::Lead => "lead",
         };
         if caps["separation"][sep_key] != true {
-            return Err(HttpError {
-                status: 409,
-                message: format!("separation '{sep_key}' isn't set up on this server: run scripts/setup-separators.sh, or start sona serve with --demucs-venv and --separator-venv (see `sona serve --help`)"),
-            });
+            let fixes: Vec<String> = self.setup().into_iter().filter(|n| n.blocks.contains(&sep_key)).map(|n| n.message).collect();
+            return Err(HttpError { status: 409, message: format!("separation '{sep_key}' isn't set up on this server. {} See `sona serve --help`.", fixes.join(" ")) });
         }
         if spec.engine == Engine::Game && caps["engines"]["game"] != true {
             return Err(HttpError { status: 409, message: "GAME isn't set up on this server (start it with --game DIR and ORT_DYLIB_PATH)".into() });
@@ -212,6 +290,9 @@ impl Server {
         if req.body.is_empty() {
             return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
         }
+        if !self.ffmpeg_runs && wav_rate(&req.body) != Some(STEM_RATE) {
+            return Err(HttpError { status: 409, message: format!("reading this file needs ffmpeg, which doesn't run on this server: {FFMPEG_FIX}, or drop a 44.1 kHz WAV") });
+        }
         let ext = upload_ext(&spec.name);
         let job = self.queue.submit(spec, &ext, &req.body).map_err(|e| HttpError { status: 500, message: e.to_string() })?;
         Ok(Response::json(201, &job_status(&job)))
@@ -221,6 +302,9 @@ impl Server {
     fn tempo(&self, req: &Request) -> Result<Response, HttpError> {
         if req.body.is_empty() {
             return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
+        }
+        if !self.ffmpeg_runs && wav_rate(&req.body).is_none() {
+            return Err(HttpError { status: 422, message: format!("reading this file needs ffmpeg, which doesn't run on this server: {FFMPEG_FIX}, or drop a WAV") });
         }
         let ext = upload_ext(req.param("name").unwrap_or("upload.wav"));
         let bpm = crate::jobs::song_tempo(&self.tools, &self.queue.root().join("scratch"), &ext, &req.body).map_err(|message| HttpError { status: 422, message })?;

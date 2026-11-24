@@ -69,6 +69,19 @@ describe("start flow", () => {
     expect(run([{ type: "set-bpm", bpm: 128 }, { type: "transcribe", attempt: 1 }], s).kind).toBe("running");
   });
 
+  it("shows why the tempo couldn't be estimated, for the song on screen only, and still takes a typed BPM", () => {
+    const s = run([
+      { type: "choose", song: 1, name: "a.mp3" },
+      { type: "choose", song: 2, name: "b.mp3" },
+      { type: "tempo-failed", song: 1, message: "about a.mp3" },
+    ]);
+    expect(s).toMatchObject({ kind: "ready", song: 2, detected: "pending" });
+    const failed = run([{ type: "tempo-failed", song: 2, message: "ffmpeg could not read the file" }], s);
+    expect(failed).toMatchObject({ kind: "ready", bpm: null, detected: { error: "ffmpeg could not read the file" } });
+    expect(run([{ type: "tempo", song: 2, bpm: 120 }, { type: "use-hint", multiple: 1 }], failed)).toMatchObject({ bpm: null, detected: { error: "ffmpeg could not read the file" } });
+    expect(run([{ type: "set-bpm", bpm: 120 }, { type: "transcribe", attempt: 1 }], failed)).toMatchObject({ kind: "running", bpm: 120 });
+  });
+
   it("keeps one job: a new song can't be dropped while one runs, and stale progress is ignored", () => {
     const s = run([{ type: "choose", song: 1, name: "a" }, { type: "set-bpm", bpm: 180 }, { type: "transcribe", attempt: 1 }, { type: "submitted", attempt: 1, job: "j1" }]);
     expect(run([{ type: "choose", song: 2, name: "b" }], s)).toBe(s);
@@ -101,12 +114,15 @@ describe("start flow", () => {
 
   it("keeps its promises whatever the order of events", () => {
     const estimateOf = (song: number) => 200 + song;
+    const messageOf = (song: number) => `song ${song} couldn't be read`;
     const events: StartEvent[] = [
       { type: "choose", song: 1, name: "a" },
       { type: "choose", song: 2, name: "b" },
       { type: "tempo", song: 1, bpm: estimateOf(1) },
       { type: "tempo", song: 2, bpm: estimateOf(2) },
       { type: "tempo", song: 2, bpm: null },
+      { type: "tempo-failed", song: 1, message: messageOf(1) },
+      { type: "tempo-failed", song: 2, message: messageOf(2) },
       { type: "set-bpm", bpm: 0 },
       { type: "set-bpm", bpm: 140 },
       { type: "set-bpm", bpm: 97.25 },
@@ -133,7 +149,8 @@ describe("start flow", () => {
         if (s.kind === "running") expect(usableBpm(s.bpm)).toBe(true);
         if (s.kind === "running" && prev.kind === "running") expect(s.song).toBe(prev.song);
         if ((s.kind === "ready" || s.kind === "running") && typeof s.detected === "number") expect(s.detected).toBe(estimateOf(s.song));
-        if (e.type === "tempo" && (s.kind === "ready" || s.kind === "running")) expect(s.bpm).toBe((prev as { bpm: number | null }).bpm);
+        if ((s.kind === "ready" || s.kind === "running") && typeof s.detected === "object" && s.detected !== null) expect(s.detected.error).toBe(messageOf(s.song));
+        if ((e.type === "tempo" || e.type === "tempo-failed") && (s.kind === "ready" || s.kind === "running")) expect(s.bpm).toBe((prev as { bpm: number | null }).bpm);
         if (e.type === "choose" && s.kind === "ready") expect(s.bpm).toBeNull();
       }
     }
