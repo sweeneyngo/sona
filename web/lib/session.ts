@@ -4,8 +4,9 @@
  * settings. Undo (ADR-0025) snapshots the same document.
  */
 
-import type { Annotation, BarOneEstimate, Note, WorkingNote } from "./annotation";
+import type { Annotation, BarOneEstimate, Note, StageDoubt, WorkingNote } from "./annotation";
 import { unpackContour } from "./contourStore";
+import { DEFAULT_FLAG_SHARE } from "./doubt";
 import { isExpression } from "./expression";
 import { parseBarOne } from "./frame";
 import { isDivision } from "./grid";
@@ -20,6 +21,8 @@ export interface SessionState {
   /** A downbeat the user chose, in stem seconds; absent or null = the first grid line (ADR-0029). */
   barOne: number | null;
   flagThreshold: number;
+  /** The share of a learned cell stage result's notes outlined for review (ADR-0034). */
+  flagShare: number;
   snapKey: boolean;
 }
 
@@ -43,12 +46,18 @@ export function normalizeAnnotation(raw: any): Annotation {
       midi_pitch: Number(n.midi_pitch),
       confidence: Number(n.confidence),
       sub_scores: n.sub_scores ?? {},
+      ...withStageDoubt(n.stage_doubt),
     })),
     f0_contour: unpackContour(raw.f0_contour),
     energy_envelope: Array.isArray(raw.energy_envelope) ? raw.energy_envelope : [],
     ...withProvenance(raw.provenance),
     ...withBarOne(raw.bar_one),
   };
+}
+
+/** A note's stage doubt, kept only when both causes are numbers. */
+function withStageDoubt(raw: any): { stage_doubt?: StageDoubt } {
+  return raw && Number.isFinite(raw.length) && Number.isFinite(raw.unsure) ? { stage_doubt: { length: raw.length, unsure: raw.unsure } } : {};
 }
 
 function withBarOne(raw: unknown): { bar_one?: BarOneEstimate } {
@@ -69,6 +78,7 @@ export function workingNotesFrom(notes: any[]): WorkingNote[] {
     midi_pitch: Number(n.midi_pitch),
     confidence: Number(n.confidence),
     sub_scores: n.sub_scores ?? {},
+    ...withStageDoubt(n.stage_doubt),
     ...(n.manual ? { manual: true as const } : {}),
     ...(typeof n.lyric === "string" && n.lyric ? { lyric: n.lyric } : {}),
     ...(isExpression(n.expr) ? { expr: n.expr } : {}),
@@ -116,6 +126,7 @@ export function settingsOnLoad(parsed: any, annotation: Annotation, notes: reado
     gridAnchor: Number.isFinite(Number(s.gridAnchor)) ? Number(s.gridAnchor) : firstOnset(notes),
     barOne: typeof s.barOne === "number" && Number.isFinite(s.barOne) ? s.barOne : null,
     flagThreshold: Number.isFinite(Number(s.flagThreshold)) ? Math.min(1, Math.max(0, Number(s.flagThreshold))) : current.flagThreshold,
+    flagShare: s.flagShare != null && Number.isFinite(Number(s.flagShare)) ? Math.min(1, Math.max(0, Number(s.flagShare))) : current.flagShare,
     snapKey: s.snapKey === true,
   };
 }
@@ -132,14 +143,14 @@ export function isSession(parsed: any): boolean {
  * correction cost survives a reload), and the review settings.
  */
 export function sessionFile(annotation: Annotation, notes: WorkingNote[], baseline: Note[], settings: SessionState): Annotation & { baseline: Note[]; session: SessionState } {
-  const { bpm, division, gridAnchor, barOne, flagThreshold, snapKey } = settings;
-  return { ...annotation, notes, baseline, session: { bpm, division, gridAnchor, barOne, flagThreshold, snapKey } };
+  const { bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey } = settings;
+  return { ...annotation, notes, baseline, session: { bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey } };
 }
 
 /** The document undo snapshots: the working notes and the review settings, as text. */
 export function docText(notes: readonly WorkingNote[], settings: SessionState): string {
-  const { bpm, division, gridAnchor, barOne, flagThreshold, snapKey } = settings;
-  return JSON.stringify({ notes, bpm, division, gridAnchor, barOne, flagThreshold, snapKey });
+  const { bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey } = settings;
+  return JSON.stringify({ notes, bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey });
 }
 
 /** A snapshot from {@link docText} back as fresh notes and settings. */
@@ -147,6 +158,6 @@ export function parseDoc(text: string): { notes: WorkingNote[]; settings: Sessio
   const d = JSON.parse(text);
   return {
     notes: d.notes,
-    settings: { bpm: d.bpm, division: d.division, gridAnchor: d.gridAnchor, barOne: d.barOne ?? null, flagThreshold: d.flagThreshold, snapKey: d.snapKey },
+    settings: { bpm: d.bpm, division: d.division, gridAnchor: d.gridAnchor, barOne: d.barOne ?? null, flagThreshold: d.flagThreshold, flagShare: d.flagShare ?? DEFAULT_FLAG_SHARE, snapKey: d.snapKey },
   };
 }

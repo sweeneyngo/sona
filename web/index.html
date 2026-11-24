@@ -184,7 +184,8 @@
       .toggle input {
         accent-color: var(--accent);
       }
-      output#flag-val {
+      output#flag-val,
+      output#flag-share-val {
         font-family: var(--mono);
         color: var(--ink);
       }
@@ -870,6 +871,9 @@
         gap: 8px;
         align-items: flex-start;
       }
+      .setting[hidden] {
+        display: none;
+      }
       #lyric-editor {
         position: absolute;
         z-index: 6;
@@ -1286,6 +1290,7 @@
               <span class="grp"><span class="swatch out-of-key"></span> out of key</span>
             </div>
             <p>The white line is the singer's pitch; the orange curve is what the export will sing.</p>
+            <p>Notes from the learned cell stage: the least sure 20% of the song are flagged (change the share in Settings), and a flagged note says why.</p>
           </section>
 
           <section>
@@ -1293,7 +1298,7 @@
             <p>
               Drag a note to move it (time + pitch), drag its right edge to resize,
               double-click empty space to add, select and press Delete to remove. Hover or
-              click a note to see its confidence sub-scores.
+              click a note to see its confidence and why it is flagged.
             </p>
           </section>
 
@@ -1400,10 +1405,15 @@
             <input id="audio-input" type="file" accept="audio/*" />
             <p>Played against the synthesized notes. Any format the browser decodes.</p>
           </div>
-          <div class="setting">
+          <div class="setting" id="flag-threshold-setting">
             <h3>Flag threshold <output id="flag-val">0.50</output></h3>
             <input id="flag" type="range" min="0" max="1" step="0.01" value="0.5" />
             <p>Notes below this confidence are outlined red for review. Calibrate by ear per song.</p>
+          </div>
+          <div class="setting" id="flag-share-setting" hidden>
+            <h3>Flag the doubtful <output id="flag-share-val">20%</output></h3>
+            <input id="flag-share" type="range" min="0" max="50" step="5" value="20" />
+            <p>Outlines this share of the song's notes in red, the least sure first: mostly long notes that may hide several syllables, and notes the model was unsure of. A note you edit loses its outline.</p>
           </div>
           <div class="setting">
             <h3>Musical key <output id="key-detail">—</output></h3>

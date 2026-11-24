@@ -86,6 +86,12 @@ a line below.
   random 30%), +4.4 [+1.8, +6.0] over the class prob; holdout3 (diagnosis) +4.4 [+3.4, +5.5]. Only 2% of
   notes fall under the editor's default 0.50 flag; the threshold and the inspector's "why" are open UI
   questions. GAME-only is flat too (length catches 46.9%), unchanged pending a measurement.
+- 2026-11-24, **14 resolved** (ADR-0034, [ticket](issues/14-flag-doubtful-notes.md); verified: web + e2e +
+  Rust tests, 15 mutants caught, pYIN and GAME-only pixel-identical to 1f6d5fa): a stage result outlines each
+  song's least sure **20%** (Settings slider) instead of the threshold; an outlined note says "long note, may
+  hide several syllables" or "the model was unsure here" from the larger of ADR-0033's two terms (new optional
+  `Note.stage_doubt`). Dev: 33.3% of cost caught at 20%; "long" flags catch 25.9% of joined vs 8.8% of chopped
+  cost, "unsure" 6.8% vs 27.4%, so the reasons point at the right fix. The share itself is a product call.
 
 ## Fog
 

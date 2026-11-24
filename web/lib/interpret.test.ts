@@ -83,7 +83,7 @@ function randomDoc(rand: () => number): Doc {
   const f = randomFrame(rand);
   return {
     notes: producerNotes(rand),
-    settings: { bpm: f.bpm, division: f.division, gridAnchor: f.anchor, barOne: f.barOne, flagThreshold: 0.5, snapKey: rand() < 0.3 },
+    settings: { bpm: f.bpm, division: f.division, gridAnchor: f.anchor, barOne: f.barOne, flagThreshold: 0.5, flagShare: 0.2, snapKey: rand() < 0.3 },
   };
 }
 

@@ -7,6 +7,7 @@
 
 import type { WorkingNote } from "./annotation";
 import type { RenderNote } from "./expression";
+import { doubtful } from "./doubt";
 import { cellSeconds, type Frame } from "./frame";
 import { noteFlags, quantizeNote, resolveOverlaps } from "./grid";
 import { isInKey, snapToKey, type KeyEstimate } from "./key";
@@ -28,6 +29,8 @@ export interface EffectiveNote {
 /** The review settings that change how a note reads, besides the frame. */
 export interface Reading {
   flagThreshold: number;
+  /** Set for a learned cell stage result: outline this share of the notes instead of those under the threshold (ADR-0034). */
+  flagShare?: number;
   /** Snap each pitch to the key's scale; off, an out-of-key pitch is only flagged. */
   snapKey: boolean;
   /** The key detected from the working notes, or `null` when there are none. */
@@ -41,7 +44,8 @@ export interface Reading {
  */
 export function effectiveNotes(working: readonly WorkingNote[], frame: Frame, reading: Reading): EffectiveNote[] {
   const s = cellSeconds(frame);
-  const { key, snapKey, flagThreshold } = reading;
+  const { key, snapKey, flagThreshold, flagShare } = reading;
+  const inShare = flagShare === undefined ? null : doubtful(working, flagShare);
   const snapped = resolveOverlaps(
     working.map((n) =>
       quantizeNote(
@@ -53,7 +57,8 @@ export function effectiveNotes(working: readonly WorkingNote[], frame: Frame, re
   );
   return working.map((n, i) => {
     const q = snapped[i];
-    const flags = noteFlags(n, q, flagThreshold);
+    const byThreshold = noteFlags(n, q, flagThreshold);
+    const flags = inShare ? { lowConfidence: inShare[i], escaped: byThreshold.escaped, flagged: inShare[i] || byThreshold.escaped } : byThreshold;
     const pitch = key && snapKey ? snapToKey(n.midi_pitch, key) : n.midi_pitch;
     const outOfKey = key ? !isInKey(pitch, key) : false;
     return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch, ...flags, outOfKey };
