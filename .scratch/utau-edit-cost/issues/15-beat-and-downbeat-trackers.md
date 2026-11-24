@@ -1,6 +1,6 @@
 # 15 — Beat and downbeat trackers for the BPM hint and bar 1
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: none
 
@@ -34,3 +34,39 @@ phase, bar-1 hits on dev, speed). If one wins under a rule declared before measu
 to adopt it, opt-in until holdout4.
 
 ## Comments
+
+### 2026-11-24, claimed: selection rule, committed before any tracker is run on dev
+
+**What is scored** (dev only; no holdout audio is opened):
+- **BPM**: the 10 dev songs with a UST tempo (as `sona-eval-tempo`), the full mix. Each candidate's own tempo
+  estimate (or, for a beat-only tracker, 60 / median inter-beat interval). Classes against the UST BPM within 2%:
+  1×, 2×, ½×, other. **"Truth offered"** = the hint as the app shows it ("est", "½× est") contains the UST BPM,
+  i.e. 1× or 2×. A ½× or "other" estimate offers no right button: that is the costly miss.
+- **Beat phase**: the 9 aligned dev songs. The candidate's beats, folded at the UST (typed) BPM, vote for a cell of
+  the beat; the winning cell vs the manifest's `music_beat_shift_cells`. A **hit** is the same cell. Also the
+  median residual in ms. Reference: `grid_phase(mix, one beat)` (9/9 by A03).
+- **Bar 1**: the same 9 songs. Each downbeat votes for a whole beat of the bar (mod 4 beats at the UST BPM, against
+  the manifest's music bar line); the most voted beat is the candidate's bar 1. A **hit** is 0 beats off.
+  Compared with today's rule (5/9) and the shipped harmonic estimator (ADR-0031; 9/9 but circular, since the
+  music bar labels are its own output). Reported on all 9 and on the **5 songs whose label is corroborated**
+  by ≥ 3 of 4 independent drum/bass cues (innocent-addict, kamaitachi-ni-yoru, telescope-nevermore,
+  azemichi-ni-ochita-ginga, my-axiom); a miss on the other 4 (atamaro-deluxe, yamineko, amaten,
+  fukagyakuteki-henyou) may be the label's error and goes to an ear check, not to a verdict.
+- **Speed**: CPU and wall seconds per song on this machine (load reported alongside).
+- Each candidate runs **once, in its default configuration, on the full mix**. Variants (other inputs or
+  settings) may be reported as diagnosis but are not eligible to win.
+
+**Rule for "wins" (the follow-up ticket is written only for a winner):**
+- **Bar 1** (the main use): bar-1 hits ≥ today's + 3 songs on 9 (i.e. ≥ 8/9) with the paired song-bootstrap
+  95% lower bound ≥ +1 (`sona_eval::frame::song_bootstrap`), **and** 5/5 on the corroborated songs, **and**
+  beat hits ≥ 8/9. Among several winners: more bar-1 hits, then a licence sona can ship over one the user
+  installs, then speed.
+- **BPM hint**: truth offered on every dev song where sona's estimator offers it, **and** 1× on ≥ sona's
+  count + 2 songs. sona's estimator was tuned on these songs (ADR-0022), so a tie is a tie in sona's favour.
+- **Licence gate**: a candidate can win only if its code **and** weights can at least be run by a sona user in
+  a venv sona does not ship (as with the separators). A non-commercial or AGPL licence does not stop a win; it
+  becomes a decision for the user, named in the answer. Linking into sona needs MIT-compatible code and weights.
+- **Speed gate**: ≤ 120 s wall per 4-minute song on this machine (demucs already takes minutes).
+- The dev labels are unverified estimates; any winner stays **opt-in until holdout4** (ear-labelled frames,
+  the rule pre-registered in 05).
+
