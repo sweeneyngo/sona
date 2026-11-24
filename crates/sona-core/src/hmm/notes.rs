@@ -22,14 +22,9 @@
 //!   near-floor notes as separation bleed (the note-level echo of ADR-0006's
 //!   onset bleed guard, since the HMM — unlike the old segmenter — births notes
 //!   from the contour, not only from detected onsets).
-//! - **Offsets** fall out of the path: a note ends where it enters a decay
-//!   (`Release`), silence, or the next note's attack. A steep energy fall drives
-//!   the decode `Stable → Release` ([ADR-0012]), so the offset lands at the
-//!   musical note end instead of trailing the smeared voicing edge. The
-//!   **energy-drop steepness** is still measured there, purely as confidence raw
-//!   material (ADR-0007's one surviving output).
-//!
-//! [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+//! - **Offsets** fall out of the path (a note ends where it enters silence or the
+//!   next note attacks); the **energy-drop steepness** is still measured there,
+//!   purely as confidence raw material (ADR-0007's one surviving output).
 
 use crate::annotation::{EnergyFrame, F0Frame};
 use crate::onset::Onset;
@@ -67,21 +62,6 @@ pub struct NoteHmm {
     /// this many seconds of the note's start; otherwise the note is pitch-born
     /// (a legato split, `split_from_plateau = true`).
     pub onset_match_s: f64,
-    /// Energy-fall steepness (0–1) at or above which a frame is flagged as a
-    /// release, routing the decode `Stable → Release` and placing the offset there
-    /// ([ADR-0012]). The [`drop_window_s`](Self::drop_window_s) window is reused for
-    /// the measurement.
-    ///
-    /// **Defaults to [`f32::INFINITY`] — the decay path is OFF**, so the shipped
-    /// behaviour is exactly ADR-0010. The Release sweep found no COnPOff gain on
-    /// Vocadito: the trigger only tightens offsets that end in a *sharp* RMS fall,
-    /// which most singing doesn't, so it misfires and clips notes — a pure-DSP
-    /// energy-fall release isn't the offset fix. The path is kept because it is
-    /// harmless when off and may still help genuinely sharp-cutoff input; set to
-    /// `~0.65` to enable (the sweep's least-harmful setting).
-    ///
-    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
-    pub release_drop_threshold: f32,
 }
 
 impl Default for NoteHmm {
@@ -95,10 +75,6 @@ impl Default for NoteHmm {
             range_pad_semitones: 2,
             drop_window_s: 0.04,
             onset_match_s: 0.03,
-            // OFF by default (ADR-0012): the Release sweep showed no COnPOff gain on
-            // Vocadito, so the shipped default reproduces ADR-0010 exactly. INFINITY
-            // is unreachable by drop_steepness (clamped 0..=1), so no frame flags.
-            release_drop_threshold: f32::INFINITY,
         }
     }
 }
@@ -123,28 +99,12 @@ impl NoteHmm {
         let input = DecodeInput {
             obs: frames.iter().map(observe).collect(),
             onset: onset_flags(&frames, onsets, self.onset_match_s),
-            release: self.release_flags(&frames, envelope),
         };
         let path = viterbi_path(&model, &input);
 
         let onset_strength = onset_strength_by_frame(&frames, onsets, self.onset_match_s);
         let raw = self.notes_from_path(&model, &path, &frames, &input.onset, &onset_strength);
         self.post_process(raw, envelope)
-    }
-
-    /// Per-frame release flags (ADR-0012): a frame is a release when the energy
-    /// envelope falls steeply there — `drop_steepness` at the frame's time reaches
-    /// [`release_drop_threshold`](Self::release_drop_threshold). These drive the
-    /// decode `Stable → Release` so a note's offset lands at the energy fall. The
-    /// signal is sparse (only clear falls fire), so a legato change or a slow tail
-    /// leaves every flag `false` and the offset is unchanged from ADR-0010.
-    fn release_flags(&self, frames: &[PitchFrame], envelope: &[EnergyFrame]) -> Vec<bool> {
-        frames
-            .iter()
-            .map(|f| {
-                drop_steepness(envelope, f.time_s, self.drop_window_s) >= self.release_drop_threshold
-            })
-            .collect()
     }
 
     /// The inclusive integer-MIDI range to build the model over: the observed
@@ -176,17 +136,13 @@ impl NoteHmm {
         onset: &[bool],
         onset_strength: &[Option<f32>],
     ) -> Vec<RawNote> {
-        // Per-frame: the note's integer pitch while it is sounding (Attack/Stable),
-        // else None. A `Release` frame (the decay tail, ADR-0012) closes the note
-        // just like `Silent` does — the note's musical offset is the `Stable →
-        // Release` boundary, and the decaying energy sits in the gap before the
-        // rest, not inside the note body.
+        // Per-frame: the note's integer pitch if voiced, else None (a rest).
         let voiced_midi: Vec<Option<i32>> = path
             .iter()
             .map(|&s| {
                 let (bin, sub) = model.split(s);
                 match sub {
-                    Sub::Silent | Sub::Release => None,
+                    Sub::Silent => None,
                     _ => Some(model.bin_center(bin).round() as i32),
                 }
             })
@@ -636,61 +592,6 @@ mod tests {
             "confidently voiced, got {}",
             notes[0].voiced_confidence
         );
-    }
-
-    #[test]
-    fn a_sharp_energy_fall_places_the_offset_at_the_decay_not_the_voicing_end() {
-        // ADR-0012: the pitch stays voiced past the musical note end (a pYIN
-        // voicing smear), but the energy falls sharply midway. The Release state
-        // must place the offset at the energy fall, not where voicing later ends.
-        let c = contour(&[(0.1, 0.0, 0.0), (0.6, 440.0, 0.95), (0.7, 0.0, 0.0)]);
-        // Energy high until ~0.35, then a sharp fall to a low (but above-floor)
-        // level until 0.6, then silence.
-        let e = envelope(&[(0.1, 0.01), (0.35, 0.5), (0.6, 0.06), (0.7, 0.01)]);
-
-        // Enable the decay path (it is OFF by default, ADR-0012).
-        let with = NoteHmm { release_drop_threshold: 0.5, ..NoteHmm::default() };
-        let with_release = with.segment(&[onset(0.1)], &c, &e);
-        assert_eq!(with_release.len(), 1, "one note: {with_release:?}");
-        let offset_with = with_release[0].offset_s;
-
-        // The default (decay path off) falls back to ADR-0010's voicing end (~0.6).
-        let without = NoteHmm::default().segment(&[onset(0.1)], &c, &e);
-        assert_eq!(without.len(), 1, "one note: {without:?}");
-        let offset_without = without[0].offset_s;
-
-        assert!(
-            offset_with < offset_without - 0.05,
-            "release tightens the offset: {offset_with} (with) vs {offset_without} (without)"
-        );
-        assert!(
-            (offset_with - 0.35).abs() < 0.08,
-            "offset lands at the energy fall, not the voicing end: {offset_with}"
-        );
-    }
-
-    #[test]
-    fn a_staccato_cutoff_offset_is_tightened_never_pushed_later() {
-        // A staccato note ends with a sharp energy fall — exactly the signal the
-        // Release path grabs. So the decay path snaps the offset back to the energy
-        // fall (from where voicing smears out a frame or two later), never past it.
-        // It stays one clean note at the right pitch: ADR-0012 only ever tightens.
-        let c = contour(&[(0.1, 0.0, 0.0), (0.5, 440.0, 0.95), (0.6, 0.0, 0.0)]);
-        let e = envelope(&[(0.1, 0.01), (0.5, 0.5), (0.6, 0.01)]);
-        let on = NoteHmm { release_drop_threshold: 0.5, ..NoteHmm::default() }
-            .segment(&[onset(0.1)], &c, &e);
-        let off = NoteHmm::default().segment(&[onset(0.1)], &c, &e);
-        assert_eq!(on.len(), 1, "{on:?}");
-        assert_eq!(off.len(), 1, "{off:?}");
-        assert_eq!(on[0].midi_pitch, 69);
-        assert!(
-            on[0].offset_s <= off[0].offset_s + 1e-9,
-            "the decay path never pushes the offset later: {} vs {}",
-            on[0].offset_s,
-            off[0].offset_s
-        );
-        // And it still lands at the true cutoff (~0.5), not clipped short.
-        assert!((on[0].offset_s - 0.5).abs() < 0.03, "offset at the cutoff: {}", on[0].offset_s);
     }
 
     #[test]

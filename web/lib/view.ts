@@ -58,33 +58,6 @@ export function weakestSubScore(subScores: Partial<SubScores>): WeakestSubScore 
   return weakest;
 }
 
-export interface PitchWindow {
-  min: number;
-  max: number;
-}
-
-/**
- * The MIDI pitch window to draw, padded a few semitones beyond the observed
- * span so notes don't sit flush against the edges. Falls back to a middle
- * octave when there are no notes. Clamped to the MIDI range.
- */
-export function pitchRange(
-  notes: { midi_pitch: number }[],
-  { pad = 3, fallback = { min: 55, max: 79 } }: { pad?: number; fallback?: PitchWindow } = {},
-): PitchWindow {
-  if (notes.length === 0) return { ...fallback };
-  let min = Infinity;
-  let max = -Infinity;
-  for (const note of notes) {
-    if (note.midi_pitch < min) min = note.midi_pitch;
-    if (note.midi_pitch > max) max = note.midi_pitch;
-  }
-  return {
-    min: Math.max(0, min - pad),
-    max: Math.min(127, max + pad),
-  };
-}
-
 /**
  * Horizontal zoom that makes roughly `targetSeconds` of the timeline fill the
  * view (a sensible zoomed-in default instead of the whole song). Clamped to

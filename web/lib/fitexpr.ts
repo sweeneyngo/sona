@@ -252,16 +252,3 @@ export function fitExpressions(notes: RenderNote[], contour: ContourFrame[], opt
   });
   return out;
 }
-
-/** Mean |rendered − contour| in cents over the voiced frames inside notes. */
-export function curveErrorCents(notes: RenderNote[], contour: ContourFrame[], rendered: (times: number[]) => Float64Array): number {
-  const tuning = tuningCents(notes, contour);
-  const samples = [...notesSamples(notes, contour, tuning)];
-  if (!samples.length) return 0;
-  const pitch = rendered(samples.map((s) => s.t));
-  let err = 0;
-  samples.forEach((s, i) => {
-    err += Math.abs(pitch[i] * 100 - (s.tone * 100 + s.c));
-  });
-  return err / samples.length;
-}

@@ -9,24 +9,15 @@
 //! note-change (`Stable`/`Silent → Attack`) edges are dense, and every other edge
 //! is `O(1)` incoming.
 //!
-//! ## Energy splitters — onset (rise) and offset (fall)
+//! ## Energy same-pitch splitter
 //!
 //! Pitch alone cannot separate two notes re-articulated at one pitch (the
-//! documented over-merge failure of pitch-only methods), nor can it place a note
-//! *end* (a decay has no pitch signature). Energy supplies both missing signals,
-//! each as a per-frame emission prior:
-//!
-//! - **Onset (rise):** at a frame where the energy-onset detector (ADR-0006)
-//!   fired, every `Attack` state gets
-//!   [`onset_attack_bonus`](super::model::HmmParams::onset_attack_bonus), driving
-//!   the decode into an Attack there — the same-pitch re-articulation split.
-//! - **Offset (fall):** at a frame where the RMS envelope drops steeply, every
-//!   `Release` state gets
-//!   [`release_offset_bonus`](super::model::HmmParams::release_offset_bonus)
-//!   ([ADR-0012]), drawing the decode `Stable → Release` so the note's offset
-//!   lands at the energy fall rather than where voicing later smears out.
-//!
-//! [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
+//! documented over-merge failure of pitch-only methods). The energy-onset
+//! detector (ADR-0006) supplies the missing signal: at a frame where an onset
+//! fired, every `Attack` state's emission gets a large bonus
+//! ([`HmmParams::onset_attack_bonus`](super::model::HmmParams::onset_attack_bonus)),
+//! so the decode is driven into an Attack there and the syllable splits. This is
+//! the model's only coupling to energy; it enters purely as a per-frame prior.
 
 use super::model::{HmmModel, ObsFrame, Sub};
 
@@ -36,15 +27,9 @@ use super::model::{HmmModel, ObsFrame, Sub};
 pub struct DecodeInput {
     /// Per-frame `(semitone, voicing)` observations, in time order.
     pub obs: Vec<ObsFrame>,
-    /// `onset[t] == true` marks a frame where an energy onset (rise) was detected.
-    /// Same length as [`obs`](Self::obs). Drives the `Attack` split.
+    /// `onset[t] == true` marks a frame where an energy onset was detected. Same
+    /// length as [`obs`](Self::obs).
     pub onset: Vec<bool>,
-    /// `release[t] == true` marks a frame where the energy envelope falls steeply
-    /// ([ADR-0012]). Same length as [`obs`](Self::obs). Drives the `Stable →
-    /// Release` offset. Pass an all-`false` slice to disable the decay path.
-    ///
-    /// [ADR-0012]: ../../../docs/adr/0012-note-offset-release-state.md
-    pub release: Vec<bool>,
 }
 
 /// Penalty (nats) applied to an `Attack`/`Stable` state at `t = 0`: a stem may
@@ -66,18 +51,10 @@ pub fn viterbi_path(model: &HmmModel, input: &DecodeInput) -> Vec<usize> {
     let n_bins = model.n_bins();
     let n_states = model.n_states();
     let c = model.trans_consts();
-    let onset_bonus = model.params().onset_attack_bonus;
-    let release_bonus = model.params().release_offset_bonus;
+    let bonus = model.params().onset_attack_bonus;
 
     // score[j] for the current / previous frame; back[t][j] = best predecessor.
-    let mut prev = emission_with_bonuses(
-        model,
-        input.obs[0],
-        input.onset[0],
-        input.release[0],
-        onset_bonus,
-        release_bonus,
-    );
+    let mut prev = emission_with_onset(model, input.obs[0], input.onset[0], bonus);
     apply_start_prior(model, &mut prev);
     let mut back: Vec<Vec<usize>> = vec![vec![usize::MAX; n_states]; t_len];
 
@@ -85,14 +62,7 @@ pub fn viterbi_path(model: &HmmModel, input: &DecodeInput) -> Vec<usize> {
     // form for a Viterbi time sweep that reads several arrays at `t` and `t-1`.
     #[allow(clippy::needless_range_loop)]
     for t in 1..t_len {
-        let emit = emission_with_bonuses(
-            model,
-            input.obs[t],
-            input.onset[t],
-            input.release[t],
-            onset_bonus,
-            release_bonus,
-        );
+        let emit = emission_with_onset(model, input.obs[t], input.onset[t], bonus);
         let mut cur = vec![f32::NEG_INFINITY; n_states];
         let bt = &mut back[t];
 
@@ -148,31 +118,11 @@ pub fn viterbi_path(model: &HmmModel, input: &DecodeInput) -> Vec<usize> {
             cur[st] = sv + emit[st];
             bt[st] = st_bp;
 
-            // Release(q): from Stable(q) (a decay opening) or its own self-loop.
-            // O(1). (ADR-0012)
-            let rel = model.state(q, Sub::Release);
-            let from_stable_rel = prev[st] + c.log_stable_to_release;
-            let self_rel = prev[rel] + c.log_release_self;
-            let (rv, rel_bp) =
-                if self_rel >= from_stable_rel { (self_rel, rel) } else { (from_stable_rel, st) };
-            cur[rel] = rv + emit[rel];
-            bt[rel] = rel_bp;
-
-            // Silent(q): from Stable(q) (a sharp cutoff), Release(q) (a decay
-            // completing, ADR-0012), or its own self-loop. O(1).
+            // Silent(q): from Stable(q) (a rest opening) or its own self-loop. O(1).
             let si = model.state(q, Sub::Silent);
-            let mut siv = prev[si] + c.log_silent_self;
-            let mut si_bp = si;
-            let from_stable_si = prev[st] + c.log_stable_to_silent;
-            if from_stable_si > siv {
-                siv = from_stable_si;
-                si_bp = st;
-            }
-            let from_release_si = prev[rel] + c.log_release_to_silent;
-            if from_release_si > siv {
-                siv = from_release_si;
-                si_bp = rel;
-            }
+            let from_stable = prev[st] + c.log_stable_to_silent;
+            let self_si = prev[si] + c.log_silent_self;
+            let (siv, si_bp) = if self_si >= from_stable { (self_si, si) } else { (from_stable, st) };
             cur[si] = siv + emit[si];
             bt[si] = si_bp;
         }
@@ -183,27 +133,13 @@ pub fn viterbi_path(model: &HmmModel, input: &DecodeInput) -> Vec<usize> {
     backtrack(&prev, &back)
 }
 
-/// Emission logs for one frame, with the energy-driven bonuses folded in: the
-/// onset bonus on every `Attack` when an onset (rise) fired, and the offset bonus
-/// on every `Release` when the energy fell steeply (ADR-0012). Both are sparse —
-/// they apply only at their respective detected frames.
-fn emission_with_bonuses(
-    model: &HmmModel,
-    frame: ObsFrame,
-    onset: bool,
-    release: bool,
-    onset_bonus: f32,
-    release_bonus: f32,
-) -> Vec<f32> {
+/// Emission logs for one frame, with the onset Attack bonus folded in when the
+/// energy detector fired at this frame.
+fn emission_with_onset(model: &HmmModel, frame: ObsFrame, onset: bool, bonus: f32) -> Vec<f32> {
     let mut emit = model.emission_logs(frame);
     if onset {
         for bin in 0..model.n_bins() {
-            emit[model.state(bin, Sub::Attack)] += onset_bonus;
-        }
-    }
-    if release {
-        for bin in 0..model.n_bins() {
-            emit[model.state(bin, Sub::Release)] += release_bonus;
+            emit[model.state(bin, Sub::Attack)] += bonus;
         }
     }
     emit
@@ -211,13 +147,12 @@ fn emission_with_bonuses(
 
 /// Bias the initial frame toward silence: a stem usually starts in a rest.
 /// `Silent` states keep their emission; `Attack` states are penalised (a stem
-/// *can* open mid-note); `Stable` and `Release` starts are ruled out (both are
-/// mid-note phases that must be reached through an `Attack`, never entered cold).
+/// *can* open mid-note); `Stable` starts are ruled out (a note must open on an
+/// attack, never already in its steady middle).
 fn apply_start_prior(model: &HmmModel, score: &mut [f32]) {
     for bin in 0..model.n_bins() {
         score[model.state(bin, Sub::Attack)] -= START_VOICED_PENALTY;
         score[model.state(bin, Sub::Stable)] = f32::NEG_INFINITY;
-        score[model.state(bin, Sub::Release)] = f32::NEG_INFINITY;
     }
 }
 
@@ -257,7 +192,6 @@ mod tests {
         let input = DecodeInput {
             obs: o.to_vec(),
             onset: vec![false; o.len()],
-            release: vec![false; o.len()],
         };
         viterbi_path(model, &input)
             .into_iter()
@@ -329,8 +263,7 @@ mod tests {
         let mut onset = vec![false; 40];
         onset[20] = true; // re-articulation midway
 
-        let release = vec![false; onset.len()];
-        let input = DecodeInput { obs: frames, onset, release };
+        let input = DecodeInput { obs: frames, onset };
         let path: Vec<_> = viterbi_path(&model, &input)
             .into_iter()
             .map(|s| model.split(s))

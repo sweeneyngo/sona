@@ -9,7 +9,7 @@
 //!
 //! [`Reference`]: crate::reference::Reference
 
-use crate::reference::{RefF0, Reference};
+use crate::reference::RefF0;
 
 /// A producer's transcription of one stem, carrying each scored stage's output:
 /// the **stage-2 onset times**, the **stage-3 notes** (with confidence), and the
@@ -33,29 +33,6 @@ pub struct Estimate {
 }
 
 impl Estimate {
-    /// The **identity estimate**: the reference echoed back, every note at full
-    /// confidence. A perfect transcription — scoring it yields all-1.0 metrics.
-    ///
-    /// It exists so the report harness has *something* to score before a real
-    /// producer is wired in, and as an upper-bound sanity check that the metrics
-    /// reward a perfect answer. It is not a producer.
-    pub fn from_reference(reference: &Reference) -> Self {
-        Estimate {
-            onsets: reference.notes.iter().map(|n| n.onset_s).collect(),
-            notes: reference
-                .notes
-                .iter()
-                .map(|n| EstNote {
-                    onset_s: n.onset_s,
-                    offset_s: n.offset_s,
-                    midi_pitch: n.midi_pitch,
-                    confidence: 1.0,
-                })
-                .collect(),
-            f0: reference.f0.clone(),
-        }
-    }
-
     /// Adapt a pipeline [`Annotation`] into a scorable estimate.
     ///
     /// Notes carry through with their combined confidence scalar. For the f0

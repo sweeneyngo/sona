@@ -337,8 +337,6 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
             }
             grid = Some(value);
             i = next;
-        } else if arg == "--salience" || arg == "--spectral-cue" {
-            // Accepted for compatibility: both are on by default now.
         } else if let Some(rest) = arg.strip_prefix("--game") {
             let (raw, next) = flag_value(args, i, rest, "--game")?;
             i = next;
@@ -373,9 +371,9 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
 
     let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue]]")?;
     let bpm = bpm.ok_or("transcribe needs --bpm <BPM>")?;
-    let refinement = args.iter().any(|a| matches!(a.as_str(), "--salience" | "--spectral-cue" | "--no-salience" | "--no-spectral-cue"));
+    let refinement = args.iter().any(|a| matches!(a.as_str(), "--no-salience" | "--no-spectral-cue"));
     if refinement && grid.is_none() {
-        return Err("--salience / --spectral-cue (and their --no- forms) refine grid mode; add --grid 16 or --grid 24".into());
+        return Err("--no-salience / --no-spectral-cue refine grid mode; add --grid 16 or --grid 24".into());
     }
     if game.is_some() && grid.is_none() {
         return Err("--game snaps GAME's notes to the grid; add --grid 16 or --grid 24".into());

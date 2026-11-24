@@ -27,37 +27,6 @@
 
 use crate::annotation::EnergyFrame;
 
-#[cfg(feature = "spectral")]
-mod spectral;
-
-/// Which novelty function drives onset detection — the swappable part of the
-/// detector ([ADR-0013]). Both produce a per-frame novelty curve aligned to the
-/// energy envelope; the peak-picker ([`OnsetDetector::peak_pick`]) is shared.
-///
-/// [ADR-0013]: ../../../docs/adr/0013-spectral-flux-onsets.md
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum OnsetNovelty {
-    /// Half-wave-rectified log-energy rise (ADR-0006). The zero-dependency default:
-    /// perfect for sharp staccato attacks, but blind to soft/legato attacks that
-    /// change timbre without a clear energy step.
-    #[default]
-    EnergyRise,
-    /// Log-magnitude **spectral flux** (ADR-0013): the summed positive change in
-    /// the short-time spectrum. Fires on the harmonic/timbral change of an attack
-    /// even when energy barely moves, so it recovers the legato onsets the energy
-    /// rise misses. Requires the `spectral` feature (pulls in a pure-Rust FFT).
-    #[cfg(feature = "spectral")]
-    SpectralFlux {
-        /// **SuperFlux** frequency max-filter half-width, in bins (Böck & Widmer
-        /// 2013). `0` is plain spectral flux. `>0` max-filters the *previous*
-        /// frame's spectrum over ±this many bins before differencing, so a partial
-        /// that slowly drifts within that width — vibrato, portamento — stays
-        /// covered and produces no flux, while a sharp broadband attack still does.
-        /// This is what converts plain flux's recovered recall into precision.
-        max_filter_bins: usize,
-    },
-}
-
 /// A detected note attack. `time_s` is the onset in seconds from the start of
 /// the stem; `strength` is the (log-energy) novelty at the peak — a relative
 /// measure of how sharp the attack was, consumed by onset-clarity confidence,
@@ -104,12 +73,6 @@ pub struct OnsetDetector {
     /// of the stem's peak RMS. Separation bleed sits near the floor, so this
     /// culls it (spec done-criterion) without a note-level model.
     pub bleed_floor_frac: f32,
-    /// Which novelty function feeds the peak-picker ([ADR-0013]). Defaults to the
-    /// zero-dependency [`EnergyRise`](OnsetNovelty::EnergyRise); set to
-    /// `SpectralFlux` (needs the `spectral` feature) to recover soft/legato onsets.
-    ///
-    /// [ADR-0013]: ../../../docs/adr/0013-spectral-flux-onsets.md
-    pub novelty: OnsetNovelty,
 }
 
 impl Default for OnsetDetector {
@@ -133,9 +96,6 @@ impl Default for OnsetDetector {
             // Lower so quiet notes (a soft verse under a loud chorus) aren't culled
             // as bleed; true separation bleed still sits below this.
             bleed_floor_frac: 0.05,
-            // The proven zero-dependency default (ADR-0006). SpectralFlux is opt-in
-            // until the harness earns the swap (ADR-0013).
-            novelty: OnsetNovelty::default(),
         }
     }
 }
@@ -172,39 +132,24 @@ impl OnsetDetector {
     }
 
     /// Detect onsets over `samples` and return them alongside the energy envelope
-    /// they were computed from. The novelty source is chosen by
-    /// [`novelty`](Self::novelty); the peak-picker is shared.
+    /// they were computed from.
     pub fn detect(&self, samples: &[f32], sample_rate: u32) -> OnsetResult {
         let energy_envelope = self.energy_envelope(samples, sample_rate);
-        let novelty = match self.novelty {
-            OnsetNovelty::EnergyRise => self.energy_novelty(&energy_envelope),
-            #[cfg(feature = "spectral")]
-            OnsetNovelty::SpectralFlux { max_filter_bins } => {
-                spectral::flux_novelty(self, samples, energy_envelope.len(), max_filter_bins)
-            }
-        };
-        let onsets = self.peak_pick(&novelty, &energy_envelope);
+        let onsets = self.onsets_from_envelope(&energy_envelope);
         OnsetResult {
             onsets,
             energy_envelope,
         }
     }
 
-    /// Peak-pick onsets from a precomputed energy envelope, using the **energy
-    /// rise** novelty. Exposed so a caller that already has the envelope (e.g. from
-    /// a different producer) can reuse it without recomputing. The spectral-flux
-    /// path needs the samples, so it goes through [`detect`](Self::detect).
+    /// Peak-pick onsets from a precomputed energy envelope. Exposed so a caller
+    /// that already has the envelope (e.g. from a different producer) can reuse
+    /// it without recomputing.
     pub fn onsets_from_envelope(&self, envelope: &[EnergyFrame]) -> Vec<Onset> {
-        self.peak_pick(&self.energy_novelty(envelope), envelope)
-    }
-
-    /// The energy-rise novelty (ADR-0006): the half-wave-rectified rise in
-    /// log-energy, per envelope frame. Falls (offsets) rectify to 0, so only
-    /// attacks survive. Empty if the envelope is shorter than two frames.
-    fn energy_novelty(&self, envelope: &[EnergyFrame]) -> Vec<f32> {
         if envelope.len() < 2 {
             return Vec::new();
         }
+
         // Log-compress the RMS: attacks read as steps of comparable size whether
         // the note is loud or quiet, and the between-note floor is pushed far
         // enough down that its jitter doesn't rival a real attack.
@@ -212,20 +157,12 @@ impl OnsetDetector {
             .iter()
             .map(|f| (f.rms + LOG_ENERGY_EPS).ln())
             .collect();
-        std::iter::once(0.0)
-            .chain(log_energy.windows(2).map(|w| (w[1] - w[0]).max(0.0)))
-            .collect()
-    }
 
-    /// Peak-pick onsets from a precomputed `novelty` curve aligned to `envelope`
-    /// (same length, same time base). Shared by every [`OnsetNovelty`] source
-    /// ([ADR-0013]): local-max test, adaptive threshold, bleed guard, debounce.
-    ///
-    /// [ADR-0013]: ../../../docs/adr/0013-spectral-flux-onsets.md
-    fn peak_pick(&self, novelty: &[f32], envelope: &[EnergyFrame]) -> Vec<Onset> {
-        if envelope.len() < 2 || novelty.len() != envelope.len() {
-            return Vec::new();
-        }
+        // Onset novelty: the half-wave-rectified rise in log-energy. Falls
+        // (offsets) rectify to 0, so only attacks survive.
+        let novelty: Vec<f32> = std::iter::once(0.0)
+            .chain(log_energy.windows(2).map(|w| (w[1] - w[0]).max(0.0)))
+            .collect();
 
         let peak_rms = envelope.iter().map(|f| f.rms).fold(0.0f32, f32::max);
         let bleed_floor = peak_rms * self.bleed_floor_frac;
@@ -464,62 +401,5 @@ mod tests {
         let result = OnsetDetector::default().detect(&[0.0; 100], SR);
         assert!(result.energy_envelope.is_empty());
         assert!(result.onsets.is_empty());
-    }
-
-    #[cfg(feature = "spectral")]
-    mod spectral_flux {
-        use super::*;
-
-        /// The motivating case (ADR-0013): two notes slurred at the *same*
-        /// amplitude with no gap — a legato pitch change. Energy is ~flat across
-        /// the transition, so the energy-rise detector misses the second onset;
-        /// spectral flux sees the harmonics move and catches it.
-        #[test]
-        fn recovers_a_legato_onset_the_energy_rise_misses() {
-            let mut audio = silence(0.1);
-            audio.extend(tone(440.0, 0.3, 0.5)); // A4
-            audio.extend(tone(659.25, 0.3, 0.5)); // E5, no gap, same amp
-
-            let energy = OnsetDetector::default();
-            let spectral = OnsetDetector { novelty: OnsetNovelty::SpectralFlux { max_filter_bins: 3 }, ..OnsetDetector::default() };
-
-            let e = energy.detect(&audio, SR).onsets;
-            let s = spectral.detect(&audio, SR).onsets;
-
-            // Both catch the silence→tone attack at ~0.1.
-            assert!(e.iter().any(|o| (o.time_s - 0.1).abs() < 0.04), "energy gets the first onset: {e:?}");
-            assert!(s.iter().any(|o| (o.time_s - 0.1).abs() < 0.04), "spectral gets the first onset: {s:?}");
-
-            // The legato transition at ~0.4: energy misses it, spectral catches it.
-            let near_transition = |os: &[Onset]| os.iter().any(|o| (o.time_s - 0.4).abs() < 0.04);
-            assert!(!near_transition(&e), "energy rise is blind to the legato change: {e:?}");
-            assert!(near_transition(&s), "spectral flux recovers the legato onset: {s:?}");
-        }
-
-        /// Spectral flux must still nail the easy staccato case — a strict gain,
-        /// not a trade that loses the onsets energy already gets.
-        #[test]
-        fn still_gets_a_clean_staccato_onset() {
-            let mut audio = silence(0.2);
-            audio.extend(tone(440.0, 0.3, 0.6));
-            let spectral = OnsetDetector { novelty: OnsetNovelty::SpectralFlux { max_filter_bins: 3 }, ..OnsetDetector::default() };
-            let s = spectral.detect(&audio, SR).onsets;
-            assert!(
-                s.iter().any(|o| (o.time_s - 0.2).abs() < 0.04),
-                "spectral flux gets the clean attack too: {s:?}"
-            );
-        }
-
-        /// Stationary near-floor bleed still fires nothing: the shared bleed guard
-        /// (RMS-based) protects the spectral path exactly as it does energy.
-        #[test]
-        fn low_level_bleed_still_produces_no_onsets() {
-            let audio = bleed(1.0, 0.02);
-            let spectral = OnsetDetector { novelty: OnsetNovelty::SpectralFlux { max_filter_bins: 3 }, ..OnsetDetector::default() };
-            assert!(
-                spectral.detect(&audio, SR).onsets.is_empty(),
-                "bleed-only stem yields no spectral onsets"
-            );
-        }
     }
 }

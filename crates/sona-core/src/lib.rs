@@ -48,12 +48,5 @@ pub use segment::{hz_to_midi, NoteSegment, OffsetInfo, OffsetKind, Segmenter};
 /// The crate version, surfaced by the CLI.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// CREPE (neural) pitch backend, ONNX via `ort`. Compiled only with the
-/// `crepe` feature; the default pYIN backend needs no ONNX runtime (ADR-0001).
-///
-/// Empty placeholder — the `crepe` feature already pulls `ort` into the build.
-#[cfg(feature = "crepe")]
-pub mod crepe {}
-
 // The CLI prints VERSION; an empty one is a build error, not a test failure.
 const _: () = assert!(!VERSION.is_empty());

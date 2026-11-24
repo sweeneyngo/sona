@@ -23,9 +23,7 @@ sha2.workspace = true
 
 [features]
 default = ["spectral"]
-# Forward the CREPE backend feature down to the core.
-crepe = ["sona-core/crepe"]
-# Spectral features (pure-Rust FFT) for `--spectral-cue` (ADR-0016).
+# Spectral features (pure-Rust FFT): grid mode's spectral cue (ADR-0016) and tempo (ADR-0022).
 spectral = ["sona-core/spectral"]
 # GAME note extraction for `--game <DIR>` (ADR-0017). The weights are
 # user-downloaded (CC BY-NC-SA); ONNX Runtime loads from ORT_DYLIB_PATH.

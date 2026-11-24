@@ -9,12 +9,11 @@ repository.workspace = true
 [dependencies]
 midly.workspace = true
 serde.workspace = true
-# CREPE (ONNX via ort) is behind the `crepe` feature — the pYIN default backend
-# needs no ONNX runtime. See ADR-0001 and ticket 11.
+# ONNX Runtime, only with `game`: the pYIN default backend needs none (ADR-0001).
 ort = { workspace = true, optional = true }
 # `spectral` (on by default since holdout2 confirmed ADR-0016): the pure-Rust
-# FFT behind grid mode's spectral re-articulation cue and the optional
-# spectral-flux onsets (ADR-0013). The note-HMM default path doesn't use it.
+# FFT behind grid mode's spectral re-articulation cue and the tempo estimator
+# (ADR-0022). The note-HMM path doesn't use it.
 realfft = { workspace = true, optional = true }
 # Reads the learned cell stage's `cellstage.json` (ADR-0026); only with `game`.
 serde_json = { workspace = true, optional = true }
@@ -22,7 +21,6 @@ half.workspace = true
 
 [features]
 default = ["spectral"]
-crepe = ["dep:ort"]
 # GAME note extraction (openvpi; weights user-downloaded, CC BY-NC-SA). ONNX
 # Runtime is loaded dynamically from ORT_DYLIB_PATH. See src/game.rs.
 game = ["dep:ort", "dep:realfft", "dep:serde_json"]

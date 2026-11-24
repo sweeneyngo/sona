@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NEUTRAL_EXPRESSION, renderPitch, vibratoCents, type RenderNote, type Vibrato } from "./expression";
-import { curveErrorCents, fitExpressions, type ContourFrame } from "./fitexpr";
+import { fitExpressions, type ContourFrame } from "./fitexpr";
 
 const VIB: Vibrato = { length: 60, period: 180, depth: 40, in: 20, out: 10, shift: 0, drift: 0 };
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
@@ -64,8 +64,10 @@ describe("fitExpressions", () => {
     const contour = frames(0.05, 1.95, sung);
     const fits = fitExpressions(notes, contour);
     const fitted = notes.map((n, i) => ({ ...n, expr: fits[i] }));
-    const flatErr = curveErrorCents(notes, contour, (ts) => renderPitch(notes, ts));
-    const fitErr = curveErrorCents(notes, contour, (ts) => renderPitch(fitted, ts));
+    const ts = contour.map((f) => f.time_s);
+    const errorCents = (rendered: Float64Array) => ts.reduce((e, t, i) => e + Math.abs(rendered[i] - sung(t)) * 100, 0) / ts.length;
+    const flatErr = errorCents(renderPitch(notes, ts));
+    const fitErr = errorCents(renderPitch(fitted, ts));
     expect(fitErr).toBeLessThan(flatErr * 0.5);
     expect(fits[1].points[0].x).toBeLessThan(0);
   });

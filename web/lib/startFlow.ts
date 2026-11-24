@@ -1,7 +1,7 @@
 import type { Phase } from "./serveClient";
 
-export const MIN_BPM = 20;
-export const MAX_BPM = 400;
+const MIN_BPM = 20;
+const MAX_BPM = 400;
 
 /** The tempo estimate for the song on screen: still coming, none found, or the estimate. */
 export type Detected = number | null | "pending";

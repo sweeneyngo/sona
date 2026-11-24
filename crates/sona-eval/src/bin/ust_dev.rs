@@ -231,7 +231,6 @@ fn apply_t(t: &mut Transcriber, key: &str, val: &str) -> Result<(), String> {
         "bleed_floor_frac" => s.bleed_floor_frac = f()? as f32,
         "onset_match_s" => s.onset_match_s = f()?,
         "alpha_trim" => s.alpha_trim = f()? as f32,
-        "release_drop_threshold" => s.release_drop_threshold = f()? as f32,
         "median_window" => s.prefilter.median_window = f()? as usize,
         "stable_self" => p.stable_self = f()? as f32,
         "attack_self" => p.attack_self = f()? as f32,

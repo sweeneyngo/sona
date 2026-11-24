@@ -44,22 +44,6 @@ export function snapTime(t: number, spacing: number, anchor: number): number {
 }
 
 /**
- * Every grid line time in `[0, duration]`, stepping from `anchor` in both
- * directions. The anchor fixes the grid *phase* (ADR: auto-anchored to the
- * first onset, draggable for pickups); this is what the UI draws.
- */
-export function gridLines(anchor: number, spacing: number, duration: number): number[] {
-  const lines: number[] = [];
-  const firstK = Math.ceil((0 - anchor) / spacing - 1e-9);
-  for (let k = firstK; ; k++) {
-    const t = anchor + k * spacing;
-    if (t > duration + 1e-9) break;
-    if (t >= -1e-9) lines.push(t);
-  }
-  return lines;
-}
-
-/**
  * Hard-snap a note's onset and offset to the grid, with a confidence-aware
  * escape hatch (ADR-0003): a note landing *far* from the grid (≥
  * `escapeDistanceCells` of a cell from the nearest line) while its onset was
