@@ -2,7 +2,7 @@
 
 Status: needs-triage
 Type: task
-Blocked by: 02, 03
+Blocked by: 03, 14
 
 ## What
 
@@ -15,3 +15,6 @@ meta events). Check that OpenUtau imports the lyrics from each format (the user 
 - 2026-11-24 (02): placing lines from sona's notes failed; the line timing must come from the audio or from the
   user marking each line's first note. Pick one (user's call) before this ticket; the fit after it is
   `lyric_fit::fit_span_moras`.
+
+- 2026-11-24, lead: 02 is resolved negative (sona's notes can't place lines). The user chose line timing from
+  the audio (14), with drag-to-fix (15). The fit is `fit_span_moras` on the aligned lines.

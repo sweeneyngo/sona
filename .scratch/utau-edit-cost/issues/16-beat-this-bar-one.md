@@ -1,6 +1,6 @@
 # 16 — Beat This! downbeats as a second bar-1 source (opt-in until holdout4)
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 15
 
@@ -48,3 +48,5 @@ byte-identical (ADR-0029's golden, `sona-eval-frame` default columns); tests tha
 taken mod 3, share ignored); README and an ADR.
 
 ## Comments
+
+- 2026-11-24, lead: triaged ready. Build it opt-in as a user-installed tool in the separator venv (least code; MIT code and weights), so the holdout4 read can compare bar 1 from today's rule, the harmonic estimate (ADR-0031) and Beat This against ear labels. Its CPU minute is small next to separation. Speed gate re-measured with one thread pinned.
