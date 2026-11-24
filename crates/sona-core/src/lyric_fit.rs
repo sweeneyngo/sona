@@ -202,3 +202,43 @@ fn place_blocks(notes: &[CellNote], blocks: &[(usize, usize)]) -> Vec<(CellNote,
     }
     out
 }
+
+/// A pasted line, or a space-separated piece of one, placed in time (lyrics-first 14): it sings
+/// `moras[first..]` up to the next line's `first`, over the cells `start..end` (fractional; from an
+/// aligner or a user's drag).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineSpan {
+    pub first: usize,
+    pub start: f64,
+    pub end: f64,
+}
+
+/// Each line's moras fitted by [`fit_span_moras`] onto the notes whose midpoint lies in its span; a note
+/// in no span (or in an empty line's) carries no mora. A note belongs to the latest-starting line that
+/// starts at or before its midpoint, if that line has not ended. A line that catches no note leaves its
+/// moras on no note, and the lines after it are unaffected. Returns the notes, sorted, with the index
+/// into `moras` each one sings.
+pub fn fit_lines(notes: &[CellNote], moras: &[Mora], lines: &[LineSpan]) -> Vec<(CellNote, Option<usize>)> {
+    let mut by_first: Vec<LineSpan> = lines.iter().copied().filter(|l| l.first < moras.len()).collect();
+    by_first.sort_by_key(|l| l.first);
+    by_first.dedup_by_key(|l| l.first);
+    let ranges: Vec<(LineSpan, usize, usize)> = by_first.iter().enumerate().map(|(k, l)| (*l, l.first, by_first.get(k + 1).map_or(moras.len(), |n| n.first))).collect();
+    let mut by_start = ranges;
+    by_start.sort_by(|a, b| a.0.start.total_cmp(&b.0.start));
+    let mut members: Vec<Vec<CellNote>> = vec![Vec::new(); by_start.len()];
+    let mut placed: Vec<(CellNote, Option<usize>)> = Vec::with_capacity(notes.len());
+    for n in notes {
+        let mid = (n.start + n.end) as f64 / 2.0;
+        let k = by_start.partition_point(|(l, _, _)| l.start <= mid);
+        match k.checked_sub(1) {
+            Some(k) if mid < by_start[k].0.end => members[k].push(*n),
+            _ => placed.push((*n, None)),
+        }
+    }
+    for ((line, a, b), ns) in by_start.iter().zip(&members) {
+        let span = (line.start.round() as i64, line.end.round() as i64);
+        placed.extend(fit_span_moras(ns, &moras[*a..*b], span).into_iter().map(|(n, m)| (n, m.map(|m| a + m))));
+    }
+    placed.sort_by_key(|(n, _)| (n.start, n.end));
+    placed
+}
