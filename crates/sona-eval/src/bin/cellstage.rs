@@ -10,18 +10,30 @@
 //! `--edit-cost` adds the OpenUtau edit cost (`sona_eval::correction::edit_cost`) against the lead UST
 //! on its own grid, per song and pooled, for sona's default pYIN grid mode on the vocals, GAME's lead
 //! notes on the onset phase, and the learned stage on the onset phase (what ships).
-use std::path::PathBuf;
+//!
+//! The GAME runs and sona's pYIN grid notes are cached under `target/ust-dev-cache/` (or
+//! `$SONA_DEV_CACHE`), keyed like `sona-eval-ust-dev`'s: song, a fingerprint of each stem, the GAME
+//! release folder, the GAME settings (seed included) and the transcriber's settings. Delete the cache
+//! after changing GAME's or the octave check's code.
+//!
+//! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
+//! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
+//! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
+//! vocals' pitch track. The dump holds UST content: keep it out of the repository.
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use sona_core::cellstage::snap_notes;
+use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::tempo::grid_phase;
-use sona_core::game::{cell_stage_notes, cells_covering, phase_of, CellModel, GameModel, GameParams, StageRuns};
-use sona_core::{GridMode, PYin, Producer, Transcriber};
+use sona_core::game::{cell_stage_notes, cells_covering, grid_segments, phase_of, CellModel, GameModel, GameParams, StageRuns};
+use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
 use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
 use sona_eval::correction::EditNote;
 use sona_eval::holdout::authorize;
 use sona_eval::quantize::grid_spacing_seconds;
 use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest, SongUsts};
+use sona_eval::ust::BlockKind;
 use sona_eval::{ust, wav};
+use serde_json::json;
 
 type Notes = Vec<(f64, f64, i32)>;
 
@@ -46,6 +58,127 @@ fn cells(reference: &Notes, est: &Notes, spacing: f64, anchor: f64) -> (usize, u
     (ok, n)
 }
 
+fn cache_dir() -> PathBuf {
+    std::env::var_os("SONA_DEV_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ust-dev-cache"))
+}
+
+fn settings_key(p: &impl std::fmt::Debug) -> String {
+    let s = format!("{p:?}");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.bytes() {
+        h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn fingerprint(samples: &[f32]) -> u64 {
+    samples.iter().step_by(997).fold(samples.len() as u64, |h, x| h.rotate_left(5) ^ u64::from(x.to_bits()))
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    std::fs::create_dir_all(cache_dir()).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn put_notes(b: &mut Vec<u8>, notes: &[StageNote]) {
+    b.extend((notes.len() as u64).to_le_bytes());
+    for n in notes {
+        b.extend(n.onset_s.to_le_bytes());
+        b.extend(n.offset_s.to_le_bytes());
+        b.extend(n.midi.to_le_bytes());
+        b.push(u8::from(n.voiced));
+    }
+}
+
+fn put_f32s(b: &mut Vec<u8>, v: &[f32]) {
+    b.extend((v.len() as u64).to_le_bytes());
+    for x in v {
+        b.extend(x.to_le_bytes());
+    }
+}
+
+fn put_chunks(b: &mut Vec<u8>, chunks: &[EncoderChunk]) {
+    b.extend((chunks.len() as u64).to_le_bytes());
+    for c in chunks {
+        b.extend(c.t0.to_le_bytes());
+        b.extend((c.frames as u64).to_le_bytes());
+        b.extend((c.dim as u64).to_le_bytes());
+        put_f32s(b, &c.data);
+    }
+}
+
+struct Reader<'a>(&'a [u8]);
+
+impl Reader<'_> {
+    fn take<const N: usize>(&mut self) -> Option<[u8; N]> {
+        let (head, rest) = self.0.split_first_chunk::<N>()?;
+        self.0 = rest;
+        Some(*head)
+    }
+    fn u64(&mut self) -> Option<u64> {
+        self.take().map(u64::from_le_bytes)
+    }
+    fn f64(&mut self) -> Option<f64> {
+        self.take().map(f64::from_le_bytes)
+    }
+    fn f32(&mut self) -> Option<f32> {
+        self.take().map(f32::from_le_bytes)
+    }
+    fn notes(&mut self) -> Option<Vec<StageNote>> {
+        (0..self.u64()?).map(|_| Some(StageNote { onset_s: self.f64()?, offset_s: self.f64()?, midi: self.f32()?, voiced: self.take::<1>()?[0] != 0 })).collect()
+    }
+    fn f32s(&mut self) -> Option<Vec<f32>> {
+        (0..self.u64()?).map(|_| self.f32()).collect()
+    }
+    fn chunks(&mut self) -> Option<Vec<EncoderChunk>> {
+        (0..self.u64()?).map(|_| Some(EncoderChunk { t0: self.f64()?, frames: self.u64()? as usize, dim: self.u64()? as usize, data: self.f32s()? })).collect()
+    }
+}
+
+const RUNS_MAGIC: &[u8; 8] = b"sonaSR01";
+
+fn runs_to_bytes(r: &StageRuns) -> Vec<u8> {
+    let mut b = RUNS_MAGIC.to_vec();
+    put_notes(&mut b, &r.lead_notes);
+    put_f32s(&mut b, &r.lead_ratios);
+    put_chunks(&mut b, &r.lead_frames);
+    put_notes(&mut b, &r.vocals_notes);
+    put_chunks(&mut b, &r.vocals_frames);
+    b
+}
+
+fn runs_from_bytes(bytes: &[u8]) -> Option<StageRuns> {
+    let mut r = Reader(bytes.strip_prefix(RUNS_MAGIC)?);
+    let runs = StageRuns { lead_notes: r.notes()?, lead_ratios: r.f32s()?, lead_frames: r.chunks()?, vocals_notes: r.notes()?, vocals_frames: r.chunks()? };
+    r.0.is_empty().then_some(runs)
+}
+
+fn stage_runs_cached(game: &GameModel, game_dir: &Path, id: &str, lead: &[f32], vocals: &[f32], sr: u32) -> Result<StageRuns, String> {
+    let tag = game_dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let path = cache_dir().join(format!("{id}.stageruns-{tag}-{}-{:016x}-{:016x}.bin", settings_key(&game.params), fingerprint(lead), fingerprint(vocals)));
+    if let Some(runs) = std::fs::read(&path).ok().and_then(|b| runs_from_bytes(&b)) {
+        return Ok(runs);
+    }
+    eprintln!("  GAME for {id} (cached after this run)…");
+    let runs = StageRuns::compute(game, lead, vocals, sr).map_err(|e| e.to_string())?;
+    write_atomic(&path, &runs_to_bytes(&runs))?;
+    Ok(runs)
+}
+
+fn transcribe_cached(t: &Transcriber, id: &str, samples: &[f32], sr: u32, bpm: f64) -> Result<Annotation, String> {
+    let path = cache_dir().join(format!("{id}.cellstage-pyin-{}-{bpm}-{:016x}.json", settings_key(t), fingerprint(samples)));
+    if let Some(a) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()) {
+        return Ok(a);
+    }
+    let a = t.transcribe(&PYin::default(), samples, sr, bpm, Producer::Pyin);
+    write_atomic(&path, serde_json::to_string(&a).map_err(|e| e.to_string())?.as_bytes())?;
+    Ok(a)
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -66,7 +199,7 @@ fn run() -> Result<(), String> {
         authorize(&manifest, &split, "sona-eval-cellstage", flag("--reason").as_deref(), args.iter().any(|a| a == "--reread"))?;
     }
     let game_dir = std::env::var("SONA_GAME_DIR").map_err(|_| "set SONA_GAME_DIR")?;
-    let game = GameModel::load(std::path::Path::new(&game_dir), GameParams::default()).map_err(|e| e.to_string())?;
+    let game = GameModel::load(Path::new(&game_dir), GameParams::default()).map_err(|e| e.to_string())?;
     let model = CellModel::load(&model_dir, GameParams::default().threads).map_err(|e| e.to_string())?;
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let songs: Vec<_> = manifest
@@ -80,6 +213,10 @@ fn run() -> Result<(), String> {
     let mut tot = [(0usize, 0usize); 6];
     let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
     let mut costs: [Vec<(String, EditCost)>; 3] = Default::default();
+    let dump = flag("--dump").map(PathBuf::from);
+    if let Some(dir) = &dump {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     println!("{:28} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}", "song", "lead/est", "stage/est", "lead/ons", "stage/ons", "lead/UST", "stage/UST");
     for song in songs {
         let offset = song.alignment_offset_s.expect("filtered");
@@ -91,13 +228,13 @@ fn run() -> Result<(), String> {
         let (lead, sr) = wav::read_mono(&stems.join(&song.id).join("lead.wav")).map_err(|e| e.to_string())?;
         let (vocals, _) = wav::read_mono(&stems.join(&song.id).join("vocals.wav")).map_err(|e| e.to_string())?;
         let t = Transcriber { grid: Some(GridMode { division, ..GridMode::sixteenths() }), ..Transcriber::default() };
-        let a = t.transcribe(&PYin::default(), &vocals, sr, bpm, Producer::Pyin);
+        let a = transcribe_cached(&t, &song.id, &vocals, sr, bpm)?;
         let sona: Notes = a.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
         let estimated = phase_of(&sona, spacing);
         let f0: Vec<(f64, f64)> = a.f0_contour.iter().map(|f| (f.time_s, f64::from(f.frequency_hz))).collect();
         let rms: Vec<(f64, f64)> = a.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
         let duration = vocals.len() as f64 / f64::from(sr);
-        let runs = StageRuns::compute(&game, &lead, &vocals, sr).map_err(|e| e.to_string())?;
+        let runs = stage_runs_cached(&game, Path::new(&game_dir), &song.id, &lead, &vocals, sr)?;
         let truth = offset.rem_euclid(spacing);
         let off = |p: f64| {
             let d = (p - truth).rem_euclid(spacing) / spacing;
@@ -105,7 +242,7 @@ fn run() -> Result<(), String> {
         };
         let onset = grid_phase(&vocals, sr, spacing).unwrap_or(estimated);
         let t_on = Transcriber { grid: Some(GridMode { division, anchor_s: Some(onset), ..GridMode::sixteenths() }), ..Transcriber::default() };
-        let a_on = t_on.transcribe(&PYin::default(), &vocals, sr, bpm, Producer::Pyin);
+        let a_on = transcribe_cached(&t_on, &song.id, &vocals, sr, bpm)?;
         let sona_on: Notes = a_on.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
         let mut row = [(0usize, 0usize); 6];
         let grid = CellGrid { spacing_s: spacing, anchor_s: offset, cells_per_measure: division };
@@ -121,6 +258,20 @@ fn run() -> Result<(), String> {
             if with_edit_cost && j == 1 {
                 costs[1].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&lead_only), &grid)));
                 costs[2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&stage), &grid)));
+            }
+            if let (Some(dir), 1) = (&dump, j) {
+                let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
+                let costs: Vec<_> = outputs.iter().map(|(name, ns)| (*name, edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid))).collect();
+                let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
+                let song_dump = dump_song(&model, &inputs, cells_covering(duration, spacing, anchor), &stage, &lead, sr, &usts, offset)?;
+                let value = json!({
+                    "id": song.id, "bpm": bpm, "division": division, "spacing": spacing, "ust_anchor": offset, "onset_phase": anchor,
+                    "reference": reference, "outputs": outputs.iter().map(|(name, ns)| (name.to_string(), json!(ns))).collect::<serde_json::Map<_, _>>(),
+                    "edit_cost": costs.iter().map(|(name, c)| (name.to_string(), json!(c.counts))).collect::<serde_json::Map<_, _>>(),
+                    "sona_onset": notes, "f0": f0, "rms": rms, "stage_detail": song_dump,
+                });
+                let path = dir.join(format!("{}.json", song.id));
+                std::fs::write(&path, value.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
             }
         }
         let pct = |(o, n): (usize, usize)| 100.0 * o as f64 / n.max(1) as f64;
@@ -139,4 +290,45 @@ fn run() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The stage's cells and notes in detail, for `--dump`: candidates, sources, class probabilities and
+/// each shipped note's confidence (scored as `sona transcribe` scores them, on the lead's energy).
+#[allow(clippy::too_many_arguments)]
+fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize), stage: &Notes, lead: &[f32], sr: u32, usts: &SongUsts, offset: f64) -> Result<serde_json::Value, String> {
+    let (x, cands, sources) = cell_features(inputs, k0, n);
+    let logits = model.logits(&x, n).map_err(|e| e.to_string())?;
+    let classes = choose_class(&logits, &cands);
+    if &cells_to_notes(&classes, &cands, &sources, k0, inputs.spacing, inputs.anchor) != stage {
+        return Err("the dump's stage notes differ from cell_stage_notes".into());
+    }
+    let nc = cands.first().map_or(6, |c| c.len());
+    let probs: Vec<Vec<f32>> = logits
+        .chunks(nc)
+        .map(|row| {
+            let top = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let e: Vec<f32> = row.iter().map(|v| (v - top).exp()).collect();
+            let z: f32 = e.iter().sum();
+            e.iter().map(|v| v / z).collect()
+        })
+        .collect();
+    let shipped: Vec<(f64, f64, u8)> = stage.iter().filter_map(|&(a, b, p)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p))).collect();
+    let envelope = Transcriber::default().onset.detect(lead, sr).energy_envelope;
+    let scored = Transcriber::default().scorer.score_all(&grid_segments(&shipped), &envelope);
+    let ust_notes: Vec<_> = usts
+        .lead
+        .iter()
+        .enumerate()
+        .flat_map(|(part, u)| {
+            u.timeline().into_iter().filter(|p| p.kind != BlockKind::Rest).map(move |p| {
+                json!({"part": part, "on": p.start_s + offset, "off": p.end_s + offset, "midi": p.note_num, "lyric": u.notes[p.i].lyric, "kind": format!("{:?}", p.kind), "ticks": [p.start_tick, p.end_tick]})
+            })
+        })
+        .collect();
+    let stage_notes = |ns: &[StageNote]| ns.iter().map(|n| (n.onset_s, n.offset_s, n.midi, n.voiced)).collect::<Vec<_>>();
+    Ok(json!({
+        "k0": k0, "classes": classes, "cands": cands, "sources": sources, "probs": probs,
+        "confidence": scored.iter().map(|n| (n.onset_s, n.offset_s, n.midi_pitch, n.confidence, [n.sub_scores.pitch_stability, n.sub_scores.voicing, n.sub_scores.onset_clarity, n.sub_scores.offset_clarity])).collect::<Vec<_>>(),
+        "ust": ust_notes, "game_lead": stage_notes(inputs.lead_notes), "lead_ratios": inputs.lead_ratios, "game_vocals": stage_notes(inputs.vocals_notes),
+    }))
 }
