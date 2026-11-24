@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use sona_core::cellstage::snap_notes;
-use sona_core::game::{cell_stage_notes, cells_covering, CellModel, GameModel, GameParams, StageRuns};
+use sona_core::game::{cell_stage_notes, cells_covering, phase_of, CellModel, GameModel, GameParams, StageRuns};
 use sona_core::{GridMode, PYin, Producer, Transcriber};
 use sona_eval::holdout::authorize;
 use sona_eval::quantize::grid_spacing_seconds;
@@ -18,7 +18,6 @@ use sona_eval::{ust, wav};
 
 type Notes = Vec<(f64, f64, i32)>;
 
-/// Cells of the UST grid over the lead's span, as (right, total), comparing the pitch at each centre.
 fn cells(reference: &Notes, est: &Notes, spacing: f64, anchor: f64) -> (usize, usize) {
     let at = |ns: &Notes, t: f64| -> i32 {
         let i = ns.partition_point(|n| n.0 <= t);
@@ -85,7 +84,7 @@ fn run() -> Result<(), String> {
         let t = Transcriber { grid: Some(GridMode { division, ..GridMode::sixteenths() }), ..Transcriber::default() };
         let a = t.transcribe(&PYin::default(), &vocals, sr, bpm, Producer::Pyin);
         let sona: Notes = a.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
-        let estimated = sona.first().map_or(0.0, |n| n.0.rem_euclid(spacing));
+        let estimated = phase_of(&sona, spacing);
         let f0: Vec<(f64, f64)> = a.f0_contour.iter().map(|f| (f.time_s, f64::from(f.frequency_hz))).collect();
         let rms: Vec<(f64, f64)> = a.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
         let duration = vocals.len() as f64 / f64::from(sr);

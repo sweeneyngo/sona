@@ -5,7 +5,7 @@ describe("serve client boundary", () => {
   it("parses capabilities, treating anything but true as unavailable", () => {
     expect(parseCapabilities({ separation: { none: true, vocals: true, lead: "yes" }, engines: { pyin: true } })).toEqual({
       separation: { none: true, vocals: true, lead: false },
-      engines: { pyin: true, game: false },
+      engines: { pyin: true, game: false, cells: false },
       tempo: false,
     });
     expect(parseCapabilities({ separation: {}, engines: {}, tempo: true }).tempo).toBe(true);
@@ -13,10 +13,13 @@ describe("serve client boundary", () => {
   });
 
   it("defaults a job to the best separation and engine the server has", () => {
-    const caps = (lead: boolean, vocals: boolean, game: boolean) => ({ separation: { none: true, vocals, lead }, engines: { pyin: true, game }, tempo: true });
+    const caps = (lead: boolean, vocals: boolean, game: boolean) => ({ separation: { none: true, vocals, lead }, engines: { pyin: true, game, cells: false }, tempo: true });
     expect(defaultJob(caps(true, true, true))).toEqual({ separation: "lead", engine: "game" });
     expect(defaultJob(caps(false, true, false))).toEqual({ separation: "vocals", engine: "pyin" });
     expect(defaultJob(caps(false, false, false))).toEqual({ separation: "none", engine: "pyin" });
+    const withCells = { ...caps(true, true, true), engines: { pyin: true, game: true, cells: true } };
+    expect(defaultJob(withCells)).toEqual({ separation: "lead", engine: "cells" });
+    expect(defaultJob({ ...withCells, separation: { none: true, vocals: true, lead: false } }).engine).toBe("game");
   });
 
   it("parses a job status and rejects unknown phases", () => {

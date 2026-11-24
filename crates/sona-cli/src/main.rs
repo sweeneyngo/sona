@@ -50,6 +50,11 @@ OPTIONS (transcribe):
                      Runtime library, and a 44.1 kHz stem (a lead-vocal stem works best)
     --no-octave-check
                      With --game: skip the subharmonic octave check (on by default)
+    --cell-model <DIR>
+                     With --game: let the learned cell stage choose each cell (ADR-0026). DIR is a
+                     folder from crates/sona-eval/scripts/cellstage/export_onnx.py; the stem is then
+                     the lead, and --vocals names the vocals stem it was separated from
+    --vocals <WAV>   With --cell-model: the vocals stem (demucs) beside the lead stem
     -h, --help       Print this usage
     -V, --version    Print version
 
@@ -60,6 +65,7 @@ OPTIONS (serve):
     --demucs-venv <DIR>    demucs venv for vocal separation (default ~/.local/share/sona/demucs-venv)
     --separator-venv <DIR> audio-separator venv for the lead (default ~/.local/share/sona/separator-venv)
     --game <DIR>           Offer GAME note extraction (needs --features game and ORT_DYLIB_PATH)
+    --cell-model <DIR>     Offer GAME + the learned cell stage (ADR-0026; needs --game)
 
 The core emits the annotation JSON contract (raw note events + confidence +
 f0 contour + energy envelope); the web review surface interprets it (grid,
@@ -109,6 +115,8 @@ struct TranscribeArgs {
     spectral_cue: bool,
     game: Option<String>,
     octave_check: bool,
+    vocals: Option<String>,
+    cell_model: Option<String>,
 }
 
 /// The `transcribe` subcommand: parse args, decode the stem, run the pipeline,
@@ -143,7 +151,9 @@ fn transcribe(parsed: &TranscribeArgs) -> Result<sona_core::Annotation, String> 
     let transcriber = Transcriber { grid, ..Transcriber::default() };
     #[allow(unused_mut)]
     let mut annotation = transcriber.transcribe(&PYin::default(), &samples, sample_rate, parsed.bpm, Producer::Pyin);
-    if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
+    if let (Some(dir), Some(division), Some(model), Some(vocals)) = (&parsed.game, parsed.grid, &parsed.cell_model, &parsed.vocals) {
+        cell_stage(&mut annotation, &transcriber, &samples, vocals, dir, model, division, parsed)?;
+    } else if let (Some(dir), Some(division)) = (&parsed.game, parsed.grid) {
         game_notes(&mut annotation, &transcriber, &samples, dir, division, parsed.octave_check)?;
     }
     annotation.provenance = Some(transcribe_provenance(parsed)?);
@@ -156,7 +166,7 @@ fn transcribe_provenance(parsed: &TranscribeArgs) -> Result<sona_core::Provenanc
     let mut set = |k: &str, v: String| settings.insert(k.to_string(), v);
     set("bpm", parsed.bpm.to_string());
     set("grid", parsed.grid.map_or("none".into(), |g| g.to_string()));
-    set("engine", if parsed.game.is_some() { "game" } else { "pyin" }.into());
+    set("engine", if parsed.cell_model.is_some() { "game+cells" } else if parsed.game.is_some() { "game" } else { "pyin" }.into());
     if parsed.grid.is_some() && parsed.game.is_none() {
         set("salience", parsed.salience.to_string());
         set("spectral_cue", parsed.spectral_cue.to_string());
@@ -173,6 +183,10 @@ fn transcribe_provenance(parsed: &TranscribeArgs) -> Result<sona_core::Provenanc
         for graph in ["encoder", "segmenter", "estimator", "dur2bd", "bd2dur"] {
             models.push(provenance::fingerprint_file(&format!("game/{graph}"), &Path::new(dir).join(format!("{graph}.onnx")))?);
         }
+    }
+    if let (Some(model), Some(vocals)) = (&parsed.cell_model, &parsed.vocals) {
+        models.push(provenance::fingerprint_file("cells/model", &Path::new(model).join("cellstage.onnx"))?);
+        models.push(provenance::fingerprint_file("input/vocals", Path::new(vocals))?);
     }
     Ok(provenance::provenance(input, settings, models))
 }
@@ -192,6 +206,37 @@ fn game_settings() -> Vec<(String, String)> {
 #[cfg(not(feature = "game"))]
 fn game_settings() -> Vec<(String, String)> {
     Vec::new()
+}
+
+#[cfg(feature = "game")]
+#[allow(clippy::too_many_arguments)]
+fn cell_stage(annotation: &mut sona_core::Annotation, transcriber: &Transcriber, lead: &[f32], vocals_path: &str, game_dir: &str, model_dir: &str, division: u32, args: &TranscribeArgs) -> Result<(), String> {
+    use sona_core::game::{cell_stage_notes, cells_covering, grid_segments, grid_spacing_s, phase_of, CellModel, GameModel, GameParams, StageRuns, GAME_SAMPLE_RATE};
+    let (vocals, sr) = load_wav_mono(vocals_path)?;
+    if sr != GAME_SAMPLE_RATE || annotation.sample_rate != GAME_SAMPLE_RATE {
+        return Err(format!("the cell stage needs {GAME_SAMPLE_RATE} Hz stems"));
+    }
+    let on_vocals = Transcriber { grid: Some(grid_mode(division, args)), ..Transcriber::default() }.transcribe(&PYin::default(), &vocals, sr, annotation.bpm, Producer::Pyin);
+    let spacing = grid_spacing_s(annotation.bpm, division);
+    let sona: Vec<(f64, f64, i32)> = on_vocals.notes.iter().map(|n| (n.onset_s, n.offset_s, i32::from(n.midi_pitch))).collect();
+    let anchor = phase_of(&sona, spacing);
+    let f0: Vec<(f64, f64)> = on_vocals.f0_contour.iter().map(|f| (f.time_s, f64::from(f.frequency_hz))).collect();
+    let rms: Vec<(f64, f64)> = on_vocals.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
+    let game = GameModel::load(Path::new(game_dir), GameParams::default()).map_err(|e| e.to_string())?;
+    let model = CellModel::load(Path::new(model_dir), GameParams::default().threads).map_err(|e| e.to_string())?;
+    let runs = StageRuns::compute(&game, lead, &vocals, sr).map_err(|e| e.to_string())?;
+    let duration = lead.len().max(vocals.len()) as f64 / f64::from(sr);
+    let notes = cell_stage_notes(&model, &runs, &sona, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+    let notes: Vec<(f64, f64, u8)> = notes.into_iter().filter_map(|(a, b, p)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p))).collect();
+    annotation.notes = transcriber.scorer.score_all(&grid_segments(&notes), &annotation.energy_envelope);
+    annotation.producer = Producer::Game;
+    Ok(())
+}
+
+#[cfg(not(feature = "game"))]
+#[allow(clippy::too_many_arguments)]
+fn cell_stage(_: &mut sona_core::Annotation, _: &Transcriber, _: &[f32], _: &str, _: &str, _: &str, _: u32, _: &TranscribeArgs) -> Result<(), String> {
+    Err("--cell-model needs sona built with `--features game`".into())
 }
 
 /// Replace the annotation's notes with GAME's, snapped to the grid (ADR-0017).
@@ -245,6 +290,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let mut grid: Option<u32> = None;
     let (mut salience, mut spectral_cue) = (true, cfg!(feature = "spectral"));
     let (mut game, mut octave_check): (Option<String>, bool) = (None, true);
+    let (mut vocals, mut cell_model): (Option<String>, Option<String>) = (None, None);
 
     let mut i = 0;
     while i < args.len() {
@@ -275,6 +321,14 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
             let (raw, next) = flag_value(args, i, rest, "--game")?;
             i = next;
             game = Some(raw.to_string());
+        } else if let Some(rest) = arg.strip_prefix("--vocals") {
+            let (raw, next) = flag_value(args, i, rest, "--vocals")?;
+            i = next;
+            vocals = Some(raw);
+        } else if let Some(rest) = arg.strip_prefix("--cell-model") {
+            let (raw, next) = flag_value(args, i, rest, "--cell-model")?;
+            i = next;
+            cell_model = Some(raw);
         } else if arg == "--no-octave-check" {
             octave_check = false;
         } else if arg == "--no-salience" {
@@ -307,7 +361,13 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     if !octave_check && game.is_none() {
         return Err("--no-octave-check only applies with --game".into());
     }
-    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue, game, octave_check })
+    if cell_model.is_some() && (game.is_none() || vocals.is_none()) {
+        return Err("--cell-model needs --game DIR and --vocals VOCALS.wav (the stem is then the lead)".into());
+    }
+    if vocals.is_some() && cell_model.is_none() {
+        return Err("--vocals is only used with --cell-model".into());
+    }
+    Ok(TranscribeArgs { stem, bpm, midi, grid, salience, spectral_cue, game, octave_check, vocals, cell_model })
 }
 
 /// Resolve a flag's value at index `i`, where `rest` is whatever followed the

@@ -101,7 +101,10 @@ separate lead-vocal stem added nothing (it does help GAME).
 listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
 Options: `--port`, `--jobs-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`.
 
-**GAME** (openvpi's singing-transcription model) gives the best notes. Its weights are CC BY-NC-SA 4.0
+**GAME** (openvpi's singing-transcription model) gives better notes, and **GAME plus the learned cell
+stage** the best (`--cell-model DIR --vocals VOCALS.wav`, or `sona serve --cell-model DIR`;
+[ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)). The stage is trained on Pifuyuu's USTs, so
+like GAME's weights it is built and kept locally. Its weights are CC BY-NC-SA 4.0
 (non-commercial), so you download them yourself. Build with `--features game`, set `ORT_DYLIB_PATH` to
 an ONNX Runtime library, and pass `--game ~/models/GAME-1.0.3-medium-onnx`.
 
@@ -142,7 +145,7 @@ The metric is the share of grid cells that match the UST.
 |---|---|---|
 | grid mode, pYIN (the default) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
 | GAME + octave check | 87.4% | 76.3% (holdout3) |
-| + learned per-cell stage (Python prototype, not yet in the app) | — | **78.8%** (holdout3) |
+| + learned per-cell stage (in the app since [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3; 78.2% with sona's own grid phase) |
 
 - **Ceilings** (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch per
   cell 95.6%.

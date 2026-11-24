@@ -1,5 +1,5 @@
 export type Separation = "none" | "vocals" | "lead";
-export type Engine = "pyin" | "game";
+export type Engine = "pyin" | "game" | "cells";
 export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-lead" | "transcribing" | "done" | "failed" | "cancelled";
 
 export interface Capabilities {
@@ -55,7 +55,7 @@ function bools<K extends string>(v: unknown, keys: readonly K[]): Record<K, bool
 
 export function parseCapabilities(v: unknown): Capabilities {
   const o = record(v);
-  return { separation: bools(o.separation, ["none", "vocals", "lead"] as const), engines: bools(o.engines, ["pyin", "game"] as const), tempo: o.tempo === true };
+  return { separation: bools(o.separation, ["none", "vocals", "lead"] as const), engines: bools(o.engines, ["pyin", "game", "cells"] as const), tempo: o.tempo === true };
 }
 
 export function parseJobStatus(v: unknown): JobStatus {
@@ -104,7 +104,8 @@ export async function fetchTempo(audio: Blob, name: string): Promise<number | nu
 
 export function defaultJob(caps: Capabilities): { separation: Separation; engine: Engine } {
   const separation: Separation = caps.separation.lead ? "lead" : caps.separation.vocals ? "vocals" : "none";
-  return { separation, engine: caps.engines.game ? "game" : "pyin" };
+  const engine: Engine = caps.engines.cells && separation === "lead" ? "cells" : caps.engines.game ? "game" : "pyin";
+  return { separation, engine };
 }
 
 export async function fetchResults(id: string): Promise<{ annotation: unknown; stem: ArrayBuffer }> {

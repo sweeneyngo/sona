@@ -63,4 +63,4 @@ After ADR-0016, grid mode reached 79.5% dev cell accuracy. The Vocal2Midi projec
   - **Cells:** +0.80 (95% CI −0.53 to +1.91), against a pre-registered +2.0 bar.
   - **Report:** [`game-finetune.md`](../../crates/sona-eval/reports/game-finetune.md).
 - **Run-to-run noise:** GAME's D3PM segmenter samples boundaries at random, so this ADR's unseeded GAME runs carry about ±0.2–0.4 points of run-to-run noise.
-- **Port:** porting the learned stage to Rust (ONNX via `ort`) is still to do.
+- **Port:** done in ADR-0026 (holdout3 parity: 78.83% on the true phase, 78.18% on sona's estimated phase).

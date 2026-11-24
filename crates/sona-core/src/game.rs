@@ -130,7 +130,7 @@ impl StageRuns {
     pub fn compute(game: &GameModel, lead: &[f32], vocals: &[f32], sample_rate: u32) -> Result<Self, GameError> {
         let (mut lead_notes, lead_frames) = game.transcribe_with_frames(lead, sample_rate, game.params)?;
         let lead_ratios = harmonic_ratios(&lead_notes, lead, sample_rate);
-        correct_octaves(&mut lead_notes, lead, sample_rate, OctaveRule::default());
+        correct_octaves_with(&mut lead_notes, &lead_ratios, OctaveRule::default());
         let (vocals_notes, vocals_frames) = game.transcribe_with_frames(vocals, sample_rate, game.params)?;
         let stage = |ns: &[GameNote]| ns.iter().map(|n| crate::cellstage::StageNote { onset_s: n.onset_s, offset_s: n.offset_s, midi: n.midi, voiced: n.voiced }).collect();
         Ok(Self { lead_notes: stage(&lead_notes), lead_ratios, lead_frames, vocals_notes: stage(&vocals_notes), vocals_frames })
@@ -150,7 +150,7 @@ pub fn cell_stage_notes(
     anchor: f64,
     cells: (i64, usize),
 ) -> Result<Vec<(f64, f64, i32)>, GameError> {
-    use crate::cellstage::{cell_features_with_sources, cells_to_notes, choose_class, StageInputs};
+    use crate::cellstage::{cell_features, cells_to_notes, choose_class, StageInputs};
     let inputs = StageInputs {
         spacing,
         anchor,
@@ -164,12 +164,24 @@ pub fn cell_stage_notes(
         rms,
     };
     let (k0, n) = cells;
-    let (x, cands, sources) = cell_features_with_sources(&inputs, k0, n);
+    let (x, cands, sources) = cell_features(&inputs, k0, n);
     if n > 0 && x.len() != n * model.width {
         return Err(GameError::Ort(format!("the cell model expects {} features per cell, sona built {}", model.width, x.len() / n)));
     }
     let logits = model.logits(&x, n)?;
     Ok(cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor))
+}
+
+/// The grid phase sona's grid notes sit on, in `[0, spacing)`: every note starts on a cell boundary. A
+/// phase within a rounding error of a whole cell is 0, so the cells keep their numbering.
+pub fn phase_of(notes: &[(f64, f64, i32)], spacing: f64) -> f64 {
+    let Some(first) = notes.first() else { return 0.0 };
+    let phase = first.0.rem_euclid(spacing);
+    if spacing - phase < 1e-6 * spacing {
+        0.0
+    } else {
+        phase
+    }
 }
 
 /// The cells covering `[0, duration)` on a grid: the first starts at or before 0.
@@ -182,7 +194,8 @@ pub fn cells_covering(duration_s: f64, spacing: f64, anchor: f64) -> (i64, usize
     (k0, n)
 }
 
-/// The frames where `mask` is set, each `x_seg ‖ x_est`, rounded to half precision.
+/// The chunk's valid frames, each `x_seg ‖ x_est`, rounded to half precision. GAME's encoder runs one
+/// chunk at a time (batch 1), so its `maskT` is a leading run of valid frames.
 fn encoder_rows(x_seg: &(Vec<i64>, Vec<f32>), x_est: &(Vec<i64>, Vec<f32>), mask: &[bool]) -> (usize, usize, Vec<f32>) {
     let (ds, de) = (*x_seg.0.last().unwrap_or(&0) as usize, *x_est.0.last().unwrap_or(&0) as usize);
     let n = mask.iter().filter(|&&m| m).count();
@@ -512,7 +525,12 @@ pub fn harmonic_ratios(notes: &[GameNote], samples: &[f32], sample_rate: u32) ->
 /// how many notes moved.
 pub fn correct_octaves(notes: &mut [GameNote], samples: &[f32], sample_rate: u32, rule: OctaveRule) -> usize {
     let ratios = harmonic_ratios(notes, samples, sample_rate);
-    let mut voiced: Vec<f32> = notes.iter().zip(&ratios).filter(|(n, _)| n.voiced).map(|(_, &r)| r).collect();
+    correct_octaves_with(notes, &ratios, rule)
+}
+
+/// [`correct_octaves`] with the notes' ratios already measured (`ratios[i]` belongs to `notes[i]`).
+pub fn correct_octaves_with(notes: &mut [GameNote], ratios: &[f32], rule: OctaveRule) -> usize {
+    let mut voiced: Vec<f32> = notes.iter().zip(ratios).filter(|(n, _)| n.voiced).map(|(_, &r)| r).collect();
     if voiced.is_empty() {
         return 0;
     }
@@ -521,7 +539,7 @@ pub fn correct_octaves(notes: &mut [GameNote], samples: &[f32], sample_rate: u32
     let median = if voiced.len() % 2 == 0 { (voiced[mid - 1] + voiced[mid]) / 2.0 } else { voiced[mid] };
     let threshold = if median < rule.song_threshold { rule.note_threshold_low_song } else { rule.note_threshold };
     let mut moved = 0;
-    for (n, &r) in notes.iter_mut().zip(&ratios) {
+    for (n, &r) in notes.iter_mut().zip(ratios) {
         if n.voiced && r < threshold {
             n.midi += 12.0;
             moved += 1;
@@ -585,6 +603,12 @@ pub fn snap_to_grid(notes: &[GameNote], spacing_s: f64) -> Vec<NoteSegment> {
             }
         }
     }
+    grid_segments(&out)
+}
+
+/// Grid notes (onset, offset, MIDI) as note segments, each offset marked as the next onset, an energy
+/// decay or the stem's end.
+pub fn grid_segments(out: &[(f64, f64, u8)]) -> Vec<NoteSegment> {
     let n = out.len();
     out.iter()
         .enumerate()
@@ -697,6 +721,14 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn the_phase_of_notes_on_cell_zero_is_zero_not_one_cell() {
+        let sp = 60.0 / 100.0 / 4.0;
+        assert_eq!(phase_of(&[(3.0 * sp, 4.0 * sp, 60)], sp), 0.0);
+        assert!((phase_of(&[(3.0 * sp + 0.04, 4.0 * sp, 60)], sp) - 0.04).abs() < 1e-9);
+        assert_eq!(cells_covering(1.0, sp, phase_of(&[(3.0 * sp, 4.0 * sp, 60)], sp)).0, 0);
     }
 
     #[test]

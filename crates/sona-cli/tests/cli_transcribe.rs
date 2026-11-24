@@ -206,3 +206,21 @@ fn grid_refinements_without_grid_are_a_usage_error() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--grid"));
 }
+
+#[test]
+fn the_cell_stage_needs_game_and_the_vocals_stem() {
+    let wav = tmp("cells_args.wav");
+    write_wav(&wav, &two_note_stem());
+    let w = wav.to_str().unwrap();
+    for (extra, expect) in [
+        (vec!["--grid", "16", "--cell-model", "/nonexistent"], "--cell-model needs --game"),
+        (vec!["--grid", "16", "--game", "/nonexistent", "--cell-model", "/nonexistent"], "--vocals"),
+        (vec!["--grid", "16", "--vocals", w], "--vocals is only used with --cell-model"),
+    ] {
+        let mut args = vec!["transcribe", w, "--bpm", "100"];
+        args.extend(extra);
+        let out = sona().args(&args).output().expect("run sona");
+        assert!(!out.status.success(), "{args:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains(expect), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+}

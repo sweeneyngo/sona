@@ -18,6 +18,7 @@ ort = { workspace = true, optional = true }
 realfft = { workspace = true, optional = true }
 # Reads the learned cell stage's `cellstage.json` (ADR-0026); only with `game`.
 serde_json = { workspace = true, optional = true }
+half.workspace = true
 
 [features]
 default = ["spectral"]

@@ -5,7 +5,6 @@
 //! (`crates/sona-eval/scripts/cellstage/`), and turns the per-cell choices back into notes. Running the
 //! model needs ONNX Runtime and lives with GAME (`game::CellModel`).
 
-/// A GAME note as the stage sees it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StageNote {
     pub onset_s: f64,
@@ -49,14 +48,12 @@ pub struct StageInputs<'a> {
 /// up and down; -1 where there is none.
 pub type Candidates = [i32; 6];
 
-/// A note snapped onto the grid: (onset, offset, MIDI).
 type Snapped = (f64, f64, i32);
 
 fn pyround(x: f64) -> f64 {
     x.round_ties_even()
 }
 
-/// GAME's tuning offset for a song: the circular mean of its voiced notes' fractional pitch.
 fn song_tune(notes: &[StageNote]) -> f64 {
     let (mut x, mut y, mut any) = (0.0, 0.0, false);
     for n in notes.iter().filter(|n| n.voiced) {
@@ -101,17 +98,15 @@ pub fn snap_notes(notes: &[StageNote], spacing: f64, anchor: f64) -> Vec<Snapped
     out
 }
 
-/// Per cell: the pitch under its centre, the centre's position in that note and the note's length, in
-/// cells, and the note's index (`usize::MAX` where there is none).
 struct OnGrid {
     pitch: Vec<i32>,
     pos: Vec<f64>,
     len: Vec<f64>,
-    note: Vec<usize>,
+    note: Vec<Option<usize>>,
 }
 
 fn on_grid(notes: &[Snapped], spacing: f64, anchor: f64, k0: i64, n: usize) -> OnGrid {
-    let mut g = OnGrid { pitch: vec![-1; n], pos: vec![-1.0; n], len: vec![0.0; n], note: vec![usize::MAX; n] };
+    let mut g = OnGrid { pitch: vec![-1; n], pos: vec![-1.0; n], len: vec![0.0; n], note: vec![None; n] };
     for c in 0..n {
         let t = anchor + ((k0 + c as i64) as f64 + 0.5) * spacing;
         let i = notes.partition_point(|x| x.0 <= t);
@@ -121,7 +116,7 @@ fn on_grid(notes: &[Snapped], spacing: f64, anchor: f64, k0: i64, n: usize) -> O
                 g.pitch[c] = p;
                 g.pos[c] = (t - on) / spacing;
                 g.len[c] = (off - on) / spacing;
-                g.note[c] = i - 1;
+                g.note[c] = Some(i - 1);
             }
         }
     }
@@ -133,8 +128,11 @@ fn cell_frames(chunks: &[EncoderChunk], a: f64, b: f64, out: &mut Vec<f64>) {
     let dim = chunks.first().map_or(0, |c| c.dim);
     let start = out.len();
     out.resize(start + dim, 0.0);
-    let Some(ch) = chunks.iter().find(|c| c.t0 <= a && a < c.t0 + c.frames as f64 * FRAME_S) else { return };
-    let i = ((a - ch.t0) / FRAME_S) as usize;
+    let found = chunks.iter().find_map(|c| {
+        let i = ((a - c.t0) / FRAME_S).floor();
+        (i >= 0.0 && (i as usize) < c.frames).then_some((c, i as usize))
+    });
+    let Some((ch, i)) = found else { return };
     let j = (i + 1).max(ch.frames.min(((b - ch.t0) / FRAME_S).ceil() as usize));
     let rows = (j - i) as f32;
     for d in 0..dim {
@@ -168,17 +166,12 @@ fn hz_to_midi(hz: f64) -> f64 {
     }
 }
 
-/// Which source note each candidate of a cell comes from (`usize::MAX` for none), so the notes the stage
-/// writes can split where the chosen source starts a new note on the same pitch.
-pub type Sources = [usize; 6];
+/// Which source note each candidate of a cell comes from, so the notes the stage writes can split where
+/// the chosen source starts a new note on the same pitch.
+pub type Sources = [Option<usize>; 6];
 
-/// The cells' features (row-major, `n` × width) and candidates, for cells `k0 .. k0 + n`.
-pub fn cell_features(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec<Candidates>) {
-    let (x, cands, _) = cell_features_with_sources(inp, k0, n);
-    (x, cands)
-}
-
-pub fn cell_features_with_sources(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec<Candidates>, Vec<Sources>) {
+/// The cells' features (row-major, `n` × width), candidates and their sources, for cells `k0 .. k0 + n`.
+pub fn cell_features(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec<Candidates>, Vec<Sources>) {
     let (sp, anc) = (inp.spacing, inp.anchor);
     let lead = on_grid(&snap_notes(inp.lead_notes, sp, anc), sp, anc, k0, n);
     let voc = on_grid(&snap_notes(inp.vocals_notes, sp, anc), sp, anc, k0, n);
@@ -212,7 +205,7 @@ pub fn cell_features_with_sources(inp: &StageInputs<'_>, k0: i64, n: usize) -> (
         let cp: Candidates = [-1, l, voc.pitch[c], son.pitch[c], if l >= 0 { l + 12 } else { -1 }, if l >= 0 { l - 12 } else { -1 }];
         cands.push(cp);
         let li = lead.note[c];
-        sources.push([usize::MAX, li, voc.note[c], son.note[c], li, li]);
+        sources.push([None, li, voc.note[c], son.note[c], li, li]);
         cell_frames(inp.vocals_frames, a, b, &mut x);
         cell_frames(inp.lead_frames, a, b, &mut x);
         let (i0, i1) = (searchsorted(inp.f0, a), searchsorted(inp.f0, b));
@@ -276,54 +269,9 @@ pub fn cells_to_notes(classes: &[usize], cands: &[Candidates], sources: &[Source
     out
 }
 
-/// The pitch each cell sings (-1 for rest): [`choose_class`] mapped to its candidate.
-pub fn choose(logits: &[f32], cands: &[Candidates]) -> Vec<i32> {
-    let nc = cands.first().map_or(6, |c| c.len());
-    cands
-        .iter()
-        .enumerate()
-        .map(|(i, cp)| {
-            let row = &logits[i * nc..(i + 1) * nc];
-            let best = (0..nc).filter(|&j| j == 0 || cp[j] >= 0).max_by(|&a, &b| row[a].total_cmp(&row[b]).then(b.cmp(&a))).unwrap_or(0);
-            if best == 0 {
-                -1
-            } else {
-                cp[best]
-            }
-        })
-        .collect()
-}
-
 /// Round to half precision and back: the prototype cached encoder features as float16.
 pub fn to_f16_and_back(v: f32) -> f32 {
-    let bits = v.to_bits();
-    let sign = bits & 0x8000_0000;
-    let exp = ((bits >> 23) & 0xff) as i32;
-    let man = bits & 0x7f_ffff;
-    if exp == 0xff {
-        return v;
-    }
-    let e = exp - 127;
-    if e > 15 {
-        return f32::from_bits(sign | 0x7f80_0000);
-    }
-    if e < -24 {
-        return f32::from_bits(sign);
-    }
-    // Keep 10 mantissa bits (fewer below the normal range), rounding to nearest, ties to even.
-    let keep = if e >= -14 { 10 } else { (10 - (-14 - e)).max(0) };
-    let drop = 23 - keep;
-    let full = man | 0x80_0000;
-    let half_ulp = 1u32 << (drop - 1);
-    let mask = (1u32 << drop) - 1;
-    let rem = full & mask;
-    let mut kept = full >> drop;
-    if rem > half_ulp || (rem == half_ulp && kept & 1 == 1) {
-        kept += 1;
-    }
-    let value = (kept as f64) * 2f64.powi(e - keep);
-    let rounded = value as f32;
-    f32::from_bits(sign | rounded.to_bits())
+    half::f16::from_f32(v).to_f32()
 }
 
 #[cfg(test)]
@@ -347,11 +295,22 @@ mod tests {
     #[test]
     fn notes_hold_while_the_pitch_does_and_split_where_the_source_restarts() {
         let cands: Vec<Candidates> = vec![[-1, 60, -1, 60, 72, 48]; 6];
-        let sources: Vec<Sources> = vec![[usize::MAX, 0, usize::MAX, 0, 0, 0], [usize::MAX, 0, usize::MAX, 0, 0, 0], [usize::MAX, 1, usize::MAX, 0, 1, 1], [usize::MAX, 1, usize::MAX, 0, 1, 1], [usize::MAX, 1, usize::MAX, 0, 1, 1], [usize::MAX, 1, usize::MAX, 0, 1, 1]];
-        // lead, lead (new lead note: split), lead, rest, sona, lead (switching source on one pitch: no split)
+        let sources: Vec<Sources> = vec![[None, Some(0), None, Some(0), Some(0), Some(0)], [None, Some(0), None, Some(0), Some(0), Some(0)], [None, Some(1), None, Some(0), Some(1), Some(1)], [None, Some(1), None, Some(0), Some(1), Some(1)], [None, Some(1), None, Some(0), Some(1), Some(1)], [None, Some(1), None, Some(0), Some(1), Some(1)]];
         let classes = [1, 1, 1, 0, 3, 1];
         let notes = cells_to_notes(&classes, &cands, &sources, 10, 0.5, 0.1);
         assert_eq!(notes, vec![(5.1, 6.1, 60), (6.1, 6.6, 60), (7.1, 8.1, 60)]);
+    }
+
+    #[test]
+    fn a_cell_starting_at_a_chunk_edge_reads_no_frame_past_it() {
+        let t0 = 130_045.0 / 44_100.0;
+        let chunk = EncoderChunk { t0, frames: 1237, dim: 2, data: vec![1.0; 1237 * 2] };
+        let next = EncoderChunk { t0: t0 + 12.37, frames: 10, dim: 2, data: vec![2.0; 20] };
+        let a = f64::from_bits((t0 + 12.37).to_bits() - 1);
+        let chunks = [chunk, next];
+        let inp = StageInputs { spacing: 0.1, anchor: a, lead_notes: &[], lead_ratios: &[], vocals_notes: &[], sona_notes: &[], lead_frames: &chunks, vocals_frames: &chunks, f0: &[], rms: &[] };
+        let (x, _, _) = cell_features(&inp, 0, 1);
+        assert!(x[0] == 1.0 || x[0] == 2.0, "the edge cell reads a real frame: {}", x[0]);
     }
 
     #[test]
@@ -371,14 +330,14 @@ mod tests {
         let rms = [(0.0, 1.0), (0.5, 1.0)];
         let chunks: [EncoderChunk; 0] = [];
         let inp = StageInputs { spacing: 0.5, anchor: 0.0, lead_notes: &[], lead_ratios: &[], vocals_notes: &[], sona_notes: &[], lead_frames: &chunks, vocals_frames: &chunks, f0: &f0, rms: &rms };
-        let (x, _) = cell_features(&inp, 0, 2);
+        let (x, _, _) = cell_features(&inp, 0, 2);
         let width = x.len() / 2;
         assert_eq!((x[0], x[width]), (0.0, 1.0), "voiced share of cell 0 and cell 1");
     }
 
     #[test]
     fn half_precision_matches_ieee() {
-        for (v, want) in [(1.0f32, 1.0f32), (0.1, 0.099_975_586), (65504.0, 65504.0), (1e-8, 0.0), (-2.5, -2.5), (std::f32::consts::PI, 3.140_625)] {
+        for (v, want) in [(1.0f32, 1.0f32), (0.1, 0.099_975_586), (65504.0, 65504.0), (1e-8, 0.0), (-2.5, -2.5), (std::f32::consts::PI, 3.140_625), (4.47e-8, 5.960_464_5e-8), (65520.0, f32::INFINITY)] {
             assert_eq!(to_f16_and_back(v), want, "{v}");
         }
     }
@@ -387,11 +346,9 @@ mod tests {
     fn choose_only_among_existing_candidates() {
         let cands = [[-1, 60, -1, 62, 72, 48], [-1, -1, -1, -1, -1, -1]];
         let logits = [0.0, 1.0, 9.0, 2.0, 0.5, 0.1, 0.0, 5.0, 5.0, 5.0, 5.0, 5.0];
-        assert_eq!(choose(&logits, &cands), vec![62, -1]);
+        assert_eq!(choose_class(&logits, &cands), vec![3, 0]);
     }
 
-    /// `SONA_CELLSTAGE_PARITY=DIR cargo test -p sona-core -- --ignored prototype_parity`, where DIR holds
-    /// one folder per song written by the prototype-side dumper (its exact inputs and features).
     #[test]
     #[ignore = "needs the prototype's dumped inputs (local corpus data)"]
     fn prototype_parity() {
@@ -422,7 +379,7 @@ mod tests {
             let (lf, vf, f0, rms) = (chunks("lead"), chunks("vocals"), pairs("f0"), pairs("rms"));
             let inp = StageInputs { spacing: j["spacing"].as_f64().unwrap(), anchor: j["anchor"].as_f64().unwrap(), lead_notes: &lead, lead_ratios: &ratios, vocals_notes: &vocals, sona_notes: &sona, lead_frames: &lf, vocals_frames: &vf, f0: &f0, rms: &rms };
             let (k0, n, width) = (j["k0"].as_i64().unwrap(), j["n"].as_u64().unwrap() as usize, j["width"].as_u64().unwrap() as usize);
-            let (x, cands) = cell_features(&inp, k0, n);
+            let (x, cands, _) = cell_features(&inp, k0, n);
             let want_x = f32s("x.bin");
             let want_c: Vec<i32> = std::fs::read(dir.join("cand.bin")).unwrap().chunks_exact(2).map(|b| i32::from(i16::from_le_bytes([b[0], b[1]]))).collect();
             assert_eq!(x.len(), want_x.len(), "{dir:?}: feature count");

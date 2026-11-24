@@ -253,6 +253,10 @@ fn estimates_a_songs_tempo_from_wav_and_through_ffmpeg() {
         assert!((body["bpm"].as_f64().unwrap() - 180.0).abs() / 180.0 <= 0.02, "{body}");
     }
 
+    assert_eq!(caps["engines"]["cells"], false, "no cell model on this server");
+    let (status, body) = json(s.port, "POST", "/api/jobs?bpm=120&separation=lead&engine=cells&name=song.wav", &click_wav(120.0, 2.0));
+    assert_eq!(status, 409, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("--cell-model"), "{body}");
     let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"");
     assert_eq!(status, 400);
     let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"not audio at all");

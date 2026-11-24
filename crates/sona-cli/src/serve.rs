@@ -29,6 +29,7 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
     let mut demucs_venv = std::env::var_os("SONA_DEMUCS_VENV").map(PathBuf::from).unwrap_or_else(|| share.join("demucs-venv"));
     let mut separator_venv = std::env::var_os("SONA_LEAD_VENV").map(PathBuf::from).unwrap_or_else(|| share.join("separator-venv"));
     let mut game_dir: Option<PathBuf> = None;
+    let mut cell_model: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
         let value = |i: usize| args.get(i + 1).cloned().ok_or_else(|| format!("{} expects a value", args[i]));
@@ -39,6 +40,7 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
             "--demucs-venv" => demucs_venv = PathBuf::from(value(i)?),
             "--separator-venv" => separator_venv = PathBuf::from(value(i)?),
             "--game" => game_dir = Some(PathBuf::from(value(i)?)),
+            "--cell-model" => cell_model = Some(PathBuf::from(value(i)?)),
             other => return Err(format!("unknown serve option '{other}'")),
         }
         i += 2;
@@ -50,6 +52,9 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
     if game_dir.is_some() && !cfg!(feature = "game") {
         return Err("--game needs sona built with `--features game`".into());
     }
+    if cell_model.is_some() && game_dir.is_none() {
+        return Err("--cell-model needs --game DIR too".into());
+    }
     let tools = Tools {
         demucs_python: demucs_venv.join("bin/python"),
         separator_bin: separator_venv.join("bin/audio-separator"),
@@ -57,6 +62,7 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
         lead_model: std::env::var("SONA_LEAD_MODEL").unwrap_or_else(|_| "UVR_MDXNET_KARA_2.onnx".into()),
         ffmpeg: PathBuf::from("ffmpeg"),
         game_dir,
+        cell_model,
     };
     Ok(ServeArgs { port, web_dir, jobs_dir, tools })
 }
@@ -101,9 +107,10 @@ impl Server {
         let demucs = self.tools.demucs_python.is_file();
         let lead = demucs && self.tools.separator_bin.is_file();
         let game = cfg!(feature = "game") && self.tools.game_dir.is_some() && std::env::var_os("ORT_DYLIB_PATH").is_some();
+        let cells = game && lead && self.tools.cell_model.as_ref().is_some_and(|d| d.join("cellstage.onnx").is_file() && d.join("cellstage.json").is_file());
         serde_json::json!({
             "separation": { "none": true, "vocals": demucs, "lead": lead },
-            "engines": { "pyin": true, "game": game },
+            "engines": { "pyin": true, "game": game, "cells": cells },
             "tempo": cfg!(feature = "spectral"),
         })
     }
@@ -174,6 +181,9 @@ impl Server {
         if spec.engine == Engine::Game && caps["engines"]["game"] != true {
             return Err(HttpError { status: 409, message: "GAME isn't set up on this server (start it with --game DIR and ORT_DYLIB_PATH)".into() });
         }
+        if spec.engine == Engine::Cells && (caps["engines"]["cells"] != true || spec.separation != Separation::Lead) {
+            return Err(HttpError { status: 409, message: "the learned cell stage needs --cell-model DIR on the server and lead separation".into() });
+        }
         if req.body.is_empty() {
             return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
         }
@@ -235,7 +245,8 @@ fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {
     let engine = match req.param("engine").unwrap_or("pyin") {
         "pyin" => Engine::Pyin,
         "game" => Engine::Game,
-        _ => return Err(bad("engine must be pyin or game")),
+        "cells" => Engine::Cells,
+        _ => return Err(bad("engine must be pyin, game or cells")),
     };
     let name: String = req.param("name").unwrap_or("upload.wav").chars().filter(|c| !c.is_control()).take(200).collect();
     Ok(JobSpec { name, bpm, grid, separation, engine })

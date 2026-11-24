@@ -24,11 +24,13 @@ top three overall are at the end.
 
 | # | Frontier | Evidence | Cost | How to tell |
 |---|---|---|---|---|
-| 1.1 | **Port the learned cell stage to Rust** (ONNX through `ort`) so the 78.8% stack ships in the app and CLI | It confirmed +2.2 on holdout3 but exists only as a Python prototype | M | Bit-for-bit parity with the prototype on dev, then the same dev numbers |
+| 1.1 | ✅ **Done (ADR-0026).** **Port the learned cell stage to Rust** (ONNX through `ort`) so the 78.8% stack ships in the app and CLI | It confirmed +2.2 on holdout3 but exists only as a Python prototype | M | Bit-for-bit parity with the prototype on dev, then the same dev numbers |
 | 1.2 | **Fresh test songs (holdout4)**: a BowlRoll fetcher for the rest of Pifuyuu's USTs | Every split is spent, so nothing new can be confirmed | M | A manifest with ≥ 10 new aligned songs and a pre-registered read |
 | 1.3 | **Sung vs rest** (the 91.4% ceiling): breath and consonant gaps, his note-end conventions | It is the largest gap between today and a ceiling | M–L | Dev cells, then holdout4 |
 | 1.4 | **More training data for GAME**: unfreeze the encoder; train on all aligned songs once holdout4 exists | Fine-tuning on 30 songs with the encoder frozen gave +0.8 (within noise) | L (CPU days) | The pre-registered rule from the fine-tune spec |
 | 1.5 | **Doubled voices and harmonies**: choose the lead when two lines overlap | 3–4% of sung cells are "harmony" errors | M | The `poly_cells` breakdown on dev |
+| 1.7 | **Train the cell stage from Rust features**: dump the port's features with labels, so retraining no longer needs the prototype's Python GAME runner | The port's features equal the prototype's exactly (ADR-0026) | S–M | A model retrained on Rust features matches the prototype on dev |
+| 1.8 | **Better grid-phase estimation**: the stage loses 0.65 points against the true phase, nearly all on one song where the phase estimate is off | maru-shite-kudasai 85.4% → 78.6% (ADR-0026) | M | Phase error against the UST offset, and cells on fresh songs |
 | 1.6 | **Lyrics in the loop** (phrase anchoring) | Perfect UST onsets plus pauses would give 90.8%, but real alignment captured none of it | L | Dev cells; abandon if the second idea also fails |
 
 ## 2. Tempo and grid
@@ -78,7 +80,7 @@ top three overall are at the end.
 
 ## Top three overall
 
-1. **1.1, port the learned stage**: it puts the confirmed 78.8% stack into the app.
+1. ~~1.1, port the learned stage~~: done (ADR-0026); the app now runs the 78% stack.
 2. ~~6.1 + 6.2, seed GAME and log provenance~~: done (ADR-0023, ADR-0024).
 3. **1.2, holdout4**: nothing else in section 1 can be confirmed without it.
 

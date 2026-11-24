@@ -15,6 +15,7 @@ pub struct Tools {
     pub lead_model: String,
     pub ffmpeg: PathBuf,
     pub game_dir: Option<PathBuf>,
+    pub cell_model: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,7 @@ pub enum Separation {
 pub enum Engine {
     Pyin,
     Game,
+    Cells,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +112,10 @@ impl Job {
 
     fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
+    }
+
+    pub fn vocals_path(&self) -> PathBuf {
+        self.dir.join("vocals.wav")
     }
 
     pub fn provenance_path(&self) -> PathBuf {
@@ -322,6 +328,9 @@ fn pipeline(job: &Job, tools: &Tools) -> Result<(), String> {
             if job.spec.separation == Separation::Vocals {
                 Some(vocals)
             } else {
+                if job.spec.engine == Engine::Cells {
+                    to_mono_wav(job, tools, &vocals, &job.vocals_path())?;
+                }
                 step(job, Phase::SeparatingLead)?;
                 let out = job.dir.join("uvr");
                 let mut cmd = Command::new(&tools.separator_bin);
@@ -348,10 +357,15 @@ fn pipeline(job: &Job, tools: &Tools) -> Result<(), String> {
         salience: true,
         spectral_cue: cfg!(feature = "spectral"),
         game: match job.spec.engine {
-            Engine::Game => Some(tools.game_dir.as_ref().ok_or("GAME is not configured on this server")?.to_string_lossy().into_owned()),
+            Engine::Game | Engine::Cells => Some(tools.game_dir.as_ref().ok_or("GAME is not configured on this server")?.to_string_lossy().into_owned()),
             Engine::Pyin => None,
         },
         octave_check: true,
+        vocals: (job.spec.engine == Engine::Cells).then(|| job.vocals_path().to_string_lossy().into_owned()),
+        cell_model: match job.spec.engine {
+            Engine::Cells => Some(tools.cell_model.as_ref().ok_or("no cell model is configured on this server")?.to_string_lossy().into_owned()),
+            _ => None,
+        },
     };
     let mut annotation = crate::transcribe(&args)?;
     if job.cancelled() {
