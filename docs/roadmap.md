@@ -47,7 +47,7 @@ top three overall are at the end.
 |---|---|---|---|---|
 | 2.1 | **Choose the octave** (½× or 1×) from the vocal's note lengths after transcription, and offer it as a one-click "sounds too fast?" hint | 7 of 8 test misses are slow songs read at double; on dev, note length separates them only partly (8/10 with oracle notes) | S–M | Exact tempo on a fresh set, ≥ 80% |
 | 2.2 | **Tempo changes and time signatures**: detect a tempo map, export it to UST/USTX | Today every song has one tempo | M | Corpus songs with tempo changes (none yet: needs data) |
-| 2.3 | ~~**Grid phase from the mix** (downbeats)~~ **Done, opt-in** ([ADR-0031](adr/0031-bar-one-from-the-music.md)): the beat from the mix, bar 1 from harmonic change; dev frame pass 5/9 → 9/9, but circular for the bar | No labelled bar 1 exists to confirm it | — | Open: the default needs ear-labelled frames on holdout4 (utau-edit-cost 08) |
+| 2.3 | ~~**Grid phase from the mix** (downbeats)~~ **Done, opt-in** ([ADR-0031](adr/0031-bar-one-from-the-music.md)): the beat from the mix, bar 1 from harmonic change; dev frame pass 5/9 → 9/9, but circular for the bar. Beat This! downbeats are a second, user-installed source ([ADR-0036](adr/0036-beat-this-bar-one.md)), also 9/9 | No labelled bar 1 exists to confirm it | — | Open: the default needs ear-labelled frames on holdout4 (utau-edit-cost 08) |
 
 ## 3. Pitch controls
 
@@ -93,7 +93,7 @@ length errors are cheap there, while a wrong BPM or notes in the wrong measures 
 Spec, map and tickets: [`.scratch/utau-edit-cost/`](../.scratch/utau-edit-cost/spec.md). It reorders
 the list above: 2.3 (beat 1 of the measure) and chopped/joined notes come before more cell-accuracy work.
 Done so far: the metric (utau 01), frame metrics (02, 10), the BPM first (04, ADR-0028), bar 1 from the
-music, opt-in (05, ADR-0031). Next: the baseline taxonomy (03), chopped and joined notes (07; joined is half
+music, opt-in (05, ADR-0031), and from Beat This as an optional installed tool (16, ADR-0036). Next: the baseline taxonomy (03), chopped and joined notes (07; joined is half
 the cost), holdout4 (08).
 
 ## Top three overall
