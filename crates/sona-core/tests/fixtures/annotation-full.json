@@ -15,6 +15,10 @@
         "voicing": 0.88,
         "onset_clarity": 0.9,
         "offset_clarity": 0.82
+      },
+      "stage_doubt": {
+        "length": 0.75,
+        "unsure": 0.5
       }
     }
   ],
@@ -52,7 +56,7 @@
     },
     "settings": {
       "bpm": "174",
-      "engine": "game",
+      "engine": "game+cells",
       "grid": "24"
     },
     "models": [

@@ -16,7 +16,7 @@
 //! weights CI doesn't have, so their note assembly is driven with random raw
 //! GAME notes and random per-cell choices.
 
-use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, snap_notes, Candidates, EncoderChunk, Sources, StageInputs, StageNote};
+use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, note_doubt, snap_notes, Candidates, EncoderChunk, Sources, StageInputs, StageNote};
 use sona_core::{
     timbre::N_CEPS, Annotation, CandidateEvidence, CueModel, EnergyFrame, F0Frame, GridDecoder, GridMode, GridSpec, Note, NoteHmm, NoteSegment,
     Onset, PYin, PitchCandidate, Producer, SpectralCue, TimbreFrames, Transcriber,
@@ -178,6 +178,9 @@ fn assert_valid_notes(notes: &[Note], what: &str) {
         for x in [n.confidence, s.pitch_stability, s.voicing, s.onset_clarity, s.offset_clarity] {
             assert!(x.is_finite() && (0.0..=1.0).contains(&x), "{what}: score {x} out of range in {n:?}");
         }
+        if let Some(d) = n.stage_doubt {
+            assert!([d.length, d.unsure].iter().all(|v| v.is_finite() && *v >= 0.0), "{what}: a negative or non-finite doubt in {n:?}");
+        }
     }
     for w in notes.windows(2) {
         assert!(w[0].offset_s <= w[1].onset_s + 1e-9, "{what}: overlap {:?} then {:?}", w[0], w[1]);
@@ -329,15 +332,19 @@ impl StageCase {
         self.notes_with_confidence(rng, anchor, cells).0
     }
 
-    /// [`notes`](Self::notes) and each note's confidence from the same random logits.
-    fn notes_with_confidence(&self, rng: &mut Rng, anchor: f64, (k0, n): (i64, usize)) -> (Vec<(f64, f64, i32)>, Vec<f32>) {
+    /// [`notes`](Self::notes) and each note's confidence and doubt from the same random logits.
+    fn notes_with_confidence(&self, rng: &mut Rng, anchor: f64, (k0, n): (i64, usize)) -> StageScored {
         let (_, cands, sources) = cell_features(&self.inputs(anchor), k0, n);
         let logits: Vec<f32> = (0..n * 6).map(|_| rng.range(-4.0, 4.0) as f32).collect();
         let notes = cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, self.spacing, anchor);
         let confidence = note_confidence(&logits, k0, self.spacing, anchor, &notes);
-        (notes, confidence)
+        let doubt = note_doubt(&logits, k0, self.spacing, anchor, &notes);
+        (notes, confidence, doubt)
     }
 }
+
+/// The stage's notes with each one's confidence and doubt, as `StageNotes` holds them.
+type StageScored = (Vec<(f64, f64, i32)>, Vec<f32>, Vec<sona_core::StageDoubt>);
 
 fn spans(notes: &[(f64, f64, i32)]) -> Vec<(f64, f64)> {
     notes.iter().map(|n| (n.0, n.1)).collect()
@@ -456,13 +463,14 @@ mod game {
             let first = anchor + k0 as f64 * s.spacing;
             assert!(first <= 0.0 && first > -s.spacing, "{what}: the first cell starts at {first}");
             assert!(anchor + (k0 + n as i64) as f64 * s.spacing >= s.duration - s.spacing / 2.0, "{what}: the cells stop short of {}", s.duration);
-            let (notes, confidence) = s.notes_with_confidence(&mut rng, anchor, (k0, n));
+            let (notes, confidence, doubt) = s.notes_with_confidence(&mut rng, anchor, (k0, n));
             let segs = stage_segments(&notes);
             assert_one_voice(&segs, &what);
             assert_on_grid_at(&segs.iter().map(|n| (n.onset_s, n.offset_s)).collect::<Vec<_>>(), anchor, s.spacing, &what);
-            let shown = stage_annotation_notes(&StageNotes { notes, confidence }, &ConfidenceScorer::default(), &envelope(&mut rng, s.duration + 0.5));
+            let shown = stage_annotation_notes(&StageNotes { notes, confidence, doubt }, &ConfidenceScorer::default(), &envelope(&mut rng, s.duration + 0.5));
             assert_eq!(shown.len(), segs.len(), "{what}: a note was lost on the way to the app");
             assert_valid_notes(&shown, &what);
+            assert!(shown.iter().all(|n| n.stage_doubt.is_some()), "{what}: a stage note reached the app without its doubt");
         }
     }
 }

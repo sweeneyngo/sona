@@ -3,7 +3,7 @@
 //! is where pieces get cut, so a long or unsure note must read as less confident than a short, sure one.
 //! The model's weights aren't needed: the confidence reads only its logits and the notes.
 
-use sona_core::cellstage::note_confidence;
+use sona_core::cellstage::{note_confidence, note_doubt};
 
 const SPACING: f64 = 0.125;
 const ANCHOR: f64 = 0.03;
@@ -105,25 +105,69 @@ fn every_note_gets_one_confidence_in_range_whatever_the_logits() {
     }
 }
 
+#[test]
+fn a_long_note_the_model_is_sure_of_is_doubted_for_its_length() {
+    let k0 = 0;
+    let doubt = note_doubt(&logits(&[cell(0.97); 8]), k0, SPACING, ANCHOR, &[note(k0, 0, 8)]);
+    assert!(doubt[0].length > doubt[0].unsure, "an 8-cell note every cell is sure of: {:?}", doubt[0]);
+}
+
+#[test]
+fn a_short_note_the_model_was_torn_about_is_doubted_for_the_models_uncertainty() {
+    let k0 = 0;
+    let doubt = note_doubt(&logits(&[cell(0.4); 2]), k0, SPACING, ANCHOR, &[note(k0, 0, 2)]);
+    assert!(doubt[0].unsure > doubt[0].length, "a 2-cell note at 40%: {:?}", doubt[0]);
+}
+
+#[test]
+fn a_one_cell_note_the_model_is_sure_of_carries_no_doubt() {
+    let k0 = 0;
+    let doubt = note_doubt(&logits(&[cell(0.999_999)]), k0, SPACING, ANCHOR, &[note(k0, 0, 1)]);
+    assert!(doubt[0].length == 0.0 && doubt[0].unsure.abs() < 1e-3, "{:?}", doubt[0]);
+}
+
+#[test]
+fn the_two_doubts_account_for_the_whole_drop_in_confidence() {
+    // ADR-0033's score falls only through length and uncertainty: more of either doubt means less
+    // confidence, and each doubt moves only with its own cause.
+    let k0 = 0;
+    let mut cells = vec![cell(0.9); 4];
+    cells.extend([cell(0.6); 4]);
+    cells.extend([cell(0.9); 2]);
+    let notes = [note(k0, 0, 4), note(k0, 4, 8), note(k0, 8, 10)];
+    let conf = note_confidence(&logits(&cells), k0, SPACING, ANCHOR, &notes);
+    let doubt = note_doubt(&logits(&cells), k0, SPACING, ANCHOR, &notes);
+    assert_eq!(doubt.len(), 3);
+    assert!(doubt[1].unsure > doubt[0].unsure && (doubt[1].length - doubt[0].length).abs() < 1e-6, "{doubt:?}");
+    assert!(doubt[0].length > doubt[2].length && (doubt[0].unsure - doubt[2].unsure).abs() < 1e-4, "{doubt:?}");
+    let total = |i: usize| doubt[i].length + doubt[i].unsure;
+    for (i, j) in [(0, 1), (2, 0), (2, 1)] {
+        assert!(total(i) < total(j) && conf[i] > conf[j], "note {i} vs {j}: doubts {doubt:?}, confidence {conf:?}");
+    }
+}
+
 /// What the app shows for the stage's notes, behind `--features game` (CI's `game::` filter).
 #[cfg(feature = "game")]
 mod game {
     use super::*;
     use sona_core::game::{stage_annotation_notes, stage_segments, StageNotes};
-    use sona_core::{ConfidenceScorer, EnergyFrame};
+    use sona_core::{ConfidenceScorer, EnergyFrame, StageDoubt};
 
     #[test]
     fn the_app_gets_the_stages_confidence_and_everything_else_as_before() {
         let notes = vec![note(0, 0, 2), (ANCHOR + 2.0 * SPACING, ANCHOR + 3.0 * SPACING, 200), note(0, 3, 7), note(0, 9, 10)];
-        let stage = StageNotes { notes: notes.clone(), confidence: vec![0.9, 0.1, 0.35, 0.7] };
+        let doubt = [(0.4, 0.1), (0.0, 2.0), (0.8, 0.3), (0.0, 0.5)].map(|(length, unsure)| StageDoubt { length, unsure }).to_vec();
+        let stage = StageNotes { notes: notes.clone(), confidence: vec![0.9, 0.1, 0.35, 0.7], doubt: doubt.clone() };
         let envelope: Vec<EnergyFrame> = (0..200).map(|i| EnergyFrame { time_s: i as f64 * 0.01, rms: if i % 37 < 20 { 0.4 } else { 0.02 } }).collect();
         let scorer = ConfidenceScorer::default();
         let shown = stage_annotation_notes(&stage, &scorer, &envelope);
         let before = scorer.score_all(&stage_segments(&notes), &envelope);
         assert_eq!(shown.len(), 3, "the note with no MIDI pitch is dropped, the rest kept");
-        for ((s, b), want) in shown.iter().zip(&before).zip([0.9, 0.35, 0.7]) {
+        for (((s, b), want), why) in shown.iter().zip(&before).zip([0.9, 0.35, 0.7]).zip([doubt[0], doubt[2], doubt[3]]) {
             assert_eq!((s.onset_s, s.offset_s, s.midi_pitch, &s.sub_scores), (b.onset_s, b.offset_s, b.midi_pitch, &b.sub_scores));
             assert_eq!(s.confidence, want, "{s:?} carries another note's confidence");
+            assert_eq!(s.stage_doubt, Some(why), "{s:?} carries another note's doubt");
         }
+        assert!(before.iter().all(|n| n.stage_doubt.is_none()), "the scorer's own notes carry no stage doubt");
     }
 }

@@ -46,6 +46,17 @@ export interface Note {
   confidence: number;
   /** The per-dimension scores the scalar is composed from. */
   sub_scores: SubScores;
+  /** Why the learned cell stage doubts the note (ADR-0034); only on its notes. */
+  stage_doubt?: StageDoubt;
+}
+
+/**
+ * What lowers a learned cell stage note's confidence (`StageDoubt` in the Rust core), in log-odds, each
+ * `>= 0`: from the note's length, and from the model's uncertainty over its cells.
+ */
+export interface StageDoubt {
+  length: number;
+  unsure: number;
 }
 
 /**

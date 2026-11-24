@@ -19,6 +19,7 @@ fn note(onset_s: f64, offset_s: f64, midi_pitch: u8) -> Note {
             onset_clarity: 0.9,
             offset_clarity: 0.9,
         },
+        stage_doubt: None,
     }
 }
 
