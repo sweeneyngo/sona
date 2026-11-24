@@ -15,6 +15,11 @@
 //!
 //! `--write` stores `alignment_offset_s` and `alignment_status` (`aligned` /
 //! `flagged: …`) in the manifest; flagged songs are excluded from the gate (06).
+//!
+//! `--split NAME` touches only that split's songs. `--no-verify` skips the check
+//! with sona entirely (the detector never runs), for a split that must stay
+//! unread: the offset is the same, and the status is `unverified (…)`, which no
+//! tool scores as aligned.
 
 use std::process::ExitCode;
 
@@ -33,9 +38,34 @@ const DRIFT_S: f64 = 0.030;
 /// Fewer matched onsets than this can't verify anything.
 const MIN_MATCHED: usize = 30;
 
+struct Options {
+    write: bool,
+    verify: bool,
+    split: Option<String>,
+}
+
 fn main() -> ExitCode {
-    let write = std::env::args().any(|a| a == "--write");
-    match run(write) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut opts = Options { write: false, verify: true, split: None };
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--write" => opts.write = true,
+            "--no-verify" => opts.verify = false,
+            "--split" => match it.next() {
+                Some(s) => opts.split = Some(s.clone()),
+                None => {
+                    eprintln!("sona-eval-ust-align: --split needs a split name");
+                    return ExitCode::FAILURE;
+                }
+            },
+            other => {
+                eprintln!("sona-eval-ust-align: unknown argument {other:?} (--write, --no-verify, --split NAME)");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    match run(&opts) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("sona-eval-ust-align: {e}");
@@ -51,13 +81,18 @@ struct Verify {
     drift: f64,
 }
 
-fn run(write: bool) -> Result<(), EvalError> {
+fn run(opts: &Options) -> Result<(), EvalError> {
+    let write = opts.write;
     let path = manifest_path();
     let mut manifest = Manifest::load(&path)?;
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
-    let detector = OnsetDetector::default();
+    let detector = opts.verify.then(OnsetDetector::default);
 
-    println!("== UST phase alignment (set without sona) + onset-delta check (with sona) ==\n");
+    if detector.is_some() {
+        println!("== UST phase alignment (set without sona) + onset-delta check (with sona) ==\n");
+    } else {
+        println!("== UST phase alignment (set without sona), NOT verified: sona's onset detector does not run ==\n");
+    }
     println!(
         "{:<32} {:>8} {:>7} {:>6} {:>5}  {:>5} {:>5} {:>5} {:>5} {:>5} {:>6}  status",
         "song", "offset s", "fine Δ", "drums", "match", "p10", "p25", "p50", "p75", "p90", "drift"
@@ -65,6 +100,9 @@ fn run(write: bool) -> Result<(), EvalError> {
     println!("{:<32} {:>8} {:>7} {:>6} {:>5}  {:>35}", "", "", "ms", "peak", "", "detected − UST onset (ms)");
 
     for song in &mut manifest.songs {
+        if opts.split.as_ref().is_some_and(|s| song.split.as_ref() != Some(s)) {
+            continue;
+        }
         let dir = stems.join(&song.id);
         let (vocals_p, drums_p) = (dir.join("vocals.wav"), dir.join("drums.wav"));
         if !vocals_p.is_file() || !drums_p.is_file() {
@@ -99,19 +137,37 @@ fn run(write: bool) -> Result<(), EvalError> {
             .take_while(|&t| t <= last + beat_s)
             .collect();
         let fine = fine_offset(coarse, cell_s, &lines, &nov);
-        let drums_ok = fine.peak_ratio >= MIN_DRUM_PEAK_RATIO;
+        // One evenly spaced grid only exists at one tempo; with tempo changes the coarse offset stands.
+        let one_tempo = usts.lead.iter().chain(&usts.other).all(|u| u.tempo == usts.lead[0].tempo && u.tempo_changes().is_empty());
+        let drums_ok = one_tempo && fine.peak_ratio >= MIN_DRUM_PEAK_RATIO;
         let offset = if drums_ok { fine.offset_s } else { coarse };
         let offset = (offset * 1000.0).round() / 1000.0;
 
-        // 3. Verify with sona's onsets.
+        let mut reasons = Vec::new();
+        if !one_tempo {
+            reasons.push("tempo changes; coarse offset only".to_string());
+        } else if !drums_ok {
+            reasons.push(format!("weak drum grid (peak {:.2}); coarse offset only", fine.peak_ratio));
+        }
+
+        // 3. Verify with sona's onsets — unless this split must stay unread.
+        let Some(detector) = &detector else {
+            let status = if reasons.is_empty() {
+                format!("unverified (set without sona; drum peak {:.2})", fine.peak_ratio)
+            } else {
+                format!("unverified (set without sona; {})", reasons.join("; "))
+            };
+            println!("{:<32} {:>8.3} {:>+7.0} {:>6.2} {:>5}  {:>35}  {}", song.id, offset, (fine.offset_s - coarse) * 1000.0, fine.peak_ratio, "—", "not checked", status);
+            if write {
+                song.alignment_offset_s = Some(offset);
+                song.alignment_status = Some(status);
+            }
+            continue;
+        };
         let reference = usts.reference(offset);
         let detected: Vec<f64> = detector.detect(&vocals, sr).onsets.iter().map(|o| o.time_s).collect();
         let v = verify(&reference.notes.iter().map(|n| n.onset_s).collect::<Vec<_>>(), &detected);
 
-        let mut reasons = Vec::new();
-        if !drums_ok {
-            reasons.push(format!("weak drum grid (peak {:.2}); coarse offset only", fine.peak_ratio));
-        }
         if v.matched < MIN_MATCHED {
             reasons.push(format!("only {} matched onsets", v.matched));
         } else {
@@ -122,8 +178,8 @@ fn run(write: bool) -> Result<(), EvalError> {
                 reasons.push(format!("drift {:+.0} ms over the song", v.drift * 1000.0));
             }
         }
-        // A weak drum grid alone is a caveat, not a failure, if sona's onsets agree.
-        let fatal = reasons.iter().any(|r| !r.starts_with("weak drum grid"));
+        // A coarse-only offset alone is a caveat, not a failure, if sona's onsets agree.
+        let fatal = reasons.iter().any(|r| !r.ends_with("coarse offset only"));
         let status = if fatal { format!("flagged: {}", reasons.join("; ")) } else if reasons.is_empty() { "aligned".into() } else { format!("aligned ({})", reasons.join("; ")) };
 
         println!(

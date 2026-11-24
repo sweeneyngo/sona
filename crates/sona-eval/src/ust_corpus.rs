@@ -257,8 +257,18 @@ mod tests {
         );
         assert_eq!(count("holdout2", true), 10, "holdout2 scores 10 aligned songs");
         assert_eq!(count("holdout3", true), 10, "holdout3 scores 10 aligned songs");
+        // holdout4 is unread: its offsets were set without sona and never checked with sona's
+        // onsets, so none of its songs may read as aligned until that check is made at read time.
+        assert_eq!((count("holdout4", false), count("holdout4-tempo", false)), (24, 0));
+        for s in m.songs.iter().filter(|s| s.split.as_deref().is_some_and(|x| x.starts_with("holdout4"))) {
+            assert!(s.alignment_offset_s.is_some(), "{}: no offset", s.id);
+            assert!(s.alignment_status.as_deref().is_some_and(|a| a.starts_with("unverified")), "{}: {:?}", s.id, s.alignment_status);
+        }
         assert!(
-            m.songs.iter().all(|s| matches!(s.split.as_deref(), Some("dev" | "holdout" | "holdout2" | "holdout3"))),
+            m.songs.iter().all(|s| matches!(
+                s.split.as_deref(),
+                Some("dev" | "holdout" | "holdout2" | "holdout3" | "holdout4" | "holdout4-tempo")
+            )),
             "unknown split"
         );
         let again: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();

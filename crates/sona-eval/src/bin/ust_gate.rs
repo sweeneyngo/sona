@@ -434,7 +434,7 @@ fn print_stratum(stratum: &str, results: &[SongResult], grid_mode: bool) {
     }
     print_bootstrap(&rs);
     // Per split: iterate on `dev` only; `holdout` is read once, at the end.
-    for split in ["dev", "holdout", "holdout2", "holdout3"] {
+    for split in ["dev", "holdout", "holdout2", "holdout3", "holdout4", "holdout4-tempo"] {
         let part: Vec<&&SongResult> = rs.iter().filter(|r| r.split == split).collect();
         if part.is_empty() {
             continue;

@@ -50,7 +50,8 @@ while IFS=$'\t' read -r id model version; do
   fi
   echo "  split   $id"
   tmp="$(mktemp -d)"
-  "$venv/bin/python" -m demucs -n "$MODEL" -o "$tmp" "$src" >/dev/null 2>&1 \
+  # </dev/null: demucs must not read the loop's stdin (the song list), or it eats songs from it.
+  "$venv/bin/python" -m demucs -n "$MODEL" -o "$tmp" "$src" </dev/null >/dev/null 2>&1 \
     || { echo "error: demucs failed on $id" >&2; rm -rf "$tmp"; exit 1; }
   mkdir -p "$out"
   for part in vocals drums; do

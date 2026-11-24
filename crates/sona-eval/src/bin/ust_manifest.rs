@@ -5,7 +5,9 @@
 //!
 //! For every song in `corpus/ust-manifest.json` (USTs from the git-ignored cache,
 //! populated by `scripts/fetch-pifuyuu-ust.sh`):
-//! - the lead and other-voice USTs parse, share one tempo, and never change it;
+//! - the lead and other-voice USTs parse and share one integer tempo that never
+//!   changes (split `holdout4-tempo` holds the songs that fail only this: for
+//!   them it is reported, not failed, and a song there that passes it fails);
 //! - `bpm_from_ust` (exact, from the lead's `[#SETTING]`) and `grid_division`
 //!   (16 or 24, whichever grid holds most lead note starts) — written with `--fill`;
 //! - the lead's sung span fits inside the original's duration (a span longer
@@ -48,15 +50,26 @@ fn run(fill: bool) -> Result<bool, EvalError> {
     for song in &mut manifest.songs {
         let usts = SongUsts::load(song, &cache)?;
         let mut problems: Vec<String> = Vec::new();
+        let mut tempo_issues: Vec<String> = Vec::new();
 
         let tempo = usts.lead[0].tempo;
         for u in usts.lead.iter().chain(&usts.other) {
             if (u.tempo - tempo).abs() > 1e-6 {
-                problems.push(format!("tempo mismatch across files ({} vs {})", tempo, u.tempo));
+                tempo_issues.push(format!("tempo mismatch across files ({} vs {})", tempo, u.tempo));
             }
             if !u.tempo_changes().is_empty() {
-                problems.push("mid-song tempo change".into());
+                tempo_issues.push("mid-song tempo change".into());
             }
+        }
+        if tempo.fract() != 0.0 {
+            tempo_issues.push(format!("fractional tempo {tempo}"));
+        }
+        tempo_issues.dedup();
+        let tempo_split = song.split.as_deref() == Some("holdout4-tempo");
+        if !tempo_split {
+            problems.append(&mut tempo_issues);
+        } else if tempo_issues.is_empty() {
+            problems.push("in holdout4-tempo, but has one integer tempo".into());
         }
 
         // Grid: which grid holds most lead note starts.
@@ -102,6 +115,9 @@ fn run(fill: bool) -> Result<bool, EvalError> {
         );
         if n_breath > 0 {
             println!("{:<32} ({n_breath} breath blocks in the lead, treated as gaps)", "");
+        }
+        if !tempo_issues.is_empty() {
+            println!("{:<32} (holdout4-tempo, expected: {})", "", tempo_issues.join("; "));
         }
         all_ok &= problems.is_empty();
 
