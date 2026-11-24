@@ -1,6 +1,6 @@
 # 14 — Flag the doubtful notes in the editor
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 13
 
