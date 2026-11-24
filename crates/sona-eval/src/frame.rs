@@ -14,6 +14,11 @@
 //! - **Tempo multiple:** estimated / true BPM within 2%: 1×, 2×, ½× or other.
 //! - **BPM drift:** `|estimated − true| / true` × the song's length in beats at the true tempo.
 //! - **Frame pass:** a 1× tempo, a bar offset of 0 beats and drift below a quarter beat.
+//!
+//! The UST's tick 0 is tied to the file, not to the music: Pifuyuu's bar lines match the music's on
+//! 1/9 dev songs (`reports/bar-one.md`). So bar offset and frame pass are also scored **against the
+//! music** when the manifest says where its beat and bar sit ([`MusicFrame`]); the UST-anchored
+//! numbers stay for comparison.
 
 use sona_core::tempo::{estimate_bpm, grid_phase};
 
@@ -109,6 +114,38 @@ pub fn bar_offset(sona_tick0_s: f64, ust_tick0_s: f64, bpm: f64) -> BarOffset {
     BarOffset { beats: whole.rem_euclid(BEATS_PER_BAR) as u32, residual_beats: beats - whole }
 }
 
+/// Where the music's beat and bar 1 sit against a UST's lines, in whole cells after them (manifest
+/// `music_beat_shift_cells`, `music_bar_shift_cells`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MusicFrame {
+    /// Cells from the UST's beat lines to the music's beat, in `0..cells per beat`.
+    pub beat_shift_cells: u32,
+    /// Cells from the UST's bar lines to the music's bar line, in `0..cells per bar`.
+    pub bar_shift_cells: u32,
+    /// Confirmed by ear (`music_frame_status: ear-checked`), not only estimated.
+    pub ear_checked: bool,
+}
+
+impl MusicFrame {
+    /// Audio time of one of the music's bar lines, given the UST's tick 0 in audio time.
+    pub fn bar_line_s(&self, ust_tick0_s: f64, cell_s: f64) -> f64 {
+        ust_tick0_s + f64::from(self.bar_shift_cells) * cell_s
+    }
+
+    /// Audio time of one of the music's beats, given the UST's tick 0 in audio time.
+    pub fn beat_line_s(&self, ust_tick0_s: f64, cell_s: f64) -> f64 {
+        ust_tick0_s + f64::from(self.beat_shift_cells) * cell_s
+    }
+
+    /// Whether the bar line falls on the beat: the bar shift is the beat shift plus whole beats.
+    pub fn is_consistent(&self, cells_per_beat: u32) -> bool {
+        cells_per_beat > 0
+            && self.beat_shift_cells < cells_per_beat
+            && self.bar_shift_cells < cells_per_beat * BEATS_PER_BAR as u32
+            && self.bar_shift_cells % cells_per_beat == self.beat_shift_cells
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame {
     pub true_bpm: f64,
@@ -116,20 +153,42 @@ pub struct Frame {
     pub multiple: Option<TempoMultiple>,
     /// Only for a 1× estimate.
     pub drift_beats: Option<f64>,
+    /// Against the UST's tick 0.
     pub bar_offset: Option<BarOffset>,
+    /// Against the music's bar line; `None` without a [`MusicFrame`].
+    pub music_bar_offset: Option<BarOffset>,
 }
 
 impl Frame {
+    fn tempo_passes(&self) -> bool {
+        self.multiple == Some(TempoMultiple::One) && self.drift_beats.is_some_and(|d| d < DRIFT_PASS_BEATS)
+    }
+
+    /// Frame pass against the UST's bar lines.
     pub fn passes(&self) -> bool {
-        self.multiple == Some(TempoMultiple::One)
-            && self.drift_beats.is_some_and(|d| d < DRIFT_PASS_BEATS)
-            && self.bar_offset.is_some_and(|b| b.beats == 0)
+        self.tempo_passes() && self.bar_offset.is_some_and(|b| b.beats == 0)
+    }
+
+    /// Frame pass against the music's bar lines; `None` without a [`MusicFrame`].
+    pub fn passes_on_music(&self) -> Option<bool> {
+        self.music_bar_offset.map(|b| self.tempo_passes() && b.beats == 0)
     }
 }
 
 /// A song's frame: tempo estimated from the full mix, bar 1 from the vocals at the true tempo.
-/// `ust_tick0_s` is the audio time of the UST's tick 0 (its bar 1).
-pub fn measure(mix: &[f32], mix_rate: u32, vocals: &[f32], vocals_rate: u32, true_bpm: f64, division: u32, ust_tick0_s: f64) -> Frame {
+/// `ust_tick0_s` is the audio time of the UST's tick 0 (its bar 1); `music` places the music's bar
+/// against it.
+#[allow(clippy::too_many_arguments)]
+pub fn measure(
+    mix: &[f32],
+    mix_rate: u32,
+    vocals: &[f32],
+    vocals_rate: u32,
+    true_bpm: f64,
+    division: u32,
+    ust_tick0_s: f64,
+    music: Option<MusicFrame>,
+) -> Frame {
     let estimated_bpm = estimate_bpm(mix, mix_rate);
     let multiple = estimated_bpm.map(|e| tempo_multiple(e, true_bpm));
     let duration_s = mix.len() as f64 / f64::from(mix_rate);
@@ -137,6 +196,45 @@ pub fn measure(mix: &[f32], mix_rate: u32, vocals: &[f32], vocals_rate: u32, tru
         (Some(e), Some(TempoMultiple::One)) => Some(drift_beats(e, true_bpm, duration_s)),
         _ => None,
     };
-    let bar = sona_tick0_from_audio(vocals, vocals_rate, true_bpm, division).map(|t| bar_offset(t, ust_tick0_s, true_bpm));
-    Frame { true_bpm, estimated_bpm, multiple, drift_beats: drift, bar_offset: bar }
+    let tick0 = sona_tick0_from_audio(vocals, vocals_rate, true_bpm, division);
+    let cell = grid_spacing_seconds(true_bpm, f64::from(division));
+    Frame {
+        true_bpm,
+        estimated_bpm,
+        multiple,
+        drift_beats: drift,
+        bar_offset: tick0.map(|t| bar_offset(t, ust_tick0_s, true_bpm)),
+        music_bar_offset: tick0.zip(music).map(|(t, m)| bar_offset(t, m.bar_line_s(ust_tick0_s, cell), true_bpm)),
+    }
+}
+
+/// Length of one click in an overlay.
+pub const CLICK_S: f64 = 0.03;
+
+/// Where an overlay clicks: every beat of a grid with a bar line at `bar_line_s`, within
+/// `[0, duration_s)`, flagged `true` on bar lines.
+pub fn click_times(bar_line_s: f64, beat_s: f64, duration_s: f64) -> Vec<(f64, bool)> {
+    let first = ((0.0 - bar_line_s) / beat_s).ceil() as i64;
+    let last = ((duration_s - bar_line_s) / beat_s).ceil() as i64;
+    (first..last)
+        .map(|k| (bar_line_s + k as f64 * beat_s, k.rem_euclid(BEATS_PER_BAR as i64) == 0))
+        .filter(|&(t, _)| (0.0..duration_s).contains(&t))
+        .collect()
+}
+
+/// `audio` with clicks on a candidate beat and bar grid ([`click_times`]), for checking a music
+/// frame by ear: a high click on each bar line, a lower one on the other beats.
+pub fn overlay_clicks(audio: &[f32], sample_rate: u32, bar_line_s: f64, beat_s: f64) -> Vec<f32> {
+    let sr = f64::from(sample_rate);
+    let mut out: Vec<f32> = audio.iter().map(|x| x * 0.6).collect();
+    let click_len = (CLICK_S * sr) as usize;
+    for (t, is_bar) in click_times(bar_line_s, beat_s, audio.len() as f64 / sr) {
+        let (freq, gain) = if is_bar { (2000.0, 0.5) } else { (1000.0, 0.35) };
+        let start = (t * sr).round() as usize;
+        for (i, x) in out.iter_mut().skip(start).take(click_len).enumerate() {
+            let s = i as f64 / sr;
+            *x += (gain * (-s * 150.0).exp() * (2.0 * std::f64::consts::PI * freq * s).sin()) as f32;
+        }
+    }
+    out
 }

@@ -265,3 +265,39 @@ reference available without ears. Holdout4 needs a music reference labelled by e
    - Score tick 0 against **ear-labelled** music beat and bar lines.
    - Ship the rule if it beats today's rule on beat-correct songs, beyond the song-bootstrap noise.
    - Report bar-correct separately.
+
+## Ear-labelling the music frame (utau-edit-cost 10)
+
+The manifest holds the music's beat and bar per song: `music_beat_shift_cells` and `music_bar_shift_cells`
+are whole cells after the UST's beat and bar lines, so the music's bar line is at
+`alignment_offset_s + music_bar_shift_cells × cell`, mod one bar. `music_frame_status` says where the values
+come from: `unverified-estimate` for the dev values seeded from this report's table (drums' beat, harmonic
+downbeat), or `ear-checked`. `sona-eval-frame` scores bar offset and frame pass against these when present and
+keeps the UST-anchored columns beside them.
+
+To label a song by ear (holdout4, before any read; ticket 08):
+
+1. Align the song first (`sona-eval-ust-align`), so `alignment_offset_s` and `bpm_from_ust` are in the
+   manifest. Labelling needs only the mix and the UST's tempo and offset, and reads no sona output.
+2. Find the beat. Run `--bar-one` only on dev. For a holdout song, use the drums: write overlays with
+   `--bar-shift 0, 1, …, cells per beat − 1` and keep the one whose clicks sit on the kick and snare.
+   That value is `music_beat_shift_cells` (cells per beat: 4 on a 16-grid, 6 on a 24-grid).
+3. Find bar 1. With the beat fixed at `b`, try `--bar-shift b`, `b + c`, `b + 2c` and `b + 3c` (where
+   `c` is cells per beat). The high click marks the bar line. Keep the one where the high click lands on
+   the start of phrases and on chord changes. That value is `music_bar_shift_cells`.
+4. Listen to at least two excerpts (for example `--from` at a quarter and at three quarters of the song).
+   A song in 3/4 or 6/8 cannot be labelled in 4/4: flag it and leave the fields out.
+5. Write both fields and `"music_frame_status": "ear-checked"`, and have the user confirm a sample of the
+   songs before the read. The manifest test checks that the bar line falls on the beat
+   (`bar % cells per beat == beat`).
+
+```sh
+cargo run --release -p sona-eval --bin sona-eval-frame -- --clicks SONG_ID --bar-shift CELLS [--from S] [--seconds S] [--out PATH]
+```
+
+- `--bar-shift` defaults to the manifest's `music_bar_shift_cells`, and to 0 (the UST's own lines) when
+  there is none.
+- The excerpt is 24 s from mid-song by default. `--seconds 0` writes the whole song.
+- The output goes to the git-ignored `crates/sona-eval/data/click-overlays/SONG_ID-barCELLS.wav` by
+  default. Never commit it.
+- The WAV is the mix at 60% with a 30 ms click on every beat: 2 kHz on bar lines, 1 kHz on the other beats.

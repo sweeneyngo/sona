@@ -1,5 +1,5 @@
 {
-  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl. Split 'holdout3' (added 2026-11-21): a fresh holdout of the next uploads in channel order before holdout2's oldest (2026-08-14 → 09-29), same skip-and-backfill rules (vocaloid-original only; original resolvable and within 1 s of the cover; one integer tempo across lead and other-voice files, grid 16 or 24), plus one: an upload whose UST is not in ust_share_url (Pifuyuu posted it only on BowlRoll) is skipped, because the fetch script reads only that share. 10 songs, all aligned (05), no backfill needed; unread when added.",
+  "_doc": "UST corpus gate manifest (.scratch/ust-corpus-gate). Selection: the 20 most recent @pifuyuu uploads, skip-and-backfill with reasons in 'excluded'. UST files are never committed (the author's terms forbid redistribution); fetch them with scripts/fetch-pifuyuu-ust.sh. stratum 'vocaloid-original' = any synthesized vocal (VOCALOID/CeVIO/Synthesizer V/UTAU), the gate; 'human-sung' is watched, never tuned against. ust_lead_files = main* plus a sung intro, merged into one reference; ust_other_voice_files = every other voice in the original (harmony, doubling, delay/echo, backing vocalise, spoken), used to find monophonic regions. Timing: stem_time = ust_time + alignment_offset_s. split: 'dev' songs are for iterating/tuning, 'holdout' songs are scored once at the end; assigned by upload order before any tuning (1st, 3rd, 5th… most recent = dev). Split 'holdout2' (added 2026-11-21): a fresh holdout of the next 10 uploads in channel order after the first 21 (2026-10-01 → 10-22), same skip-and-backfill rules; read once to confirm ADR-0016, logged in holdout-reads.jsonl. Split 'holdout3' (added 2026-11-21): a fresh holdout of the next uploads in channel order before holdout2's oldest (2026-08-14 → 09-29), same skip-and-backfill rules (vocaloid-original only; original resolvable and within 1 s of the cover; one integer tempo across lead and other-voice files, grid 16 or 24), plus one: an upload whose UST is not in ust_share_url (Pifuyuu posted it only on BowlRoll) is skipped, because the fetch script reads only that share. 10 songs, all aligned (05), no backfill needed; unread when added. Music frame (utau-edit-cost 10, added 2026-11-24): music_beat_shift_cells and music_bar_shift_cells are the whole cells from the UST's beat lines (resp. its bar lines, every 4 beats from UST tick 0) to the music's beat (resp. the music's bar line), so the music's bar line sits at alignment_offset_s + music_bar_shift_cells × cell, mod one bar. music_frame_status is 'unverified-estimate' (seeded from crates/sona-eval/reports/bar-one.md: drums' beat, harmonic downbeat) or 'ear-checked' (confirmed by listening to a click overlay, sona-eval-frame --clicks). Seeded for the dev split only; absent means the UST's own lines are the only reference.",
   "channel": "https://www.youtube.com/@pifuyuu",
   "selected_on": "2026-11-20",
   "ust_share_url": "https://1drv.ms/f/c/d7506b571ae8bacd/IgCw1brJTTmUS6tALapdZg-hAdomffH8909Knf4m3OcwImw",
@@ -35,6 +35,9 @@
         "path": "innocent-addict/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 1,
+      "music_bar_shift_cells": 13,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -98,6 +101,9 @@
         "path": "kamaitachi-ni-yoru/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 1,
+      "music_bar_shift_cells": 9,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -160,6 +166,9 @@
         "path": "telescope-nevermore/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 1,
+      "music_bar_shift_cells": 1,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -291,6 +300,9 @@
         "path": "atamaro-deluxe/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 2,
+      "music_bar_shift_cells": 2,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -355,6 +367,9 @@
         "path": "azemichi-ni-ochita-ginga/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 0,
+      "music_bar_shift_cells": 0,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -418,6 +433,9 @@
         "path": "yamineko/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 3,
+      "music_bar_shift_cells": 3,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -483,6 +501,9 @@
         "path": "my-axiom/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 0,
+      "music_bar_shift_cells": 4,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -550,6 +571,9 @@
         "path": "amaten/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 1,
+      "music_bar_shift_cells": 9,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
@@ -616,6 +640,9 @@
         "path": "fukagyakuteki-henyou/vocals.wav"
       },
       "split": "dev",
+      "music_beat_shift_cells": 1,
+      "music_bar_shift_cells": 1,
+      "music_frame_status": "unverified-estimate",
       "notes": null
     },
     {
