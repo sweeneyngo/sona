@@ -548,3 +548,87 @@ fn bar_one_is_estimated_only_for_a_job_that_asks_and_has_the_full_song() {
         assert_eq!(ann["notes"], plain["notes"], "{separation}: the notes don't depend on bar 1");
     }
 }
+
+fn sha256_hex(b: &[u8]) -> String {
+    sha2::Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[test]
+fn a_job_can_name_a_cached_song_by_its_hash_instead_of_sending_it() {
+    let srv = start("byhash", "");
+    let song = song_wav();
+    let sha = sha256_hex(&song);
+    let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=lead&upload={sha}&name=song.wav"), b"");
+    assert!(status == 404 || (status == 409 && body["error"].as_str().unwrap().contains("still reading")), "nothing cached yet, or the versions aren't read yet: {status} {body}");
+    let first = submit(srv.port, "bpm=120&separation=lead&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &first)["phase"], "done");
+
+    let (status, job) = json(srv.port, "POST", &format!("/api/jobs?bpm=60&grid=24&separation=lead&bar_one=1&upload={sha}&name=song.wav"), b"");
+    assert_eq!(status, 201, "{job}");
+    let id = job["id"].as_str().unwrap().to_string();
+    let fin = wait_final(srv.port, &id);
+    assert_eq!(fin["phase"], "done", "{fin}");
+    assert_eq!((calls(&srv, "demucs"), calls(&srv, "uvr")), (1, 1), "no separator ran for the job named by hash");
+    assert!(fin["log"].as_array().unwrap().iter().any(|l| l.as_str().unwrap().contains("named its upload by hash")), "{fin}");
+    let ann = annotation(srv.port, &id);
+    let p = &ann["provenance"];
+    assert_eq!(p["job"]["upload"]["sha256"], sha, "the job ran on the very upload it named");
+    assert_eq!(p["job"]["separation"], "lead");
+    let stems = &p["job"]["stems"];
+    assert_eq!((stems["reused"].as_bool(), stems["by_hash"].as_bool(), stems["separated_by"].as_str()), (Some(true), Some(true), Some(first.as_str())), "{stems}");
+    assert_eq!(steps(&ann), ["queued", "reused-stems", "transcribing"]);
+    assert_eq!((ann["bpm"].as_f64(), p["settings"]["grid"].as_str(), p["settings"]["bar_one"].as_str()), (Some(60.0), Some("24"), Some("mix")), "bar 1 reads the kept upload as the mix");
+    let pitches: Vec<i64> = ann["notes"].as_array().unwrap().iter().map(|n| n["midi_pitch"].as_i64().unwrap()).collect();
+    assert!(pitches.contains(&69) && pitches.contains(&71), "A4 and B4 expected, got {pitches:?}");
+    assert_eq!(request(srv.port, "GET", &format!("/api/jobs/{first}/stem"), None, b"").1, request(srv.port, "GET", &format!("/api/jobs/{id}/stem"), None, b"").1, "the same stem");
+    let sent = annotation(srv.port, &first);
+    assert!(sent["provenance"]["job"]["stems"].get("by_hash").is_none(), "a job that sent its file says nothing about hashes");
+}
+
+#[test]
+fn a_hash_the_server_does_not_have_is_refused_so_the_client_sends_the_file() {
+    let srv = start("hashmiss", "");
+    let song = song_wav();
+    let first = submit(srv.port, "bpm=120&separation=lead&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &first)["phase"], "done");
+    let sha = sha256_hex(&song);
+
+    let mut other = song.clone();
+    other.extend_from_slice(&[0, 0, 0, 0]);
+    let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=lead&upload={}&name=other.wav", sha256_hex(&other)), b"");
+    assert_eq!(status, 404, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("send the file"), "{body}");
+    let fallback = submit(srv.port, "bpm=120&separation=lead&name=other.wav", &other);
+    assert_eq!(wait_final(srv.port, &fallback)["phase"], "done", "the upload the client falls back to runs");
+
+    for (separation, why) in [("vocals", "lead stems are not vocals stems"), ("none", "no separation, no stems")] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation={separation}&upload={sha}&name=song.wav"), b"");
+        assert_eq!(status, 404, "{why}: {body}");
+        assert!(body["error"].as_str().unwrap().contains("send the file"), "{body}");
+    }
+    assert_eq!(calls(&srv, "demucs"), 2, "a refused job ran nothing");
+
+    let upper = sha.to_uppercase();
+    let (long, non_hex) = (format!("{sha}0"), format!("{}g", &sha[..63]));
+    for h in [&sha[..63], long.as_str(), upper.as_str(), non_hex.as_str(), "", "..%2F..%2Fstems"] {
+        let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=lead&upload={h}&name=song.wav"), b"");
+        assert_eq!(status, 400, "{h:?}: {body}");
+    }
+    let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=lead&upload={sha}&name=song.wav"), &song);
+    assert_eq!(status, 400, "a file and a hash: {body}");
+    let host = format!("Host: 127.0.0.1:{}\r\n", srv.port);
+    let path = format!("/api/jobs?bpm=120&separation=lead&upload={sha}&name=song.wav");
+    assert_eq!(request_with(srv.port, "POST", &path, &format!("{host}Origin: https://evil.example\r\n"), b"").0, 403, "a foreign page can't start a job by hash");
+    assert_eq!(request(srv.port, "POST", &path, Some("evil.example:8977"), b"").0, 403);
+}
+
+#[test]
+fn without_a_stem_cache_every_hash_is_refused() {
+    let srv = start_with("hashoff", "", &["--keep-stems", "0"], &[]);
+    let song = song_wav();
+    let first = submit(srv.port, "bpm=120&separation=vocals&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &first)["phase"], "done");
+    let (status, body) = json(srv.port, "POST", &format!("/api/jobs?bpm=120&separation=vocals&upload={}&name=song.wav", sha256_hex(&song)), b"");
+    assert_eq!(status, 404, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("--keep-stems 0"), "{body}");
+}

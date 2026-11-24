@@ -13,8 +13,10 @@ export interface JobRecord {
   steps: { step: string; seconds: number }[];
   tools: Record<string, string>;
   models: FileFingerprint[];
-  /** Where the separated stems came from (ADR-0030). */
-  stems?: { key: string; reused: boolean; separated_by: string };
+  /** The separation the job asked for (ADR-0032); absent in older records. */
+  separation?: "none" | "vocals" | "lead";
+  /** Where the separated stems came from (ADR-0030); `by_hash` when the job named its upload by hash (ADR-0032). */
+  stems?: { key: string; reused: boolean; separated_by: string; by_hash?: true };
 }
 
 export interface Provenance {
@@ -55,8 +57,9 @@ export function parseProvenance(v: unknown): Provenance | null {
         steps: Array.isArray(v.job.steps) ? v.job.steps.filter(isObj).map((s) => ({ step: str(s.step), seconds: num(s.seconds) })) : [],
         tools: strMap(v.job.tools),
         models: files(v.job.models),
+        ...(v.job.separation === "none" || v.job.separation === "vocals" || v.job.separation === "lead" ? { separation: v.job.separation } : {}),
         ...(isObj(v.job.stems) && typeof v.job.stems.key === "string" && typeof v.job.stems.reused === "boolean"
-          ? { stems: { key: v.job.stems.key, reused: v.job.stems.reused, separated_by: str(v.job.stems.separated_by) } }
+          ? { stems: { key: v.job.stems.key, reused: v.job.stems.reused, separated_by: str(v.job.stems.separated_by), ...(v.job.stems.by_hash === true ? { by_hash: true as const } : {}) } }
           : {}),
       };
     }
@@ -102,7 +105,11 @@ export function detailSections(p: Provenance): DetailSection[] {
     out.push({ title: "Steps", rows: [...p.job.steps.map((s): [string, string] => [s.step, `${s.seconds.toFixed(1)} s`]), ["total", `${total.toFixed(1)} s`]] });
     out.push({ title: "Tools", rows: Object.entries(p.job.tools) });
     const st = p.job.stems;
-    if (st) out.push({ title: "Stems", rows: [["separated", st.reused ? `reused from job ${st.separated_by}` : "by this job"], ["cache key", short(st.key)]] });
+    if (st) {
+      const rows: [string, string][] = [["separated", st.reused ? `reused from job ${st.separated_by}` : "by this job"], ["cache key", short(st.key)]];
+      if (st.by_hash) rows.push(["upload", "named by hash, not sent again"]);
+      out.push({ title: "Stems", rows });
+    }
   }
   return out;
 }

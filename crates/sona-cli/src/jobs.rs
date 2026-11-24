@@ -57,6 +57,16 @@ pub enum Separation {
     Lead,
 }
 
+impl Separation {
+    pub fn label(self) -> &'static str {
+        match self {
+            Separation::None => "none",
+            Separation::Vocals => "vocals",
+            Separation::Lead => "lead",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     Pyin,
@@ -73,6 +83,22 @@ pub struct JobSpec {
     pub engine: Engine,
     /// Estimate bar 1 from the music too (opt-in; utau-edit-cost 05).
     pub bar_one: bool,
+    /// The upload's SHA-256 when the job named it instead of sending it (ADR-0032).
+    pub upload: Option<String>,
+}
+
+/// What a job runs on: the audio sent with it, or the upload a stem-cache entry kept (ADR-0032).
+pub enum Input<'a> {
+    Sent { ext: &'a str, audio: &'a [u8] },
+    Kept(PathBuf),
+}
+
+/// Why a job that names its upload by hash can't run on the server's copy: the client sends the file instead.
+pub enum NotKept {
+    /// No complete stem-cache entry for this upload and separation (HTTP 404).
+    Missing(String),
+    /// The server can't tell yet (HTTP 409).
+    NotYet(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +234,8 @@ pub struct Queue {
     tx: Mutex<Sender<Arc<Job>>>,
     root: PathBuf,
     counter: AtomicU64,
+    cache: StemCache,
+    tools: Tools,
 }
 
 struct Worker {
@@ -225,6 +253,8 @@ impl Queue {
         let (tx, rx) = channel::<Arc<Job>>();
         let jobs = JobMap::default();
         let root = settings.jobs_dir.clone();
+        let cache = StemCache::new(settings.stems_dir.clone(), settings.keep_stems);
+        let queue_tools = tools.clone();
         let worker = Worker { cache: StemCache::new(settings.stems_dir.clone(), settings.keep_stems), tools, settings, jobs: jobs.clone() };
         std::thread::spawn(move || {
             worker.tidy();
@@ -235,10 +265,24 @@ impl Queue {
                 worker.tidy();
             }
         });
-        Ok(Arc::new(Queue { jobs, tx: Mutex::new(tx), root, counter: AtomicU64::new(0) }))
+        Ok(Arc::new(Queue { jobs, tx: Mutex::new(tx), root, counter: AtomicU64::new(0), cache, tools: queue_tools }))
     }
 
-    pub fn submit(&self, spec: JobSpec, input_ext: &str, audio: &[u8]) -> std::io::Result<Arc<Job>> {
+    /// The upload with this SHA-256 as the stem-cache entry for `separation` keeps it, under the
+    /// separators' versions now: a job that names its upload by hash runs on it (ADR-0032).
+    pub fn kept_upload(&self, sha256: &str, separation: Separation) -> Result<PathBuf, NotKept> {
+        if separation == Separation::None {
+            return Err(NotKept::Missing("a job without separation has no stems to reuse: send the file".into()));
+        }
+        if !self.cache.enabled() {
+            return Err(NotKept::Missing("this server keeps no stems (--keep-stems 0): send the file".into()));
+        }
+        let versions = TOOL_VERSIONS.get().ok_or_else(|| NotKept::NotYet("the server is still reading its separators' versions: send the file".into()))?;
+        let key = stem_key(separation, &self.tools, versions, sha256);
+        self.cache.upload(&key, stem_files(separation)).ok_or_else(|| NotKept::Missing(format!("this server has no {} stems for that upload: send the file", separation.label())))
+    }
+
+    pub fn submit(&self, spec: JobSpec, input: Input) -> std::io::Result<Arc<Job>> {
         let job = {
             let mut jobs = lock(&self.jobs);
             let n = self.counter.fetch_add(1, Ordering::SeqCst);
@@ -246,7 +290,20 @@ impl Queue {
             let id = format!("{stamp:x}{n:04x}");
             let dir = self.root.join(&id);
             fs::create_dir_all(&dir)?;
-            fs::write(dir.join(format!("input.{input_ext}")), audio)?;
+            let received = match &input {
+                Input::Sent { ext, audio } => {
+                    fs::write(dir.join(format!("input.{ext}")), audio)?;
+                    format!("received {} bytes", audio.len())
+                }
+                Input::Kept(path) => {
+                    let name = path.file_name().ok_or_else(|| std::io::Error::other("the kept upload has no file name"))?;
+                    if let Err(e) = crate::stems::link_or_copy(path, &dir.join(name)) {
+                        let _ = fs::remove_dir_all(&dir);
+                        return Err(e);
+                    }
+                    format!("named its upload by hash; took it from the stem cache ({} bytes)", fs::metadata(path).map_or(0, |m| m.len()))
+                }
+            };
             let job = Arc::new(Job {
                 id: id.clone(),
                 spec,
@@ -260,7 +317,7 @@ impl Queue {
                 steps: Mutex::new(vec![(Phase::Queued.label(), Instant::now())]),
                 stems: Mutex::new(None),
             });
-            job.log(&format!("received {} bytes", audio.len()));
+            job.log(&received);
             jobs.insert(id, job.clone());
             job
         };
@@ -415,7 +472,15 @@ fn job_record(job: &Job, tools: &Tools) -> sona_core::JobRecord {
             models.push(f);
         }
     }
-    sona_core::JobRecord { id: job.id.clone(), upload, steps, tools: tool_versions(), models, stems: lock(&job.stems).clone() }
+    sona_core::JobRecord {
+        id: job.id.clone(),
+        upload,
+        steps,
+        tools: tool_versions(),
+        models,
+        separation: Some(job.spec.separation.label().into()),
+        stems: lock(&job.stems).clone(),
+    }
 }
 
 static TOOL_VERSIONS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
@@ -542,12 +607,16 @@ fn stem_files(separation: Separation) -> &'static [&'static str] {
 fn separate(job: &Job, w: &Worker, input: &Path) -> Result<(), String> {
     let tools = &w.tools;
     let files = stem_files(job.spec.separation);
-    let key = if w.cache.enabled() { stem_key(job, tools, input)? } else { None };
+    let key = if w.cache.enabled() { job_stem_key(job, tools, input)? } else { None };
+    let by_hash = job.spec.upload.is_some();
     if let Some(key) = &key {
         if let Some(by) = w.cache.restore(key, files, &job.dir) {
             note_step(job, "reused-stems");
             job.log(&format!("separation reused from job {by} (stem cache {})", &key.hex[..12]));
-            *lock(&job.stems) = Some(sona_core::StemSource { key: key.hex.clone(), reused: true, separated_by: by });
+            if let Err(e) = w.cache.keep_upload(key, input) {
+                job.log(&format!("could not keep the upload with the stems: {e}"));
+            }
+            *lock(&job.stems) = Some(sona_core::StemSource { key: key.hex.clone(), reused: true, separated_by: by, by_hash });
             return Ok(());
         }
     }
@@ -580,11 +649,11 @@ fn separate(job: &Job, w: &Worker, input: &Path) -> Result<(), String> {
         if job.cancelled() {
             return Err("cancelled".into());
         }
-        match w.cache.store(&key, files, &job.dir, &job.id) {
+        match w.cache.store(&key, files, &job.dir, &job.id).and_then(|()| w.cache.keep_upload(&key, input)) {
             Ok(()) => job.log(&format!("stems cached ({})", &key.hex[..12])),
             Err(e) => job.log(&format!("could not cache the stems: {e}")),
         }
-        *lock(&job.stems) = Some(sona_core::StemSource { key: key.hex, reused: false, separated_by: job.id.clone() });
+        *lock(&job.stems) = Some(sona_core::StemSource { key: key.hex, reused: false, separated_by: job.id.clone(), by_hash });
     }
     Ok(())
 }
@@ -598,27 +667,33 @@ fn ffmpeg_on_path(cmd: &mut Command, ffmpeg: &Path) {
     }
 }
 
-/// The stem-cache key: the upload's hash, the separation, and every separator version, model and
-/// setting that shapes the stems. `None` (no caching) if the tool versions are still unknown.
-fn stem_key(job: &Job, tools: &Tools, input: &Path) -> Result<Option<StemKey>, String> {
+/// The job's stem-cache key, once the tool versions are known; `None` (no caching) if they still
+/// aren't after the wait.
+fn job_stem_key(job: &Job, tools: &Tools, input: &Path) -> Result<Option<StemKey>, String> {
     let Some(versions) = wait_for_tool_versions(job)? else {
         job.log("stem cache skipped: the separators' versions couldn't be read in time");
         return Ok(None);
     };
     let upload = crate::provenance::fingerprint_file("upload", input)?;
+    Ok(Some(stem_key(job.spec.separation, tools, &versions, &upload.sha256)))
+}
+
+/// The stem-cache key: the upload's hash, the separation, and every separator version, model and
+/// setting that shapes the stems.
+fn stem_key(separation: Separation, tools: &Tools, versions: &BTreeMap<String, String>, upload_sha256: &str) -> StemKey {
     let mut fields = BTreeMap::new();
     let mut set = |k: &str, v: String| {
         fields.insert(k.to_string(), v);
     };
     let version = |name: &str| versions.get(name).cloned().unwrap_or_else(|| "unknown".into());
     set("format", "1".into());
-    set("upload_sha256", upload.sha256);
-    set("separation", if job.spec.separation == Separation::Lead { "lead" } else { "vocals" }.into());
+    set("upload_sha256", upload_sha256.into());
+    set("separation", if separation == Separation::Lead { "lead" } else { "vocals" }.into());
     set("demucs_python", tools.demucs_python.display().to_string());
     for name in ["demucs", "demucs_model", "demucs_shift_seed", "demucs_torch", "ffmpeg"] {
         set(name, version(name));
     }
-    if job.spec.separation == Separation::Lead {
+    if separation == Separation::Lead {
         for name in ["audio_separator", "audio_separator_onnxruntime", "lead_model"] {
             set(name, version(name));
         }
@@ -626,7 +701,7 @@ fn stem_key(job: &Job, tools: &Tools, input: &Path) -> Result<Option<StemKey>, S
         set("lead_model_sha256", model.map_or_else(|_| "missing".into(), |f| f.sha256));
         set("separator_bin", tools.separator_bin.display().to_string());
     }
-    Ok(Some(StemKey::new(fields)))
+    StemKey::new(fields)
 }
 
 /// The start-up probe's tool versions, waiting for it if it is still running. The probe gives each tool

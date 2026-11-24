@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ServeError, defaultJob, estimateTempo, fetchJobOrCancel, isFinal, jobQuery, parseCapabilities, parseJobStatus } from "./serveClient";
+import { ServeError, defaultJob, estimateTempo, fetchJobOrCancel, isFinal, isSha256, jobQuery, parseCapabilities, parseJobStatus, songHash, submitJobByHash } from "./serveClient";
 
 describe("serve client boundary", () => {
   it("parses capabilities, treating anything but true as unavailable", () => {
@@ -74,6 +74,53 @@ describe("serve client boundary", () => {
         throw new TypeError("Failed to fetch");
       });
       expect(await estimateTempo(new Blob(["x"]), "a.wav")).toEqual({ error: expect.stringMatching(/isn't reachable/) });
+    });
+  });
+
+  describe("a job named by the song's hash", () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const req = { bpm: 61.5, grid: 24, separation: "lead", engine: "pyin", name: "a.mp3", barOne: true } as const;
+    const sha = "0123456789abcdef".repeat(4);
+    const server = (answer: () => Response) => {
+      const sent: { path: string; body: unknown }[] = [];
+      vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
+        sent.push({ path, body: init?.body });
+        return answer();
+      });
+      return sent;
+    };
+
+    it("sends no audio, only the hash beside the job's settings", async () => {
+      const sent = server(() => Response.json({ id: "j2", phase: "queued" }, { status: 201 }));
+      expect(await submitJobByHash(req, sha)).toMatchObject({ id: "j2", phase: "queued" });
+      expect(sent).toHaveLength(1);
+      expect(sent[0].body).toBeUndefined();
+      const q = new URLSearchParams(sent[0].path.split("?")[1]);
+      expect([q.get("upload"), q.get("bpm"), q.get("grid"), q.get("separation"), q.get("bar_one")]).toEqual([sha, "61.5", "24", "lead", "1"]);
+    });
+
+    it("hands back the server's reason when it hasn't got the song or can't tell yet, so the file goes instead", async () => {
+      server(() => Response.json({ error: "this server has no lead stems for that upload: send the file" }, { status: 404 }));
+      expect(await submitJobByHash(req, sha)).toEqual({ refused: "this server has no lead stems for that upload: send the file" });
+      server(() => Response.json({ error: "the server is still reading its separators' versions: send the file" }, { status: 409 }));
+      expect(await submitJobByHash(req, sha)).toEqual({ refused: expect.stringMatching(/still reading/) });
+    });
+
+    it("fails on anything else, as an upload would", async () => {
+      server(() => Response.json({ error: "upload must be the file's SHA-256" }, { status: 400 }));
+      await expect(submitJobByHash(req, "nope")).rejects.toThrow("SHA-256");
+      server(() => Response.json({ error: "boom" }, { status: 500 }));
+      await expect(submitJobByHash(req, sha)).rejects.toThrow("boom");
+      vi.stubGlobal("fetch", async () => {
+        throw new TypeError("Failed to fetch");
+      });
+      await expect(submitJobByHash(req, sha)).rejects.toThrow(/isn't reachable/);
+    });
+
+    it("hashes a file as the server does", async () => {
+      expect(await songHash(new Blob(["abc"]))).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+      expect(isSha256(await songHash(new Blob([])))).toBe(true);
+      expect([isSha256(sha), isSha256(sha.toUpperCase()), isSha256(sha.slice(1)), isSha256(null)]).toEqual([true, false, false, false]);
     });
   });
 

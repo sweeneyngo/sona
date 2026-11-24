@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::http::{read_request, write_response, HttpError, Limits, Request, Response};
-use crate::jobs::{wav_rate, Engine, Job, JobSpec, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
+use crate::jobs::{wav_rate, Engine, Input, Job, JobSpec, NotKept, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
 
 const LIMITS: Limits = Limits { max_header_bytes: 16 * 1024, max_body_bytes: 500 * 1_000_000 };
 const DEFAULT_PORT: u16 = 8977;
@@ -272,11 +272,7 @@ impl Server {
     fn create_job(&self, req: &Request) -> Result<Response, HttpError> {
         let spec = job_spec(req)?;
         let caps = self.capabilities();
-        let sep_key = match spec.separation {
-            Separation::None => "none",
-            Separation::Vocals => "vocals",
-            Separation::Lead => "lead",
-        };
+        let sep_key = spec.separation.label();
         if caps["separation"][sep_key] != true {
             let fixes: Vec<String> = self.setup().into_iter().filter(|n| n.blocks.contains(&sep_key)).map(|n| n.message).collect();
             return Err(HttpError { status: 409, message: format!("separation '{sep_key}' isn't set up on this server. {} See `sona serve --help`.", fixes.join(" ")) });
@@ -287,6 +283,18 @@ impl Server {
         if spec.engine == Engine::Cells && (caps["engines"]["cells"] != true || spec.separation != Separation::Lead) {
             return Err(HttpError { status: 409, message: "the learned cell stage needs --cell-model DIR on the server and lead separation".into() });
         }
+        let failed = |e: std::io::Error| HttpError { status: 500, message: e.to_string() };
+        if let Some(sha) = spec.upload.clone() {
+            if !req.body.is_empty() {
+                return Err(HttpError { status: 400, message: "send the audio file or name it by upload=<sha256>, not both".into() });
+            }
+            let kept = self.queue.kept_upload(&sha, spec.separation).map_err(|e| match e {
+                NotKept::Missing(message) => HttpError { status: 404, message },
+                NotKept::NotYet(message) => HttpError { status: 409, message },
+            })?;
+            let job = self.queue.submit(spec, Input::Kept(kept)).map_err(failed)?;
+            return Ok(Response::json(201, &job_status(&job)));
+        }
         if req.body.is_empty() {
             return Err(HttpError { status: 400, message: "send the audio file as the request body".into() });
         }
@@ -294,7 +302,7 @@ impl Server {
             return Err(HttpError { status: 409, message: format!("reading this file needs ffmpeg, which doesn't run on this server: {FFMPEG_FIX}, or drop a 44.1 kHz WAV") });
         }
         let ext = upload_ext(&spec.name);
-        let job = self.queue.submit(spec, &ext, &req.body).map_err(|e| HttpError { status: 500, message: e.to_string() })?;
+        let job = self.queue.submit(spec, Input::Sent { ext: &ext, audio: &req.body }).map_err(failed)?;
         Ok(Response::json(201, &job_status(&job)))
     }
 
@@ -365,8 +373,13 @@ fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {
     if bar_one && separation == Separation::None {
         return Err(bad("bar_one needs the full song: choose vocals or lead separation"));
     }
+    let upload = match req.param("upload") {
+        None => None,
+        Some(h) if h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => Some(h.to_string()),
+        Some(_) => return Err(bad("upload must be the file's SHA-256: 64 lowercase hex digits")),
+    };
     let name: String = req.param("name").unwrap_or("upload.wav").chars().filter(|c| !c.is_control()).take(200).collect();
-    Ok(JobSpec { name, bpm, grid, separation, engine, bar_one })
+    Ok(JobSpec { name, bpm, grid, separation, engine, bar_one, upload })
 }
 
 fn job_status(job: &Job) -> serde_json::Value {
