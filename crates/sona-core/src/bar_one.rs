@@ -7,6 +7,8 @@
 //!   (mix − vocals), summed over 1-, 2- and 4-beat windows either side of each beat.
 //! - **Confidence:** the share of the song's 8-bar blocks whose own harmonic vote agrees with the
 //!   whole song's. Below [`MIN_CONFIDENCE`] the bar falls back to the first beat.
+//! - **Or the bar from a downbeat tracker** (Beat This!, ADR-0036): [`tracked_bar`] puts it on the beat,
+//!   mod 4, that most of the tracker's downbeats fall on; the vote share is the confidence.
 //!
 //! 4/4 only, one tempo.
 
@@ -48,12 +50,8 @@ impl BarOne {
 /// Bar 1 of a song from its full mix and its vocals stem (same rate, sample-aligned) at `bpm`, on a
 /// grid of `division` cells per whole note. `None` when either is too short or silent to hear onsets.
 pub fn estimate(mix: &[f32], vocals: &[f32], sample_rate: u32, bpm: f64, division: u32) -> Option<BarOne> {
-    if !(bpm.is_finite() && bpm > 0.0) || division == 0 {
-        return None;
-    }
+    let beat_s = first_beat(mix, vocals, sample_rate, bpm, division)?;
     let beat = 60.0 / bpm;
-    let cell = 240.0 / (bpm * f64::from(division));
-    let beat_s = beat_line(grid_phase(mix, sample_rate, beat)?, grid_phase(vocals, sample_rate, cell)?, cell, beat);
     let residual: Vec<f32> = mix.iter().zip(vocals).map(|(m, v)| m - v).collect();
     let chroma = chroma(&residual, sample_rate);
     let sr = f64::from(sample_rate);
@@ -61,6 +59,59 @@ pub fn estimate(mix: &[f32], vocals: &[f32], sample_rate: u32, bpm: f64, divisio
     let (harmonic_beat, confidence) = vote(&change);
     let bar_s = if confidence >= MIN_CONFIDENCE { beat_s + harmonic_beat as f64 * beat } else { beat_s };
     Some(BarOne { beat_s, bar_s, harmonic_beat, confidence })
+}
+
+/// The music's first beat at or after 0 s: the vocals' cell line nearest [`grid_phase`] of the mix at
+/// one-beat spacing. `None` for a BPM or division that makes no grid, or audio with no onsets.
+pub fn first_beat(mix: &[f32], vocals: &[f32], sample_rate: u32, bpm: f64, division: u32) -> Option<f64> {
+    if !(bpm.is_finite() && bpm > 0.0) || division == 0 {
+        return None;
+    }
+    let beat = 60.0 / bpm;
+    let cell = 240.0 / (bpm * f64::from(division));
+    Some(beat_line(grid_phase(mix, sample_rate, beat)?, grid_phase(vocals, sample_rate, cell)?, cell, beat))
+}
+
+/// Bar 1 from a downbeat tracker (Beat This!, ADR-0036), on the beat sona found.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrackedBar {
+    /// The music's first beat at or after 0 s ([`first_beat`]).
+    pub beat_s: f64,
+    /// The first bar line at or after 0 s: `beat_s` plus the voted beat; `beat_s` with no downbeats.
+    pub bar_s: f64,
+    /// Beats from `beat_s` to the bar line, in `0..4`; `None` when the tracker gave no downbeats.
+    pub bar_beat: Option<usize>,
+    /// Share of the downbeats that voted for `bar_beat`, in `0..=1` (0 with none).
+    pub share: f64,
+}
+
+/// The bar from a tracker's downbeats at the user's BPM: each downbeat votes for its whole-beat offset
+/// from `beat_s`, mod 4 (ticket 15's `fold_bar`); the most votes win, the earliest-cast on a tie.
+pub fn tracked_bar(beat_s: f64, bpm: f64, downbeats: &[f64]) -> TrackedBar {
+    let beat = 60.0 / bpm;
+    match downbeat_vote(downbeats, beat_s, beat) {
+        Some((k, share)) => TrackedBar { beat_s, bar_s: beat_s + k as f64 * beat, bar_beat: Some(k), share },
+        None => TrackedBar { beat_s, bar_s: beat_s, bar_beat: None, share: 0.0 },
+    }
+}
+
+/// Whole beats (mod 4) after `reference_s` that most `downbeats` fall on, and the share that do. Ties go
+/// to the offset voted for first. `None` with no finite downbeats.
+pub fn downbeat_vote(downbeats: &[f64], reference_s: f64, beat: f64) -> Option<(usize, f64)> {
+    let mut votes = [0usize; BEATS_PER_BAR];
+    let mut first_seen = [usize::MAX; BEATS_PER_BAR];
+    let mut n = 0usize;
+    for (i, t) in downbeats.iter().filter(|t| t.is_finite()).enumerate() {
+        let k = ((t - reference_s) / beat).round().rem_euclid(BEATS_PER_BAR as f64) as usize % BEATS_PER_BAR;
+        votes[k] += 1;
+        first_seen[k] = first_seen[k].min(i);
+        n += 1;
+    }
+    if n == 0 {
+        return None;
+    }
+    let best = (0..BEATS_PER_BAR).max_by(|&a, &b| votes[a].cmp(&votes[b]).then(first_seen[b].cmp(&first_seen[a])))?;
+    Some((best, votes[best] as f64 / n as f64))
 }
 
 /// The cell line (through `cell_phase`) nearest `beat_phase`, as the first such beat at or after 0 s.

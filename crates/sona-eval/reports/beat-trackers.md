@@ -193,6 +193,19 @@ its beats sit on the same cells (shares 0.95–1.00). Both trackers find azemich
   restriction, though its README notes that some of its *training data* is copyrighted or under limited CC
   licences "and it is up to the user to assess whether this may impact their use case".
 
+## Follow-up: ticket 16 (Beat This as an opt-in tool, ADR-0036)
+
+The user chose (a): a user-installed tool in the lead separator's venv. `scripts/setup-separators.sh
+beat-this` installs it, and `sona-eval-frame --estimate-bar-one --beat-this PROGRAM` runs it.
+
+- **Speed, one thread, the installed tool** (the 10 dev mixes one after another, load average 27–39 on 16
+  cores): CPU 57–101 s per song, median 88 s per 4 minutes of song; wall 80–157 s per song, median 133 s
+  per 4 minutes (112–148). The machine was not idle, so this is not the unloaded measurement 16 asked for.
+  On one thread, idle wall time should be about the CPU time, roughly 1.5 minutes per 4-minute song.
+- **Same answers in the separator venv**: beats and downbeats are identical to this study's on 10/10 songs,
+  with `rotary-embedding-torch` 0.6.5 (audio-separator pins it below 0.7).
+- **Port check**: the Rust fold's bar vote and beat-cell vote equal `score.py`'s on 9/9 songs, shares to 0.01.
+
 ## Sources
 
 - Essentia beat detection tutorial: https://essentia.upf.edu/tutorial_rhythm_beatdetection.html

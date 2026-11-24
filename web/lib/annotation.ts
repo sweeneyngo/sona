@@ -118,10 +118,15 @@ export interface Annotation {
 export interface BarOneEstimate {
   /** The first bar line at or after 0 s, on a grid line. */
   time_s: number;
-  /** Share of the song's 8-bar blocks whose harmonic vote agrees, in `0..=1`. */
+  /** From the harmony: the share of 8-bar blocks whose vote agrees. From Beat This: the share of its
+   * downbeats that voted for this bar line. In `0..=1`. */
   confidence: number;
-  /** `false` when the harmony was too weak and `time_s` is the music's first beat. */
+  /** `false` when `time_s` fell back to the music's first beat (the harmony too weak, or no downbeats). */
   harmonic: boolean;
+  /** The tracker the bar came from (ADR-0036); absent for the harmony. */
+  source?: "beat-this";
+  /** With a tracker: where the harmony puts bar 1, so a disagreement can be flagged. */
+  harmonic_time_s?: number;
 }
 
 /**

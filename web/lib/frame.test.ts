@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { fixtureSessions, lcg, randomSessions, readMidi, snapLikeTheEditor, type RawNote } from "./exportCases";
-import { barNumber, barOneLabel, barSeconds, cellSeconds, downbeat, gridLines, gridPhase, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./frame";
+import { barNumber, barOneDisagrees, barOneLabel, barSeconds, cellSeconds, downbeat, gridLines, gridPhase, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./frame";
 import { DIVISIONS, snapTime } from "./grid";
 import { encodeMidiFile } from "./midi";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type LyricNote, type Sequence } from "./sequence";
@@ -260,6 +260,24 @@ describe("bar 1 estimated from the music (utau-edit-cost 05)", () => {
     expect(parseBarOne({ time_s: 0.4, confidence: 1.5, harmonic: true })).toBeNull();
     expect(parseBarOne({ time_s: "0.4", confidence: 0.8, harmonic: true })).toBeNull();
     expect(parseBarOne({ time_s: 0.4, confidence: 0.8, harmonic: false, extra: 1 })).toEqual({ time_s: 0.4, confidence: 0.8, harmonic: false });
+    const tracked = { time_s: 0.9, confidence: 0.97, harmonic: true, source: "beat-this", harmonic_time_s: 0.4 };
+    expect(parseBarOne(tracked)).toEqual(tracked);
+    expect(parseBarOne({ ...tracked, source: "madmom" })).toBeNull();
+    expect(parseBarOne({ ...tracked, harmonic_time_s: undefined })).toBeNull();
+    expect(parseBarOne({ ...tracked, harmonic_time_s: "0.4" })).toBeNull();
+  });
+
+  it("says which source bar 1 came from, and flags Beat This disagreeing with the harmony", () => {
+    const f: Frame = { bpm: 120, division: 16, anchor: 0.01, barOne: 1.26 };
+    const est = { time_s: 1.26, confidence: 0.97, harmonic: true, source: "beat-this", harmonic_time_s: 0.26 } as const;
+    expect(barOneLabel(f, est)).toBe("1.260 s · Beat This (97%) · the harmony says 0.260 s");
+    expect(barOneDisagrees(est)).toBe(true);
+    const agreed = { ...est, harmonic_time_s: 1.26 };
+    expect(barOneLabel(f, agreed)).toBe("1.260 s · Beat This (97%) · the harmony agrees");
+    expect(barOneDisagrees(agreed)).toBe(false);
+    expect(barOneLabel(f, { ...agreed, harmonic: false, confidence: 0 })).toBe("1.260 s · the music's beat (Beat This found no downbeats) · the harmony agrees");
+    expect(barOneDisagrees({ time_s: 1.26, confidence: 0.85, harmonic: true })).toBe(false);
+    expect(barOneDisagrees(null)).toBe(false);
   });
 
   it("Auto goes back to the estimate when there is one, and to the default rule when there isn't (property)", () => {

@@ -20,6 +20,10 @@ pub struct Tools {
     pub ffmpeg: PathBuf,
     /// The htdemucs weights in torch's cache, where demucs downloads them on its first run.
     pub demucs_weights: PathBuf,
+    /// The Beat This tool (ADR-0036), the threads it may use, and its checkpoint in torch's cache.
+    pub beat_this: PathBuf,
+    pub beat_this_threads: u32,
+    pub beat_this_checkpoint: PathBuf,
     pub game_dir: Option<PathBuf>,
     pub cell_model: Option<PathBuf>,
 }
@@ -74,6 +78,16 @@ pub enum Engine {
     Cells,
 }
 
+/// Whether a job estimates bar 1 from the music, and from what (utau-edit-cost 05, ADR-0036).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarOne {
+    Off,
+    /// The harmony (ADR-0031).
+    Harmonic,
+    /// Beat This's downbeats, with the harmony's bar 1 beside them (ADR-0036).
+    BeatThis,
+}
+
 #[derive(Debug, Clone)]
 pub struct JobSpec {
     pub name: String,
@@ -82,7 +96,7 @@ pub struct JobSpec {
     pub separation: Separation,
     pub engine: Engine,
     /// Estimate bar 1 from the music too (opt-in; utau-edit-cost 05).
-    pub bar_one: bool,
+    pub bar_one: BarOne,
     /// The upload's SHA-256 when the job named it instead of sending it (ADR-0032).
     pub upload: Option<String>,
     /// The song's lyric, kept in the job's record (lyrics-first 03).
@@ -109,6 +123,8 @@ pub enum Phase {
     Decoding,
     SeparatingVocals,
     SeparatingLead,
+    /// Beat This on the mix (ADR-0036).
+    FindingBarOne,
     Transcribing,
     Done,
     Failed(String),
@@ -122,6 +138,7 @@ impl Phase {
             Phase::Decoding => "decoding",
             Phase::SeparatingVocals => "separating-vocals",
             Phase::SeparatingLead => "separating-lead",
+            Phase::FindingBarOne => "finding-bar-one",
             Phase::Transcribing => "transcribing",
             Phase::Done => "done",
             Phase::Failed(_) => "failed",
@@ -557,11 +574,17 @@ fn pipeline(job: &Job, w: &Worker) -> Result<(), String> {
         }
         Separation::Vocals | Separation::Lead => separate(job, w, &input)?,
     }
+    let tools = &w.tools;
+    let downbeats = job.dir.join("downbeats.json");
+    if job.spec.bar_one == BarOne::BeatThis {
+        step(job, Phase::FindingBarOne)?;
+        to_mono_wav(job, w, &input, &job.mix_path())?;
+        run_child(job, w, crate::beat_this::command(&tools.beat_this, tools.beat_this_threads, &job.mix_path(), &downbeats), "beat-this")?;
+    }
     step(job, Phase::Transcribing)?;
-    if job.spec.bar_one {
+    if job.spec.bar_one == BarOne::Harmonic {
         to_mono_wav(job, w, &input, &job.mix_path())?;
     }
-    let tools = &w.tools;
     let args = crate::TranscribeArgs {
         stem: job.stem_path().to_string_lossy().into_owned(),
         bpm: job.spec.bpm,
@@ -574,12 +597,13 @@ fn pipeline(job: &Job, w: &Worker) -> Result<(), String> {
             Engine::Pyin => None,
         },
         octave_check: true,
-        vocals: (job.spec.engine == Engine::Cells || (job.spec.bar_one && job.spec.separation == Separation::Lead)).then(|| job.vocals_path().to_string_lossy().into_owned()),
+        vocals: (job.spec.engine == Engine::Cells || (job.spec.bar_one != BarOne::Off && job.spec.separation == Separation::Lead)).then(|| job.vocals_path().to_string_lossy().into_owned()),
         cell_model: match job.spec.engine {
             Engine::Cells => Some(tools.cell_model.as_ref().ok_or("no cell model is configured on this server")?.to_string_lossy().into_owned()),
             _ => None,
         },
-        bar_one: job.spec.bar_one.then(|| job.mix_path().to_string_lossy().into_owned()),
+        bar_one: (job.spec.bar_one != BarOne::Off).then(|| job.mix_path().to_string_lossy().into_owned()),
+        beat_this: (job.spec.bar_one == BarOne::BeatThis).then(|| crate::BeatThisInput::Read(downbeats.clone())),
     };
     if std::env::var(PANIC_FOR_TEST).is_ok_and(|name| name == job.spec.name) {
         panic!("{PANIC_FOR_TEST} asked for a panic in {}", job.spec.name);

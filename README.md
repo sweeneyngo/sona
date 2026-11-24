@@ -27,6 +27,7 @@ git clone https://github.com/sweeneyngo/sona.git && cd sona
 cargo build --release                       # the `sona` binary
 (cd web && npm install && npm run build)    # the app that `sona serve` hosts
 scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separator and their models (~4 GB, CPU)
+scripts/setup-separators.sh beat-this       # optional: Beat This!, a second way to find bar 1 (MIT; + 81 MB)
 ```
 
 **Run:**
@@ -87,6 +88,9 @@ The app picks the best engine the server has, so nothing changes on the page.
   - *"… download during the first separation":* not an error. The demucs weights or the lead model
     aren't on disk yet, so the first job downloads them, which needs the internet.
     `scripts/setup-separators.sh` downloads them now.
+- **"Beat This … isn't installed" under Options:** only the **Bar 1 → From Beat This** choice is missing.
+  `scripts/setup-separators.sh beat-this` adds it to the lead separator's venv (it needs that venv; the
+  script builds it first if it isn't there), or start `sona serve --beat-this PROGRAM`.
 - **"no tempo: …" beside the BPM field:** the server couldn't read the file to estimate its tempo, and the
   rest of the line says why. "ffmpeg could not read the file" means the file is damaged or not audio:
   convert it to WAV. You can still type the BPM yourself.
@@ -117,13 +121,17 @@ The app picks the best engine the server has, so nothing changes on the page.
   the beat you hear as beat 1 (or seek there and use **Bar 1 → At playhead** under **♩**), and that line
   becomes a bar line in the editor and in every export. Dragging the ruler shifts the grid and the bars
   move with it; **Auto** puts bar 1 back on the first grid line. Bars are 4/4.
-- **Bar 1 from the music** (experimental, opt-in; [ADR-0031](docs/adr/0031-bar-one-from-the-music.md)).
-  Tick **Bar 1 from the music** under the start screen's **Options** and sona finds the song's beat in the
-  mix and the first beat of its bars from where the harmony changes. The editor then starts with bar 1
-  there, and the **♩** popover says so ("from the music", with the share of the song that agrees);
-  **Auto** goes back to it. Without the option nothing changes. On the 9 dev songs it agrees with the
-  best reference available (itself a harmonic estimate, so not yet proof); confirming it needs songs
-  labelled by ear.
+- **Bar 1 from the music** (experimental, opt-in; [ADR-0031](docs/adr/0031-bar-one-from-the-music.md),
+  [ADR-0036](docs/adr/0036-beat-this-bar-one.md)). Under the start screen's **Options**, **Bar 1** is
+  *First grid line* by default. *From the harmony* finds the song's beat in the mix and the first beat of its
+  bars from where the harmony changes. *From Beat This* (listed once `scripts/setup-separators.sh beat-this`
+  has installed it) takes the bar from the downbeats of [Beat This!](https://github.com/CPJKU/beat_this),
+  a beat tracker whose code and weights are MIT; it costs about a CPU minute and a half per 4-minute song.
+  The editor then starts with bar 1 there, and the **♩** popover says where it came from, with the share of
+  the song that agrees. With Beat This it also says whether the harmony agrees, and shows a disagreement in
+  red: that is the bar to check by ear. **Auto** goes back to the estimate. With *First grid line* nothing
+  changes. On the 9 dev songs both sources agree with the best reference available (itself a harmonic
+  estimate, so not yet proof); choosing between them needs songs labelled by ear.
 - **Export → USTX / UST / MIDI.** The page autosaves; **File → Save session** keeps a copy.
   **File → Details…** shows what produced the notes: the sona build, the input's and models' SHA-256,
   every setting, and, for a song, each step's time and the separator versions
@@ -197,6 +205,17 @@ OPTIONS (transcribe):
     --bar-one <MIX>  Also estimate where bar 1 falls in the music (experimental, opt-in): the beat
                      from the full mix MIX (a WAV at the stem's rate), the bar from its harmony
                      without the vocals. Written to the annotation's `bar_one`; at --grid, else 16
+    --bar-one-tracker <harmonic|beat-this>
+                     With --bar-one: where the bar comes from (default harmonic). beat-this takes it
+                     from the downbeats of Beat This! (MIT), a tool that `scripts/setup-separators.sh
+                     beat-this` installs; the harmony's bar 1 is kept beside it (ADR-0036)
+    --beat-this <PROGRAM>
+                     The Beat This tool (default <separator venv>/bin/sona-beat-this, the venv from
+                     SONA_LEAD_VENV, else ~/.local/share/sona/separator-venv)
+    --beat-this-threads <N>
+                     CPU threads Beat This may use (default 1)
+    --tool-timeout <S>
+                     Stop Beat This after S seconds (default 600, or 20 s per second of the mix if longer)
     -h, --help       Print this usage
     -V, --version    Print version
 ```
@@ -208,7 +227,8 @@ separate lead-vocal stem added nothing (it does help GAME).
 `sona serve` hosts the app and runs jobs: demucs, then the UVR karaoke lead, then pYIN or GAME notes. It
 listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
 Options: `--port`, `--web-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`, `--cell-model DIR`,
-and for disk and time:
+`--beat-this PROGRAM` and `--beat-this-threads N` (default 1) for bar 1 from Beat This (`bar_one=beat-this`
+on a job; `bar_one=1` is the harmony; ADR-0036), and for disk and time:
 - `--cache-dir` (default `$XDG_CACHE_HOME/sona`, else `~/.cache/sona`, never RAM-backed `/tmp`): jobs
   (`--jobs-dir` to put them elsewhere) and the stem cache;
 - `--keep-jobs N` (20) finished jobs and `--keep-stems N` (10) separated songs are kept; older ones are
@@ -237,7 +257,8 @@ add it.
 
 The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
 score with four sub-scores per note, the f0 contour and the energy envelope. Two optional fields are
-left out below: `provenance` (what produced it, ADR-0024) and `bar_one` (only with `--bar-one`, ADR-0031).
+left out below: `provenance` (what produced it, ADR-0024) and `bar_one` (only with `--bar-one`, ADR-0031;
+with Beat This it also has `source` and the harmony's `harmonic_time_s`, ADR-0036).
 The TypeScript side is `web/lib/annotation.ts`; a test reads an annotation the core writes with every field
 (`crates/sona-core/tests/fixtures/annotation-full.json`) into it, so the two can't drift apart.
 

@@ -3,7 +3,7 @@
 //! pitch changes fall on another beat of the bar.
 #![cfg(feature = "spectral")]
 
-use sona_core::bar_one::{beat_line, estimate, MIN_CONFIDENCE};
+use sona_core::bar_one::{beat_line, downbeat_vote, estimate, first_beat, tracked_bar, MIN_CONFIDENCE};
 use std::f64::consts::PI;
 
 const SR: u32 = 22050;
@@ -113,4 +113,50 @@ fn says_nothing_without_audio_or_tempo() {
     let s = song(150.0, 0.1, &[0], 2);
     assert_eq!(estimate(&s.mix, &s.vocals, SR, 0.0, 16), None);
     assert_eq!(estimate(&s.mix, &s.vocals, SR, 150.0, 0), None);
+}
+
+#[test]
+fn a_tracker_s_downbeats_put_bar_one_on_the_beat_they_fall_on() {
+    for (bpm, first, down) in [(150.0, 0.13, 1), (200.0, 0.02, 3), (180.0, 0.31, 2), (240.0, 0.07, 0)] {
+        let beat = 60.0 / bpm;
+        let s = song(bpm, first, &[down; 3], down + 2);
+        let beat_s = first_beat(&s.mix, &s.vocals, SR, bpm, 16).unwrap();
+        let downbeats: Vec<f64> = (0..24).map(|bar| first + (down + 4 * bar) as f64 * beat + 0.01 * ((bar % 3) as f64 - 1.0)).collect();
+        let got = tracked_bar(beat_s, bpm, &downbeats);
+        assert!(off_by(got.bar_s, first + down as f64 * beat, 4.0 * beat) < 0.003, "{bpm} BPM, downbeat on beat {down}: {got:?}");
+        assert!((0.0..4.0 * beat).contains(&got.bar_s), "{bpm} BPM: bar {} is not the first at or after 0 s", got.bar_s);
+        assert_eq!((got.bar_beat, got.share), (Some(down), 1.0), "{bpm} BPM: {got:?}");
+    }
+}
+
+#[test]
+fn the_vote_is_over_four_beat_bars_and_its_share_is_the_confidence() {
+    let (reference, beat) = (0.1, 0.5);
+    let on = |beats: i64| reference + beats as f64 * beat;
+    let half_tempo: Vec<f64> = (0..10).map(|k| on(1 + 8 * k)).collect();
+    assert_eq!(downbeat_vote(&half_tempo, reference, beat), Some((1, 1.0)));
+    let mut mixed: Vec<f64> = (0..10).map(|k| on(2 + 4 * k)).collect();
+    mixed.extend((0..3).map(|k| on(3 + 4 * k)));
+    let got = tracked_bar(reference, 120.0, &mixed);
+    assert_eq!(got.bar_beat, Some(2), "{got:?}");
+    assert!((got.share - 10.0 / 13.0).abs() < 1e-12 && (got.bar_s - on(2)).abs() < 1e-12, "{got:?}");
+}
+
+#[test]
+fn a_pickup_before_the_first_beat_still_votes_for_its_bar() {
+    assert_eq!(downbeat_vote(&[0.5, 2.5, 4.5], 1.0, 0.5), Some((3, 1.0)));
+}
+
+#[test]
+fn a_tied_vote_goes_to_the_bar_voted_for_first() {
+    assert_eq!(downbeat_vote(&[1.5, 0.5, 3.5, 2.5], 0.0, 0.5), Some((3, 0.5)));
+    assert_eq!(downbeat_vote(&[0.5, 1.5, 2.5, 3.5], 0.0, 0.5), Some((1, 0.5)));
+}
+
+#[test]
+fn without_downbeats_bar_one_is_the_beat_with_no_confidence() {
+    assert_eq!(downbeat_vote(&[], 0.2, 0.5), None);
+    assert_eq!(downbeat_vote(&[f64::NAN], 0.2, 0.5), None);
+    let got = tracked_bar(0.2, 120.0, &[]);
+    assert_eq!((got.bar_s, got.bar_beat, got.share), (0.2, None, 0.0));
 }

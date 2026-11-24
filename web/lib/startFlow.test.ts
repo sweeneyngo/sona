@@ -247,6 +247,9 @@ describe("phaseProgress", () => {
   it("runs from 0 to 1 along the job's own phases", () => {
     expect(phaseProgress("queued", "lead")).toBe(0);
     expect(phaseProgress("separating-lead", "lead")).toBe(0.5);
+    expect(phaseProgress("finding-bar-one", "lead")).toBeGreaterThan(phaseProgress("separating-lead", "lead"));
+    expect(phaseProgress("finding-bar-one", "lead")).toBeLessThan(phaseProgress("transcribing", "lead"));
+    expect(phaseProgress("finding-bar-one", "vocals")).toBeGreaterThan(phaseProgress("separating-vocals", "vocals"));
     expect(phaseProgress("done", "none")).toBe(1);
   });
 });

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::http::{read_request, write_response, HttpError, Limits, Request, Response};
-use crate::jobs::{wav_rate, Engine, Input, Job, JobSpec, NotKept, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
+use crate::jobs::{wav_rate, BarOne, Engine, Input, Job, JobSpec, NotKept, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
 use crate::provenance::ToolRun;
 
 /// The head holds a job's lyric in its query: [`MAX_LYRIC_CHARS`] kana, percent-encoded at 9 bytes each.
@@ -30,11 +30,11 @@ fn default_cache_dir() -> PathBuf {
     std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).unwrap_or_else(|| home().join(".cache")).join("sona")
 }
 
-/// Where demucs 4.0.1's torch keeps the htdemucs weights it downloads on first use: `$TORCH_HOME/hub/checkpoints`,
-/// `TORCH_HOME` defaulting to `$XDG_CACHE_HOME/torch`, else `~/.cache/torch`.
-fn demucs_weights() -> PathBuf {
+/// Where torch keeps the weights demucs 4.0.1 (htdemucs) and Beat This (final0) download on first use:
+/// `$TORCH_HOME/hub/checkpoints`, `TORCH_HOME` defaulting to `$XDG_CACHE_HOME/torch`, else `~/.cache/torch`.
+fn torch_checkpoint(name: &str) -> PathBuf {
     let torch = std::env::var_os("TORCH_HOME").map(PathBuf::from).unwrap_or_else(|| std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".cache")).join("torch"));
-    torch.join("hub/checkpoints/955717e8-8726e21a.th")
+    torch.join("hub/checkpoints").join(name)
 }
 
 pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
@@ -49,6 +49,8 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
     let mut separator_venv = std::env::var_os("SONA_LEAD_VENV").map(PathBuf::from).unwrap_or_else(|| share.join("separator-venv"));
     let mut game_dir: Option<PathBuf> = None;
     let mut cell_model: Option<PathBuf> = None;
+    let mut beat_this: Option<PathBuf> = None;
+    let mut beat_this_threads = 1u32;
     let mut i = 0;
     while i < args.len() {
         let value = |i: usize| args.get(i + 1).cloned().ok_or_else(|| format!("{} expects a value", args[i]));
@@ -67,6 +69,8 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
             "--separator-venv" => separator_venv = PathBuf::from(value(i)?),
             "--game" => game_dir = Some(PathBuf::from(value(i)?)),
             "--cell-model" => cell_model = Some(PathBuf::from(value(i)?)),
+            "--beat-this" => beat_this = Some(PathBuf::from(value(i)?)),
+            "--beat-this-threads" => beat_this_threads = value(i)?.parse().ok().filter(|n| *n >= 1).ok_or("--beat-this-threads must be a whole number, at least 1")?,
             other => return Err(format!("unknown serve option '{other}'")),
         }
         i += 2;
@@ -87,7 +91,10 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
         separator_models: separator_venv.join("models"),
         lead_model: std::env::var("SONA_LEAD_MODEL").unwrap_or_else(|_| "UVR_MDXNET_KARA_2.onnx".into()),
         ffmpeg: std::env::var_os("SONA_FFMPEG").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg")),
-        demucs_weights: demucs_weights(),
+        demucs_weights: torch_checkpoint("955717e8-8726e21a.th"),
+        beat_this: beat_this.unwrap_or_else(|| crate::beat_this::in_venv(&separator_venv)),
+        beat_this_threads,
+        beat_this_checkpoint: torch_checkpoint("beat_this-final0.ckpt"),
         game_dir,
         cell_model,
     };
@@ -108,12 +115,30 @@ struct Server {
 const FFMPEG_FIX: &str = "install ffmpeg and restart sona serve";
 
 /// Something separation needs that isn't there yet. A missing piece turns off the separations it
-/// `blocks`; a first-use one only means a download when a job first needs it.
+/// `blocks`; a first-use one only means a download when a job first needs it; an optional one is an
+/// opt-in tool that isn't installed (Beat This), so only its own choice is off.
 struct SetupNote {
     piece: &'static str,
-    missing: bool,
+    status: NoteStatus,
     blocks: &'static [&'static str],
     message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum NoteStatus {
+    Missing,
+    FirstUse,
+    Optional,
+}
+
+impl NoteStatus {
+    fn label(self) -> &'static str {
+        match self {
+            NoteStatus::Missing => "missing",
+            NoteStatus::FirstUse => "first-use",
+            NoteStatus::Optional => "optional",
+        }
+    }
 }
 
 pub fn run_serve(args: &[String]) -> Result<(), String> {
@@ -162,7 +187,7 @@ impl Server {
         if !self.ffmpeg_runs {
             notes.push(SetupNote {
                 piece: "ffmpeg",
-                missing: true,
+                status: NoteStatus::Missing,
                 blocks: &["vocals", "lead"],
                 message: format!("ffmpeg doesn't run ({}): {FFMPEG_FIX}. Until then, separation is off and only 44.1 kHz WAV files can be read.", t.ffmpeg.display()),
             });
@@ -170,14 +195,14 @@ impl Server {
         if !t.demucs_python.is_file() {
             notes.push(SetupNote {
                 piece: "demucs",
-                missing: true,
+                status: NoteStatus::Missing,
                 blocks: &["vocals", "lead"],
                 message: format!("Vocal separation isn't installed (no {}): run scripts/setup-separators.sh, or start sona serve with --demucs-venv DIR.", t.demucs_python.display()),
             });
         } else if !t.demucs_weights.is_file() {
             notes.push(SetupNote {
                 piece: "demucs-weights",
-                missing: false,
+                status: NoteStatus::FirstUse,
                 blocks: &[],
                 message: "The demucs weights (84 MB) download during the first separation, which needs the internet; scripts/setup-separators.sh fetches them now.".into(),
             });
@@ -185,19 +210,38 @@ impl Server {
         if !t.separator_bin.is_file() {
             notes.push(SetupNote {
                 piece: "separator",
-                missing: true,
+                status: NoteStatus::Missing,
                 blocks: &["lead"],
                 message: format!("Lead isolation isn't installed (no {}): run scripts/setup-separators.sh lead, or start sona serve with --separator-venv DIR.", t.separator_bin.display()),
             });
         } else if !t.separator_models.join(&t.lead_model).is_file() {
             notes.push(SetupNote {
                 piece: "lead-model",
-                missing: false,
+                status: NoteStatus::FirstUse,
                 blocks: &[],
                 message: format!("The lead model {} downloads during the first lead isolation, which needs the internet; scripts/setup-separators.sh lead fetches it now.", t.lead_model),
             });
         }
-        notes.sort_by_key(|n| !n.missing);
+        if !t.beat_this.is_file() {
+            notes.push(SetupNote {
+                piece: "beat-this",
+                status: NoteStatus::Optional,
+                blocks: &[],
+                message: format!(
+                    "Beat This, an optional source of bar 1, isn't installed (no {}): {}, or start sona serve with --beat-this PROGRAM.",
+                    t.beat_this.display(),
+                    crate::beat_this::SETUP_FIX
+                ),
+            });
+        } else if !t.beat_this_checkpoint.is_file() {
+            notes.push(SetupNote {
+                piece: "beat-this-checkpoint",
+                status: NoteStatus::FirstUse,
+                blocks: &[],
+                message: "The Beat This checkpoint (81 MB) downloads the first time it runs, which needs the internet; scripts/setup-separators.sh beat-this fetches it now.".into(),
+            });
+        }
+        notes.sort_by_key(|n| n.status);
         notes
     }
 
@@ -207,13 +251,15 @@ impl Server {
         let (vocals, lead) = (open("vocals"), open("lead"));
         let game = cfg!(feature = "game") && self.tools.game_dir.is_some() && std::env::var_os("ORT_DYLIB_PATH").is_some();
         let cells = game && lead && self.tools.cell_model.as_ref().is_some_and(|d| d.join("cellstage.onnx").is_file() && d.join("cellstage.json").is_file());
+        let harmonic = cfg!(feature = "spectral");
         serde_json::json!({
             "separation": { "none": true, "vocals": vocals, "lead": lead },
             "engines": { "pyin": true, "game": game, "cells": cells },
             "tempo": cfg!(feature = "spectral"),
+            "bar_one": { "harmonic": harmonic, "beat-this": harmonic && self.tools.beat_this.is_file() },
             "setup": notes.iter().map(|n| serde_json::json!({
                 "piece": n.piece,
-                "status": if n.missing { "missing" } else { "first-use" },
+                "status": n.status.label(),
                 "blocks": n.blocks,
                 "message": n.message,
             })).collect::<Vec<_>>(),
@@ -287,6 +333,10 @@ impl Server {
         }
         if spec.engine == Engine::Game && caps["engines"]["game"] != true {
             return Err(HttpError { status: 409, message: "GAME isn't set up on this server (start it with --game DIR and ORT_DYLIB_PATH)".into() });
+        }
+        if spec.bar_one == BarOne::BeatThis && caps["bar_one"]["beat-this"] != true {
+            let why = self.setup().into_iter().find(|n| n.piece == "beat-this").map_or_else(|| "it needs a build with the spectral feature".to_string(), |n| n.message);
+            return Err(HttpError { status: 409, message: format!("bar 1 from Beat This isn't set up on this server. {why}") });
         }
         if spec.engine == Engine::Cells && (caps["engines"]["cells"] != true || spec.separation != Separation::Lead) {
             return Err(HttpError { status: 409, message: "the learned cell stage needs --cell-model DIR on the server and lead separation".into() });
@@ -374,11 +424,12 @@ fn job_spec(req: &Request) -> Result<JobSpec, HttpError> {
         _ => return Err(bad("engine must be pyin, game or cells")),
     };
     let bar_one = match req.param("bar_one").unwrap_or("0") {
-        "0" => false,
-        "1" => true,
-        _ => return Err(bad("bar_one must be 0 or 1")),
+        "0" => BarOne::Off,
+        "1" => BarOne::Harmonic,
+        "beat-this" => BarOne::BeatThis,
+        _ => return Err(bad("bar_one must be 0, 1 (from the harmony) or beat-this")),
     };
-    if bar_one && separation == Separation::None {
+    if bar_one != BarOne::Off && separation == Separation::None {
         return Err(bad("bar_one needs the full song: choose vocals or lead separation"));
     }
     let upload = match req.param("upload") {

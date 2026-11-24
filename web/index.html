@@ -208,6 +208,15 @@
         font-size: 12px;
         color: var(--ink);
       }
+      #bar-one-readout .seg {
+        white-space: nowrap;
+      }
+      #bar-one-readout.disagree {
+        color: var(--danger);
+      }
+      .bar-one-note {
+        margin: 8px 0 0;
+      }
       #status {
         font-family: var(--mono);
         color: var(--muted);
@@ -1260,10 +1269,15 @@
                     <select id="song-engine"><option value="cells">GAME + learned</option><option value="game">GAME</option><option value="pyin">pYIN</option></select>
                   </span>
                   <span class="field" title="Experimental: find the music's beat and the first beat of its bars, so the export's bar lines are the song's. Needs vocal separation. Check it in the ♩ popover.">
-                    <label for="song-bar-one">Bar 1 from the music</label>
-                    <input id="song-bar-one" type="checkbox" />
+                    <label for="song-bar-one">Bar 1</label>
+                    <select id="song-bar-one">
+                      <option value="off">First grid line</option>
+                      <option value="harmonic">From the harmony</option>
+                      <option value="beat-this">From Beat This</option>
+                    </select>
                   </span>
                 </div>
+                <p id="song-bar-one-note" class="hint-line bar-one-note" hidden></p>
               </details>
               <button id="song-go" class="big-btn">Transcribe</button>
               <p id="song-error" class="error-line" role="alert" hidden></p>
@@ -1381,7 +1395,9 @@
               missing, the start screen says what and how to add it; the separators' models
               download the first time they run. <b>Options</b> picks the separation, the note
               engine, the triplet grid and <b>Bar 1 from the music</b> (experimental): sona finds
-              the song's beat and first bar, and the ♩ button says how sure it is.
+              the song's beat and first bar from the harmony, or from Beat This once
+              <code>scripts/setup-separators.sh beat-this</code> has installed it, and the ♩ button
+              says how sure it is (and, for Beat This, whether the harmony agrees).
             </p>
           </section>
 

@@ -566,8 +566,84 @@ fn bar_one_is_estimated_only_for_a_job_that_asks_and_has_the_full_song() {
         assert_eq!((b["harmonic"].as_bool(), b["confidence"].as_f64()), (Some(false), Some(0.0)), "the stub's vocals are the whole mix: {b}");
         assert!((0.0..0.5).contains(&b["time_s"].as_f64().unwrap()), "{b}");
         assert_eq!(ann["provenance"]["settings"]["bar_one"], "mix");
+        assert!(b.get("source").is_none() && b.get("harmonic_time_s").is_none() && ann["provenance"]["settings"].get("bar_one_source").is_none(), "{b}");
+        assert_eq!(steps(&ann).last().map(String::as_str), Some("transcribing"));
+        assert!(!steps(&ann).iter().any(|s| s == "finding-bar-one"));
         assert_eq!(ann["notes"], plain["notes"], "{separation}: the notes don't depend on bar 1");
     }
+}
+
+/// A stand-in for `sona-beat-this` in `dir`: records its arguments in `beat-this.calls`, runs `extra`, then
+/// writes `downbeats` as its result to the file after `--out`.
+fn fake_beat_this(dir: &Path, downbeats: &str, extra: &str) -> PathBuf {
+    let tool = dir.join("bin/sona-beat-this");
+    let calls = dir.join("beat-this.calls");
+    script(
+        &tool,
+        &format!(
+            "echo \"$@\" >> \"{}\"\n{extra}\nwhile [ \"$1\" != \"--out\" ]; do shift; done\nprintf '{{\"downbeats\": [{downbeats}], \"beat_this\": \"1.1.0\", \"checkpoint\": \"final0\"}}' > \"$2\"",
+            calls.display()
+        ),
+    );
+    tool
+}
+
+#[test]
+fn bar_one_from_beat_this_runs_the_tool_on_the_mix_and_keeps_the_harmony_s_bar_beside_it() {
+    let tools = temp_dir("beat-this-tool");
+    let torch = temp_dir("beat-this-torch");
+    let tool = fake_beat_this(&tools.0, "1.6", "");
+    let srv = start_with("beat-this", "", &["--beat-this", tool.to_str().unwrap()], &[("TORCH_HOME", torch.0.to_str().unwrap())]);
+    let (_, caps) = json(srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!(caps["bar_one"], serde_json::json!({ "harmonic": true, "beat-this": true }), "{caps}");
+    let checkpoint = setup_note(&caps, "beat-this-checkpoint").expect("no checkpoint in this TORCH_HOME");
+    assert_eq!((checkpoint["status"].as_str(), checkpoint["blocks"].clone()), (Some("first-use"), serde_json::json!([])));
+    assert!(setup_note(&caps, "beat-this").is_none(), "{caps}");
+
+    let id = submit(srv.port, "bpm=120&separation=lead&bar_one=beat-this&name=song.wav", &song_wav());
+    assert_eq!(wait_final(srv.port, &id)["phase"], "done");
+    let ann = annotation(srv.port, &id);
+    let b = &ann["bar_one"];
+    let beat_s = b["harmonic_time_s"].as_f64().expect("the harmony's bar 1 beside Beat This's");
+    let k = ((1.6 - beat_s) / 0.5).round().rem_euclid(4.0);
+    assert!((b["time_s"].as_f64().unwrap() - (beat_s + k * 0.5)).abs() < 1e-9, "the downbeat at 1.6 s lands on its beat of sona's grid: {b}");
+    assert_eq!((b["source"].as_str(), b["confidence"].as_f64(), b["harmonic"].as_bool()), (Some("beat-this"), Some(1.0), Some(true)), "{b}");
+    assert_eq!(ann["provenance"]["settings"]["bar_one_source"], "beat-this");
+    assert_eq!(steps(&ann), ["queued", "separating-vocals", "separating-lead", "finding-bar-one", "transcribing"]);
+    let calls = std::fs::read_to_string(tools.0.join("beat-this.calls")).unwrap();
+    assert!(calls.starts_with("--threads 1 --out ") && calls.trim_end().ends_with(&format!("{id}/mix.wav")), "one thread by default, on the job's mix: {calls}");
+}
+
+#[test]
+fn without_beat_this_its_choice_is_off_and_says_how_to_install_it() {
+    let srv = start("no-beat-this", "");
+    let (_, caps) = json(srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!(caps["bar_one"], serde_json::json!({ "harmonic": true, "beat-this": false }), "{caps}");
+    assert_eq!(caps["separation"]["lead"], true, "a missing optional tool turns off nothing else: {caps}");
+    let note = setup_note(&caps, "beat-this").expect("Beat This is reported");
+    assert_eq!((note["status"].as_str(), note["blocks"].clone()), (Some("optional"), serde_json::json!([])));
+    let message = note["message"].as_str().unwrap();
+    assert!(message.contains("setup-separators.sh beat-this") && message.contains("--beat-this") && message.contains("separator-venv/bin/sona-beat-this"), "{message}");
+    let (status, body) = json(srv.port, "POST", "/api/jobs?bpm=120&separation=lead&bar_one=beat-this&name=song.wav", &song_wav());
+    assert_eq!(status, 409, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("setup-separators.sh beat-this"), "{body}");
+    assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=120&separation=none&bar_one=beat-this&name=a.wav", &song_wav()).0, 400, "a stem upload has no mix");
+}
+
+#[test]
+fn a_hung_beat_this_is_stopped_at_its_time_limit_and_the_queue_goes_on() {
+    let tools = temp_dir("beat-this-hung-tool");
+    let tool = fake_beat_this(&tools.0, "1.6", "printf 'loading final0\\r' >&2\nexec sleep 30");
+    let srv = start_with("beat-this-hung", "", &["--beat-this", tool.to_str().unwrap(), "--tool-timeout", "1", "--tool-timeout-ratio", "0.6"], &[]);
+    let t0 = Instant::now();
+    let id = submit(srv.port, "bpm=120&separation=vocals&bar_one=beat-this&name=song.wav", &song_wav());
+    let fin = wait_final_within(srv.port, &id, Duration::from_secs(10));
+    assert!(t0.elapsed() < Duration::from_secs(10));
+    assert_eq!(fin["phase"], "failed");
+    let error = fin["error"].as_str().unwrap();
+    assert!(error.contains("beat-this was stopped after 2 s") && error.contains("loading final0") && error.contains("--tool-timeout"), "{error}");
+    let next = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song_wav());
+    assert_eq!(wait_final_within(srv.port, &next, Duration::from_secs(10))["phase"], "done", "the queue moved on");
 }
 
 fn sha256_hex(b: &[u8]) -> String {
