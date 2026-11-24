@@ -21,12 +21,16 @@ def line_kinds(s, starts):
     return [[L.kind(s["ust_l"][i][3]) for i in g] for g in groups], groups
 
 
-def seg_costs(cells, kinds, s, max_len, cpm):
-    """cost[e - s] for the line's moras on notes s..e-1 (e = s .. s + max_len); rests between notes may hold moras."""
+def seg_costs(cells, kinds, s, max_len, cpm, gamma=0.0, span_cpm=None):
+    """cost[e - s] for the line's moras on notes s..e-1 (e = s .. s + max_len); rests between notes may hold moras.
+    `gamma`: the line's sung cells should be near its moras × the song's cells per mora (m·gamma·|ln ratio|);
+    with `span_cpm`, the line's span (first note's start to last note's end) against moras × span_cpm."""
     m = len(kinds)
     row = [j * L.MORA_WITHOUT_NOTE for j in range(m + 1)]
-    out = [row[m]]
+    out = [row[m] + (gamma * m * 3.0 if gamma else 0.0)]
+    sung = 0
     for e in range(s, min(len(cells), s + max_len)):
+        sung += cells[e][1] - cells[e][0]
         items = []
         if e > s and cells[e][0] > cells[e - 1][1]:
             items.append((False, cells[e][0] - cells[e - 1][1]))
@@ -49,15 +53,17 @@ def seg_costs(cells, kinds, s, max_len, cpm):
                         best = c
                 new[j] = best
             row = new
-        out.append(row[m])
+        extent, rate = (cells[e][1] - cells[s][0], span_cpm) if span_cpm else (sung, cpm)
+        out.append(row[m] + (gamma * m * abs(math.log(extent / (m * rate))) if gamma else 0.0))
     return out
 
 
-def place_lines(cells, lines, pb, window=60):
+def place_lines(cells, lines, pb, window=60, skip=None, gamma=0.0, span=False):
     """Note ranges [(s, e)] per line by Viterbi."""
     N, K = len(cells), len(lines)
     M = sum(len(x) for x in lines)
     cpm = sum(b - a for a, b, _ in cells) / max(M, 1)
+    span_cpm = (cells[-1][1] - cells[0][0]) / max(M, 1) if span and cells else None
     cum = [0]
     for x in lines:
         cum.append(cum[-1] + len(x))
@@ -67,6 +73,10 @@ def place_lines(cells, lines, pb, window=60):
     for e in range(N + 1):
         V[0][e] = L.NOTE_WITHOUT_MORA * e
     for k in range(K):
+        if skip is not None and k > 0:
+            for e in range(1, N + 1):
+                if V[k][e - 1] + skip < V[k][e]:
+                    V[k][e], back[k][e] = V[k][e - 1] + skip, ("skip", e - 1)
         m = len(lines[k])
         max_len = 2 * m + 8
         exp = cum[k] * N / max(M, 1)
@@ -75,7 +85,7 @@ def place_lines(cells, lines, pb, window=60):
             if V[k][s] == INF:
                 continue
             base = V[k][s] + (pb if s < N and touch[s] and k > 0 else 0.0)
-            for d, c in enumerate(seg_costs(cells, lines[k], s, max_len, cpm)):
+            for d, c in enumerate(seg_costs(cells, lines[k], s, max_len, cpm, gamma, span_cpm)):
                 e = s + d
                 if base + c < V[k + 1][e]:
                     V[k + 1][e], back[k + 1][e] = base + c, s
@@ -83,10 +93,15 @@ def place_lines(cells, lines, pb, window=60):
     ranges = [None] * K
     e = end
     for k in range(K, 0, -1):
+        while isinstance(back[k][e], tuple):
+            e = back[k][e][1]
         s = back[k][e]
         ranges[k - 1] = (s, e)
         e = s
     return ranges
+
+
+SKIP, GAMMA, SPAN = None, 0.0, False
 
 
 def realistic(s, out, starts, pb):
@@ -96,7 +111,7 @@ def realistic(s, out, starts, pb):
     lo, hi = (inside[0], inside[-1] + 1) if inside else (0, 0)
     body = cells[lo:hi]
     kinds, groups = line_kinds(s, starts)
-    ranges = place_lines(body, kinds, pb)
+    ranges = place_lines(body, kinds, pb, skip=SKIP, gamma=GAMMA, span=SPAN)
     res = [(a, b, p, None) for a, b, p in cells[:lo] + cells[hi:]]
     used = set()
     for (a, e), g in zip(ranges, groups):
@@ -110,19 +125,22 @@ def realistic(s, out, starts, pb):
 
 
 def job(args):
-    sid, out, kind, pb = args
+    global SKIP, GAMMA, SPAN
+    sid, out, kind, pb, SKIP, GAMMA, SPAN = args
     s = [x for x in L.load([sid])][0]
     starts = s["lines"]["line_starts" if kind == "line" else "space_starts"]
     e, p = O.score(s, realistic(s, out, starts, pb))
-    return (sid, out, kind, pb), ([e["counts"][k] for k in O.ec.CLASSES], p, e["span_s"])
+    return (sid, out, kind, f"{pb}" + ("" if SKIP is None else f"s{SKIP}") + (f"g{GAMMA}" if GAMMA else "") + ("span" if SPAN else "")), ([e["counts"][k] for k in O.ec.CLASSES], p, e["span_s"])
 
 
 def main():
     pbs = [float(x) for x in (sys.argv[sys.argv.index("--pb") + 1].split(",") if "--pb" in sys.argv else ["1"])]
     kinds = sys.argv[sys.argv.index("--breaks") + 1].split(",") if "--breaks" in sys.argv else ["line"]
+    skips = [None if x == "none" else float(x) for x in (sys.argv[sys.argv.index("--skip") + 1].split(",") if "--skip" in sys.argv else ["none"])]
+    gammas = [float(x) for x in (sys.argv[sys.argv.index("--gamma") + 1].split(",") if "--gamma" in sys.argv else ["0"])]
     jobs = int(sys.argv[sys.argv.index("--jobs") + 1]) if "--jobs" in sys.argv else 4
     songs = L.load()
-    tasks = [(s["id"], out, kind, pb) for out in O.OUTS for kind in kinds for pb in pbs for s in songs]
+    tasks = [(s["id"], out, kind, pb, sk, g, "--span" in sys.argv) for out in O.OUTS for kind in kinds for pb in pbs for sk in skips for g in gammas for s in songs]
     with Pool(jobs) as pool:
         res = dict(pool.map(job, tasks))
     rows = {}

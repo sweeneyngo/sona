@@ -116,6 +116,45 @@ line only between Japanese words. The line files are lyric-derived and stay out 
 - **The port.** The Rust landings reproduce the prototype on all 198 song × output × landing rows (edit-cost
   class counts and placement counts), and the default run and `--fit-phrase-lyrics` are byte-identical to 07's.
 
+## 02: placing the lines from sona's notes alone fails
+
+Ticket 02 placed each pasted line (lines and spaces, perfect text) on a run of sona's notes with no UST timing:
+a Viterbi over lines × note boundaries, a line's cost being the rest-aware fit's DP cost of its moras on its
+notes, plus a penalty `pb` for a line that starts where two notes touch; variants added a duration term (the
+line's sung cells against its moras × the song's cells per mora, weight γ), its span instead, and skipped notes
+between lines. Each line was then fitted with `fit_span_moras`.
+
+| landing (GAME lead) | cost/min | Δ against no lyric [95%] | wrong moras/min | vs today [95%] | placed | landed |
+|---|---|---|---|---|---|---|
+| (d) pasted in order (today) | 188.7 | 0 | 183.2 | 0 | 4.9% | 3.3% |
+| lines placed by the UST (01, b+/r: the ceiling) | 175.2 | −13.5 [−31.1, −2.7] | 83.4 | −99.7 [−107.4, −89.5] | 56.7% | 32.2% |
+| placed from sona's notes, pb 0 (chosen leave-one-song-out on edit cost) | 189.7 | +0.9 [+0.0, +2.0] | 177.2 | −6.0 [−12.2, −1.1] | 8.0% | 3.8% |
+| … pb 1 | 191.1 | +2.3 [+0.7, +4.1] | 162.8 | −20.4 [−35.4, −8.1] | 15.5% | 10.0% |
+| … pb 3 | 197.7 | +9.0 [+3.4, +15.1] | 146.5 | −36.7 [−60.5, −15.8] | 24.0% | 14.6% |
+| … pb 3, γ 0.5, skips 1 (best placement of 12 settings) | 199.0 | | 144.6 | | 25.0% | 18.2% |
+
+The stage behaves the same (placed 9–24%, edit cost +0.4 … +11.1). Lines alone instead of lines and spaces: the
+same within a few points.
+
+- **The lines drift.** With pb 3, 29% of line starts land on the right note and 36% within one note. Errors are
+  not local: once a line takes a few notes too many or too few, every later line inherits the offset until a
+  long rest happens to realign it. Songs whose line breaks are all rests (telescope, yamineko: 83–88% exact)
+  are placed well; the rest are not (amaten 5%, atamaro, fukagyakuteki and my-axiom 9%).
+- **Why.** The fit's costs say which of a phrase's notes hides a mora, not how many notes a line should take.
+  Giving each mora its own note costs nothing, hiding one costs 0.6–1.9, so a line keeps taking notes from the
+  next one. A duration term helps on one song (kamaitachi 31% → 64% exact) and hurts others. On amaten GAME lead
+  hears 21 notes in 80 moras of one section, so no note count can find the lines there.
+- **The ship rule passed on its letter and the mechanism was not ported.** The rule declared before reading
+  (wrong moras below today's with an interval excluding 0, edit cost up by less than 5) is met by pb 0: −6.0
+  wrong moras per minute, +0.9 cost. It places 8% of the moras against the ceiling's 57%, and every setting
+  that places more raises the edit cost. The rule was too weak: it should have asked for a share of the
+  ceiling.
+
+**Where the line timing has to come from instead.** The ceiling needs each line's start in time, and the notes
+cannot give it. Two sources can: the audio (align the pasted kana to the separated vocal with a local ASR or
+forced aligner, which ticket 05 evaluates anyway), or the user (mark each line's first note; on dev that is one
+mark per line: 384 lines on dev, 14 per minute, against 183 moras per minute to retype today).
+
 ## Reproduce
 
 ```sh
@@ -129,4 +168,8 @@ python3 crates/sona-eval/scripts/lyric-placement/oracles.py --dump-rows rows.jso
 python3 crates/sona-eval/scripts/lyric-placement/breaks.py
 python3 crates/sona-eval/scripts/lyric-placement/compare.py rows.json lead "b/r" "a/r"
 python3 crates/sona-eval/scripts/lyric-placement/check_port.py rust.out rows.json
+# 02: lines placed from sona's notes (Viterbi), its leave-one-song-out choice, and line-start errors
+python3 crates/sona-eval/scripts/lyric-placement/lines02.py --pb 0,1,3 --breaks line,space --dump-rows rows02.json
+python3 crates/sona-eval/scripts/lyric-placement/analyze02.py rows.json rows02.json
+python3 crates/sona-eval/scripts/lyric-placement/diag02.py lead space 3 none 0
 ```

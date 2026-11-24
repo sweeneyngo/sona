@@ -15,6 +15,9 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   UST's own phrases (GAME lead −13.5 vs −14.1 cost/min) if the fit lets rests hold moras (`fit_span_moras`); the
   shipped fit on honest phrases costs +16.5. Only 49% of line breaks sit on a sona rest, so 02 places lines by
   a song-level DP. [01](issues/01-lyric-placement-metric.md), `crates/sona-eval/reports/lyric-placement.md`.
+- 2026-11-24 (02): sona's notes cannot place the lines (a Viterbi over lines × notes drifts: 8–25% of moras
+  placed against the ceiling's 57%; not ported). Line timing must come from the audio (align the kana) or the
+  user (mark each line's first note) — the user's call. [02](issues/02-fit-notes-to-lines.md).
 
 ## Fog
 

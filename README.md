@@ -286,8 +286,9 @@ The metric is the share of grid cells that match the UST.
   today, puts the right mora on 4.9% of the UST's notes, since one missed note shifts everything after it.
   Fitting each line, with its spaces as extra breaks, puts it on 57% and cuts GAME lead's cost 188.7 → 175.2
   per minute, almost as much as the UST's own phrases (174.7), provided the fit lets a rest hold a mora
-  (`lyric_fit::fit_span_moras`). That number places the lines with the UST's timing: placing them from
-  sona's notes is the next step ([report](crates/sona-eval/reports/lyric-placement.md)).
+  (`lyric_fit::fit_span_moras`). That number places the lines with the UST's timing; placed from sona's
+  notes alone, the lines drift and only 8–25% of moras land, so the timing has to come from the audio or
+  the user ([report](crates/sona-eval/reports/lyric-placement.md)).
 - **Chopped wobble and scoop pieces need a second listen** (opt-in, dev only): the pitch track can't tell
   a one-cell glide from a short note. Merging a one-cell piece where GAME's run on the full vocals has no
   note edge (`sona_core::unheard_pieces`) cuts GAME lead's cost 188.7 → 186.8 per minute (−1.9 [−3.2,
