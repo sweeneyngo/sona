@@ -51,7 +51,7 @@ const expected: Annotation = {
       lyric: "あめが ふる\nかぜが ふく",
     },
   },
-  bar_one: { time_s: 0.42, confidence: 0.75, harmonic: true },
+  bar_one: { time_s: 0.42, confidence: 0.75, harmonic: true, source: "beat-this", harmonic_time_s: 0.17 },
 };
 
 describe("the annotation contract", () => {

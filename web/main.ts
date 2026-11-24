@@ -30,7 +30,7 @@ import { buildSchedule } from "./lib/synth";
 import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, checkLyric, splitLyrics } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
-import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
+import { barNumber, barOneDisagrees, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
 import { DEFAULT_DIVISION, GRIDS, JOB_GRIDS, isDivision, jobDivision } from "./lib/grid";
 import { effectiveNotes as interpret, exportNotes, noteSpan, notesInTimeOrder as inTimeOrder, playbackNotes, renderNotes, type EffectiveNote } from "./lib/interpret";
 import { movedNote, newNote, resizedNote, withoutNote, type Grabbed } from "./lib/noteEdits";
@@ -44,7 +44,7 @@ import { detailSections } from "./lib/provenance";
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, renderPitch, type Expression } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
-import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, songHash, submitJob, submitJobByHash, type Capabilities, type Engine, type JobRequest, type JobStatus, type Separation } from "./lib/serveClient";
+import { PHASE_LABEL, barOneChoices, beatThisNote, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, setupList, songHash, submitJob, submitJobByHash, type BarOneChoice, type Capabilities, type Engine, type JobRequest, type JobStatus, type Separation } from "./lib/serveClient";
 import { retranscribeJob, retranscribeLabel, transcribedFrom } from "./lib/retranscribe";
 import { hintBpm, parseBpm, phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
@@ -156,7 +156,8 @@ const el = {
   songGrid: document.getElementById("song-grid") as HTMLSelectElement,
   songSeparation: document.getElementById("song-separation") as HTMLSelectElement,
   songEngine: document.getElementById("song-engine") as HTMLSelectElement,
-  songBarOne: document.getElementById("song-bar-one") as HTMLInputElement,
+  songBarOne: document.getElementById("song-bar-one") as HTMLSelectElement,
+  songBarOneNote: document.getElementById("song-bar-one-note") as HTMLParagraphElement,
   songGo: document.getElementById("song-go") as HTMLButtonElement,
   songError: document.getElementById("song-error") as HTMLParagraphElement,
   songRunning: document.getElementById("song-running") as HTMLDivElement,
@@ -405,6 +406,7 @@ function exportTickZero(): number {
 function syncBarOne(): void {
   const estimate = annotation?.bar_one ?? null;
   el.barOneReadout.textContent = barOneLabel(currentFrame(), estimate);
+  el.barOneReadout.classList.toggle("disagree", estimate !== null && barOne === estimate.time_s && barOneDisagrees(estimate));
   el.barOneAuto.disabled = barOne === (estimate?.time_s ?? null);
   el.barOneAuto.title = estimate ? "Bar 1 where sona estimated it from the music" : "Bar 1 on the first grid line, as before";
 }
@@ -2400,7 +2402,7 @@ function renderStart(): void {
     el.songError.hidden = !s.error;
     el.songError.textContent = s.error ?? "";
   }
-  el.setupNotes.hidden = !serveCaps?.setup.length || (s.kind !== "idle" && s.kind !== "ready");
+  el.setupNotes.hidden = !serveCaps || setupList(serveCaps).length === 0 || (s.kind !== "idle" && s.kind !== "ready");
   el.songRunning.hidden = s.kind !== "running";
   if (s.kind === "running") {
     el.songRunningName.textContent = s.name;
@@ -2435,13 +2437,19 @@ function applyCapabilities(caps: Capabilities): void {
   el.songSeparation.value = d.separation;
   el.songEngine.value = d.engine;
   el.setupNotes.replaceChildren(
-    ...caps.setup.map((n) => {
+    ...setupList(caps).map((n) => {
       const li = document.createElement("li");
       li.textContent = n.message;
       li.classList.toggle("missing", n.status === "missing");
       return li;
     }),
   );
+  const choices = barOneChoices(caps);
+  for (const opt of Array.from(el.songBarOne.options)) opt.hidden = opt.disabled = !choices.includes(opt.value as BarOneChoice);
+  if (!choices.includes(el.songBarOne.value as BarOneChoice)) el.songBarOne.value = "off";
+  const note = beatThisNote(caps);
+  el.songBarOneNote.textContent = note ?? "";
+  el.songBarOneNote.hidden = note === null;
   syncBarOneOption();
   dispatchStart({ type: "serve-found" });
   syncTempoChip();
@@ -2481,8 +2489,9 @@ async function transcribeSong(): Promise<void> {
   const s = startState;
   if (!awaitingJob(attempt) || s.kind !== "running") return;
   const separation = el.songSeparation.value as Separation;
-  const barOneWanted = el.songBarOne.checked && separation !== "none";
-  await submitSong(attempt, { bpm: s.bpm, grid: jobDivision(el.songGrid.value), separation, engine: el.songEngine.value as Engine, name: s.name, lyric: s.lyric, ...(barOneWanted ? { barOne: true } : {}) });
+  const choice = el.songBarOne.value as BarOneChoice;
+  const barOne = choice !== "off" && separation !== "none" ? { barOne: choice } : {};
+  await submitSong(attempt, { bpm: s.bpm, grid: jobDivision(el.songGrid.value), separation, engine: el.songEngine.value as Engine, name: s.name, lyric: s.lyric, ...barOne });
 }
 
 /** Transcribe the editor's song again at the tempo and grid set in the popover, by its hash (ADR-0032). */
@@ -2497,7 +2506,7 @@ async function retranscribe(): Promise<void> {
   el.songSeparation.value = job.separation;
   el.songEngine.value = job.engine;
   el.songGrid.value = String(job.grid);
-  el.songBarOne.checked = job.barOne === true;
+  el.songBarOne.value = job.barOne ?? "off";
   syncBarOneOption();
   setTempoPop(false);
   dispatchStart({ type: "retranscribe", attempt, song, name: job.name, bpm: job.bpm, hash: t.hash, file, lyric: t.lyric });

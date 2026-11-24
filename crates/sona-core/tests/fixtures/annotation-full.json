@@ -105,6 +105,8 @@
   "bar_one": {
     "time_s": 0.42,
     "confidence": 0.75,
-    "harmonic": true
+    "harmonic": true,
+    "source": "beat-this",
+    "harmonic_time_s": 0.17
   }
 }

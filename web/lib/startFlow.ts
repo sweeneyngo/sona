@@ -155,6 +155,10 @@ export function phaseProgress(phase: Phase, separation: "none" | "vocals" | "lea
       : separation === "vocals"
         ? ["queued", "separating-vocals", "transcribing", "done"]
         : ["queued", "decoding", "transcribing", "done"];
+  if (phase === "finding-bar-one") {
+    const t = steps.indexOf("transcribing");
+    return (t - 0.5) / (steps.length - 1);
+  }
   const i = steps.indexOf(phase);
   return i < 0 ? 0 : i / (steps.length - 1);
 }

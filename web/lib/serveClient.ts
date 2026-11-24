@@ -2,12 +2,17 @@ import type { JobDivision } from "./grid";
 
 export type Separation = "none" | "vocals" | "lead";
 export type Engine = "pyin" | "game" | "cells";
-export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-lead" | "transcribing" | "done" | "failed" | "cancelled";
+export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-lead" | "finding-bar-one" | "transcribing" | "done" | "failed" | "cancelled";
+/** Where a job takes bar 1 from in the music: the harmony (ADR-0031) or Beat This's downbeats (ADR-0036). */
+export type BarOneSource = "harmonic" | "beat-this";
+/** The start screen's bar-1 choice: today's rule (the first grid line), or a source in the music. */
+export type BarOneChoice = "off" | BarOneSource;
 
-/** Something separation still needs: `missing` turns options off, `first-use` only means a download. */
+/** Something separation still needs: `missing` turns options off, `first-use` only means a download,
+ * `optional` is an opt-in tool that isn't installed (only its own choice is off). */
 export interface SetupNote {
   piece: string;
-  status: "missing" | "first-use";
+  status: "missing" | "first-use" | "optional";
   message: string;
 }
 
@@ -15,6 +20,7 @@ export interface Capabilities {
   separation: Record<Separation, boolean>;
   engines: Record<Engine, boolean>;
   tempo: boolean;
+  barOne: Record<BarOneSource, boolean>;
   setup: SetupNote[];
 }
 
@@ -33,8 +39,8 @@ export interface JobRequest {
   separation: Separation;
   engine: Engine;
   name: string;
-  /** Also estimate bar 1 from the music (opt-in; needs separation). */
-  barOne?: boolean;
+  /** Also estimate bar 1 from the music, and from what (opt-in; needs separation). */
+  barOne?: BarOneSource;
   /** The song's lyric, one sung line per line (lyrics-first 03); the server keeps it with the job. */
   lyric?: string;
 }
@@ -48,7 +54,7 @@ export class ServeError extends Error {
   }
 }
 
-const PHASES: readonly Phase[] = ["queued", "decoding", "separating-vocals", "separating-lead", "transcribing", "done", "failed", "cancelled"];
+const PHASES: readonly Phase[] = ["queued", "decoding", "separating-vocals", "separating-lead", "finding-bar-one", "transcribing", "done", "failed", "cancelled"];
 const FINAL: readonly Phase[] = ["done", "failed", "cancelled"];
 
 export const isFinal = (p: Phase): boolean => FINAL.includes(p);
@@ -58,6 +64,7 @@ export const PHASE_LABEL: Record<Phase, string> = {
   decoding: "Reading audio",
   "separating-vocals": "Separating vocals",
   "separating-lead": "Isolating the lead",
+  "finding-bar-one": "Finding bar 1 (Beat This)",
   transcribing: "Writing notes",
   done: "Done",
   failed: "Failed",
@@ -77,8 +84,13 @@ function bools<K extends string>(v: unknown, keys: readonly K[]): Record<K, bool
 function parseSetupNote(v: unknown): SetupNote[] {
   if (typeof v !== "object" || v === null) return [];
   const o = v as Record<string, unknown>;
-  if (typeof o.piece !== "string" || typeof o.message !== "string" || (o.status !== "missing" && o.status !== "first-use")) return [];
+  if (typeof o.piece !== "string" || typeof o.message !== "string" || (o.status !== "missing" && o.status !== "first-use" && o.status !== "optional")) return [];
   return [{ piece: o.piece, status: o.status, message: o.message }];
+}
+
+/** A server from before ADR-0036 reports no `bar_one`: it offers the harmony only. */
+function parseBarOneSources(v: unknown): Record<BarOneSource, boolean> {
+  return v === undefined ? { harmonic: true, "beat-this": false } : bools(v, ["harmonic", "beat-this"] as const);
 }
 
 export function parseCapabilities(v: unknown): Capabilities {
@@ -87,8 +99,24 @@ export function parseCapabilities(v: unknown): Capabilities {
     separation: bools(o.separation, ["none", "vocals", "lead"] as const),
     engines: bools(o.engines, ["pyin", "game", "cells"] as const),
     tempo: o.tempo === true,
+    barOne: parseBarOneSources(o.bar_one),
     setup: Array.isArray(o.setup) ? o.setup.flatMap(parseSetupNote) : [],
   };
+}
+
+/** The bar-1 choices the start screen offers: today's rule always, and each source this server can run. */
+export function barOneChoices(caps: Capabilities): BarOneChoice[] {
+  return ["off", ...(["harmonic", "beat-this"] as const).filter((s) => caps.barOne[s])];
+}
+
+/** The setup notes the start screen lists: what separation needs. An optional tool's note shows beside its own choice. */
+export function setupList(caps: Capabilities): SetupNote[] {
+  return caps.setup.filter((n) => n.status !== "optional");
+}
+
+/** Why Beat This isn't offered and how to install it, when the server says so. */
+export function beatThisNote(caps: Capabilities): string | null {
+  return caps.barOne["beat-this"] ? null : (caps.setup.find((n) => n.piece === "beat-this")?.message ?? null);
 }
 
 export function parseJobStatus(v: unknown): JobStatus {
@@ -108,7 +136,7 @@ export function parseJobStatus(v: unknown): JobStatus {
 /** The job's query; `upload` names the song by its SHA-256 instead of sending it (ADR-0032). */
 export function jobQuery(r: JobRequest, upload?: string): string {
   const q = new URLSearchParams({ bpm: String(r.bpm), grid: String(r.grid), separation: r.separation, engine: r.engine, name: r.name });
-  if (r.barOne) q.set("bar_one", "1");
+  if (r.barOne) q.set("bar_one", r.barOne === "harmonic" ? "1" : r.barOne);
   if (r.lyric !== undefined) q.set("lyric", r.lyric);
   if (upload !== undefined) q.set("upload", upload);
   return `/api/jobs?${q.toString()}`;

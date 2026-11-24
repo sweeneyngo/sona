@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ServeError, defaultJob, estimateTempo, fetchJobOrCancel, isFinal, isSha256, jobQuery, parseCapabilities, parseJobStatus, songHash, submitJobByHash } from "./serveClient";
+import { ServeError, barOneChoices, beatThisNote, defaultJob, estimateTempo, fetchJobOrCancel, isFinal, isSha256, jobQuery, parseCapabilities, parseJobStatus, setupList, songHash, submitJobByHash } from "./serveClient";
 
 describe("serve client boundary", () => {
   it("parses capabilities, treating anything but true as unavailable", () => {
@@ -7,6 +7,7 @@ describe("serve client boundary", () => {
       separation: { none: true, vocals: true, lead: false },
       engines: { pyin: true, game: false, cells: false },
       tempo: false,
+      barOne: { harmonic: true, "beat-this": false },
       setup: [],
     });
     expect(parseCapabilities({ separation: {}, engines: {}, tempo: true }).tempo).toBe(true);
@@ -24,7 +25,7 @@ describe("serve client boundary", () => {
   });
 
   it("defaults a job to the best separation and engine the server has", () => {
-    const caps = (lead: boolean, vocals: boolean, game: boolean) => ({ separation: { none: true, vocals, lead }, engines: { pyin: true, game, cells: false }, tempo: true, setup: [] });
+    const caps = (lead: boolean, vocals: boolean, game: boolean) => ({ separation: { none: true, vocals, lead }, engines: { pyin: true, game, cells: false }, tempo: true, barOne: { harmonic: true, "beat-this": false }, setup: [] });
     expect(defaultJob(caps(true, true, true))).toEqual({ separation: "lead", engine: "game" });
     expect(defaultJob(caps(false, true, false))).toEqual({ separation: "vocals", engine: "pyin" });
     expect(defaultJob(caps(false, false, false))).toEqual({ separation: "none", engine: "pyin" });
@@ -34,6 +35,7 @@ describe("serve client boundary", () => {
   });
 
   it("parses a job status and rejects unknown phases", () => {
+    expect(parseJobStatus({ id: "b", phase: "finding-bar-one" }).phase).toBe("finding-bar-one");
     const s = parseJobStatus({ id: "a1", name: "song.wav", phase: "separating-lead", error: null, elapsed_s: 12.5, log: ["x", 3] });
     expect(s).toEqual({ id: "a1", name: "song.wav", phase: "separating-lead", error: null, elapsedS: 12.5, log: ["x"] });
     expect(isFinal(s.phase)).toBe(false);
@@ -52,8 +54,22 @@ describe("serve client boundary", () => {
   it("asks for bar 1 only when the job opts in, and leaves the default query as it was", () => {
     const base = { bpm: 128, grid: 16, separation: "vocals", engine: "pyin", name: "a.wav" } as const;
     expect(jobQuery(base)).toBe("/api/jobs?bpm=128&grid=16&separation=vocals&engine=pyin&name=a.wav");
-    expect(jobQuery({ ...base, barOne: false })).toBe(jobQuery(base));
-    expect(new URLSearchParams(jobQuery({ ...base, barOne: true }).split("?")[1]).get("bar_one")).toBe("1");
+    expect(jobQuery({ ...base, barOne: undefined })).toBe(jobQuery(base));
+    expect(jobQuery({ ...base, barOne: "harmonic" })).toBe(`${jobQuery(base)}&bar_one=1`);
+    expect(new URLSearchParams(jobQuery({ ...base, barOne: "beat-this" }).split("?")[1]).get("bar_one")).toBe("beat-this");
+  });
+
+  it("offers Beat This only when the server has it, and otherwise says how to install it", () => {
+    const install = { piece: "beat-this", status: "optional", blocks: [], message: "Beat This, an optional source of bar 1, isn't installed: run scripts/setup-separators.sh beat-this." };
+    const ffmpeg = { piece: "ffmpeg", status: "missing", blocks: ["vocals", "lead"], message: "ffmpeg doesn't run." };
+    const without = parseCapabilities({ separation: {}, engines: {}, bar_one: { harmonic: true, "beat-this": false }, setup: [ffmpeg, install] });
+    expect(barOneChoices(without)).toEqual(["off", "harmonic"]);
+    expect(beatThisNote(without)).toBe(install.message);
+    expect(setupList(without).map((n) => n.piece)).toEqual(["ffmpeg"]);
+    const withIt = parseCapabilities({ separation: {}, engines: {}, bar_one: { harmonic: true, "beat-this": true }, setup: [] });
+    expect(barOneChoices(withIt)).toEqual(["off", "harmonic", "beat-this"]);
+    expect(beatThisNote(withIt)).toBeNull();
+    expect(barOneChoices(parseCapabilities({ separation: {}, engines: {}, bar_one: { harmonic: false, "beat-this": "yes" } }))).toEqual(["off"]);
   });
 
   it("sends the lyric with its line breaks, and leaves it out when the job has none", () => {
@@ -87,7 +103,7 @@ describe("serve client boundary", () => {
 
   describe("a job named by the song's hash", () => {
     afterEach(() => vi.unstubAllGlobals());
-    const req = { bpm: 61.5, grid: 24, separation: "lead", engine: "pyin", name: "a.mp3", barOne: true } as const;
+    const req = { bpm: 61.5, grid: 24, separation: "lead", engine: "pyin", name: "a.mp3", barOne: "harmonic" } as const;
     const sha = "0123456789abcdef".repeat(4);
     const server = (answer: () => Response) => {
       const sent: { path: string; body: unknown }[] = [];

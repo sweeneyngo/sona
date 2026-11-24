@@ -2,17 +2,24 @@
 # Create the Python environments that `sona serve` (and the corpus scripts) use to separate vocals:
 #   demucs  → ~/.local/share/sona/demucs-venv     (vocals from a song; htdemucs)
 #   lead    → ~/.local/share/sona/separator-venv  (the lead singer from the vocals; UVR karaoke)
+# and, only when asked for (not part of `all`):
+#   beat-this → Beat This! in the lead venv, as bin/sona-beat-this (an opt-in bar-1 source; ADR-0036)
 # They live outside the Rust workspace and never become crate dependencies (ADR-0005).
 # One-time, about 2 GB each (CPU torch), plus the models they run: the htdemucs weights (84 MB, in
 # torch's cache) and the UVR karaoke model (53 MB, in the lead venv's models/). Already-built
 # environments and already-downloaded models are left as they are.
 #
-# Usage:  scripts/setup-separators.sh [demucs|lead|all]     (default: all)
+# Beat This! (CPJKU; code and weights MIT) adds torchaudio and beat-this to the lead venv (the venv's torch
+# stays), and its final0 checkpoint (81 MB) to torch's cache.
+#
+# Usage:  scripts/setup-separators.sh [demucs|lead|all|beat-this]     (default: all)
 # Env:    SONA_DEMUCS_VENV, SONA_LEAD_VENV, SONA_LEAD_MODEL, SONA_PYTHON (a Python 3.10–3.12 interpreter)
 set -euo pipefail
 
 DEMUCS_VERSION="4.0.1"
 TORCH_VERSION="2.5.1"
+BEAT_THIS_VERSION="1.1.0"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 demucs_venv="${SONA_DEMUCS_VENV:-$HOME/.local/share/sona/demucs-venv}"
 lead_venv="${SONA_LEAD_VENV:-$HOME/.local/share/sona/separator-venv}"
 lead_model="${SONA_LEAD_MODEL:-UVR_MDXNET_KARA_2.onnx}"
@@ -71,9 +78,33 @@ setup_lead() {
   echo "lead separator ready: $lead_venv ($lead_model in $lead_venv/models)"
 }
 
+setup_beat_this() {
+  [ -x "$lead_venv/bin/audio-separator" ] || setup_lead
+  local py="$lead_venv/bin/python"
+  if [ "$("$py" -c 'import importlib.metadata as m; print(m.version("beat-this"))' 2>/dev/null)" != "$BEAT_THIS_VERSION" ] \
+      || ! "$py" -c "import torchaudio" >/dev/null 2>&1; then
+    echo "Adding Beat This! $BEAT_THIS_VERSION to $lead_venv"
+    # Keep the venv's torch: audio-separator and torchvision were installed against it.
+    local constraints
+    constraints="$(mktemp)"
+    "$py" -c 'import torch; print("torch==" + torch.__version__.split("+")[0])' > "$constraints"
+    "$py" -m pip install --quiet torchaudio -c "$constraints" --index-url https://download.pytorch.org/whl/cpu
+    "$py" -m pip install --quiet "beat-this==$BEAT_THIS_VERSION" -c "$constraints"
+    rm -f "$constraints"
+  fi
+  { echo "#!$py -I"; cat "$here/sona-beat-this.py"; } > "$lead_venv/bin/sona-beat-this.part"
+  chmod +x "$lead_venv/bin/sona-beat-this.part"
+  mv "$lead_venv/bin/sona-beat-this.part" "$lead_venv/bin/sona-beat-this"
+  # The tool's first run would download the checkpoint; fetch it now, into torch's cache.
+  (cd "$lead_venv" && "$py" -I -c "from beat_this.inference import load_checkpoint; load_checkpoint('final0')" >/dev/null)
+  "$py" -c "import audio_separator.separator" >/dev/null
+  echo "Beat This ready: $lead_venv/bin/sona-beat-this (final0 checkpoint in torch's cache)"
+}
+
 case "${1:-all}" in
   demucs) setup_demucs ;;
   lead) setup_lead ;;
   all) setup_demucs; setup_lead ;;
-  *) echo "usage: $0 [demucs|lead|all]" >&2; exit 2 ;;
+  beat-this) setup_beat_this ;;
+  *) echo "usage: $0 [demucs|lead|all|beat-this]" >&2; exit 2 ;;
 esac

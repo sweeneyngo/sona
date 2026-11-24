@@ -52,15 +52,33 @@ pub struct Annotation {
 }
 
 /// Where bar 1 falls in the music, in stem seconds (`sona_core::bar_one`).
+///
+/// From the harmony (ADR-0031) unless `source` names a downbeat tracker (ADR-0036); the harmonic
+/// estimate's JSON has no `source` or `harmonic_time_s`, as before.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BarOneEstimate {
     /// The first bar line at or after 0 s, on a grid line.
     pub time_s: f64,
-    /// Share of the song's 8-bar blocks whose harmonic vote agrees, in `0..=1`.
+    /// From the harmony: the share of the song's 8-bar blocks whose vote agrees. From a tracker: the
+    /// share of its downbeats that voted for this bar line. In `0..=1`.
     pub confidence: f64,
-    /// `true` when `time_s` is the harmonic bar line; `false` when the harmony was too weak and it is
-    /// the first beat.
+    /// `true` when `time_s` is a bar line the source found; `false` when it fell back to the first beat
+    /// (the harmony too weak, or the tracker gave no downbeats).
     pub harmonic: bool,
+    /// The downbeat tracker the bar came from; absent for the harmony.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<BarOneSource>,
+    /// With a tracker: where the harmony puts bar 1 (ADR-0031's rule), so the app can flag a disagreement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harmonic_time_s: Option<f64>,
+}
+
+/// A source of bar 1 other than the harmony.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BarOneSource {
+    /// Beat This! (CPJKU), run as a user-installed tool.
+    BeatThis,
 }
 
 /// Everything needed to answer "what produced this?": the build, the exact input and model files, the
@@ -272,9 +290,18 @@ mod tests {
     fn bar_one_is_absent_from_the_json_unless_estimated() {
         let plain = serde_json::to_value(sample_annotation()).unwrap();
         assert!(plain.get("bar_one").is_none(), "{plain}");
-        let with = Annotation { bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }), ..sample_annotation() };
+        let with = Annotation { bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true, source: None, harmonic_time_s: None }), ..sample_annotation() };
         let json = serde_json::to_value(&with).unwrap();
         assert_eq!(json["bar_one"], serde_json::json!({ "time_s": 0.42, "confidence": 0.75, "harmonic": true }));
+        assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
+    }
+
+    #[test]
+    fn a_tracker_s_bar_one_names_its_source_and_the_harmony_s_bar() {
+        let tracked = BarOneEstimate { time_s: 0.9, confidence: 0.97, harmonic: true, source: Some(BarOneSource::BeatThis), harmonic_time_s: Some(0.42) };
+        let with = Annotation { bar_one: Some(tracked), ..sample_annotation() };
+        let json = serde_json::to_value(&with).unwrap();
+        assert_eq!(json["bar_one"], serde_json::json!({ "time_s": 0.9, "confidence": 0.97, "harmonic": true, "source": "beat-this", "harmonic_time_s": 0.42 }));
         assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
     }
 
@@ -314,7 +341,7 @@ mod tests {
                     lyric: Some("あめが ふる\nかぜが ふく".into()),
                 }),
             }),
-            bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }),
+            bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true, source: Some(BarOneSource::BeatThis), harmonic_time_s: Some(0.17) }),
             notes: sample_annotation().notes.into_iter().map(|n| Note { stage_doubt: Some(StageDoubt { length: 0.75, unsure: 0.5 }), ..n }).collect(),
             ..sample_annotation()
         }

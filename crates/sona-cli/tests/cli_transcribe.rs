@@ -157,7 +157,7 @@ fn the_missing_stem_error_names_every_transcribe_option_as_help_does() {
         .lines()
         .filter_map(|l| l.strip_prefix("    --").map(|rest| rest.split([' ', '<']).next().unwrap()))
         .collect();
-    let parsed = ["bpm", "midi", "grid", "no-salience", "no-spectral-cue", "game", "no-octave-check", "cell-model", "vocals", "bar-one"];
+    let parsed = ["bpm", "midi", "grid", "no-salience", "no-spectral-cue", "game", "no-octave-check", "cell-model", "vocals", "bar-one", "bar-one-tracker", "beat-this", "beat-this-threads", "tool-timeout"];
     assert_eq!(options, parsed, "--help lists the options the parser takes");
 
     let out = sona().args(["transcribe", "--bpm", "120"]).output().expect("run sona");
@@ -305,6 +305,86 @@ fn bar_one_is_estimated_only_when_asked_for() {
     assert_eq!(b["confidence"].as_f64(), Some(0.0), "{b}");
     assert_eq!(with["provenance"]["settings"]["bar_one"], "mix");
     assert_eq!(with["notes"], plain["notes"], "the notes don't depend on bar 1");
+}
+
+/// A stand-in for `sona-beat-this`: records its arguments in `<path>.calls`, runs `extra`, then writes
+/// `downbeats` as its result to the file after `--out`.
+#[cfg(unix)]
+fn fake_beat_this(name: &str, downbeats: &[f64], extra: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = tmp(name);
+    let list = downbeats.iter().map(f64::to_string).collect::<Vec<_>>().join(", ");
+    let body = format!(
+        "#!/bin/sh\nset -e\necho \"$@\" >> \"$0.calls\"\n{extra}\nwhile [ \"$1\" != \"--out\" ]; do shift; done\nprintf '{{\"beats\": [], \"downbeats\": [{list}], \"beat_this\": \"1.1.0\", \"checkpoint\": \"final0\", \"checkpoint_path\": null}}' > \"$2\"\n"
+    );
+    std::fs::write(&path, body).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _ = std::fs::remove_file(path.with_extension("calls"));
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn beat_this_s_downbeats_put_bar_one_on_the_beat_most_of_them_fall_on() {
+    let (mix, vocals) = song_and_vocals(0.1);
+    let (mix_wav, vocals_wav) = (tmp("beat_this_mix.wav"), tmp("beat_this_vocals.wav"));
+    write_wav(&mix_wav, &mix);
+    write_wav(&vocals_wav, &vocals);
+    let mut downbeats: Vec<f64> = (0..5).map(|bar| 1.1 + 2.0 * f64::from(bar) + 0.02).collect();
+    downbeats.extend([0.62, 4.58]);
+    let tool = fake_beat_this("beat_this_fake", &downbeats, "");
+    let args = ["transcribe", vocals_wav.to_str().unwrap(), "--bpm", "120", "--grid", "16", "--bar-one", mix_wav.to_str().unwrap(), "--bar-one-tracker", "beat-this", "--beat-this", tool.to_str().unwrap()];
+    let out = sona().args(args).output().expect("run sona");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let with: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let b = &with["bar_one"];
+    assert!((b["time_s"].as_f64().unwrap() - 0.1 - 1.0).abs() < 0.005, "the first beat is 0.1 s; 5 of 7 downbeats fall 2 beats after it: {b}");
+    assert!((b["confidence"].as_f64().unwrap() - 5.0 / 7.0).abs() < 1e-9, "{b}");
+    assert_eq!((b["harmonic"].as_bool(), b["source"].as_str()), (Some(true), Some("beat-this")), "{b}");
+    assert!((b["harmonic_time_s"].as_f64().unwrap() - 0.1).abs() < 0.005, "the harmony's bar 1 (here its beat fallback) is kept beside it: {b}");
+    let settings = &with["provenance"]["settings"];
+    assert_eq!((settings["bar_one"].as_str(), settings["bar_one_source"].as_str(), settings["beat_this"].as_str()), (Some("mix"), Some("beat-this"), Some("1.1.0")));
+    assert_eq!(settings["beat_this_threads"], "1");
+    let calls = std::fs::read_to_string(tool.with_extension("calls")).unwrap();
+    assert!(calls.starts_with("--threads 1 --out ") && calls.trim_end().ends_with(mix_wav.to_str().unwrap()), "one thread by default, on the mix: {calls}");
+}
+
+#[cfg(unix)]
+#[test]
+fn beat_this_says_how_to_install_it_and_is_stopped_at_its_time_limit() {
+    let (mix, vocals) = song_and_vocals(0.1);
+    let (mix_wav, vocals_wav) = (tmp("beat_this_limit_mix.wav"), tmp("beat_this_limit_vocals.wav"));
+    write_wav(&mix_wav, &mix);
+    write_wav(&vocals_wav, &vocals);
+    let run = |extra: &[&str]| {
+        let mut args = vec!["transcribe", vocals_wav.to_str().unwrap(), "--bpm", "120", "--bar-one", mix_wav.to_str().unwrap(), "--bar-one-tracker", "beat-this"];
+        args.extend(extra);
+        sona().args(&args).env("SONA_LEAD_VENV", "/nonexistent/separator-venv").output().expect("run sona")
+    };
+    let out = run(&[]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("/nonexistent/separator-venv/bin/sona-beat-this") && err.contains("setup-separators.sh beat-this"), "{err}");
+
+    let hung = fake_beat_this("beat_this_hung", &[1.1], "echo 'loading final0' >&2\nexec sleep 30");
+    let t0 = std::time::Instant::now();
+    let out = run(&["--beat-this", hung.to_str().unwrap(), "--tool-timeout", "1"]);
+    assert!(t0.elapsed() < std::time::Duration::from_secs(10), "the hung tool held sona for {:?}", t0.elapsed());
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("stopped after 1 s") && err.contains("loading final0") && err.contains("--tool-timeout"), "{err}");
+
+    let failing = fake_beat_this("beat_this_failing", &[], "echo 'No module named beat_this' >&2\nexit 1");
+    let out = run(&["--beat-this", failing.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("No module named beat_this"), "{}", String::from_utf8_lossy(&out.stderr));
+
+    for (extra, expect) in [(vec!["--bar-one-tracker", "madmom"], "harmonic or beat-this"), (vec!["--beat-this-threads", "0"], "at least 1")] {
+        let out = run(&extra);
+        assert!(String::from_utf8_lossy(&out.stderr).contains(expect), "{extra:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    let out = sona().args(["transcribe", vocals_wav.to_str().unwrap(), "--bpm", "120", "--bar-one-tracker", "beat-this"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("add --bar-one"), "{}", String::from_utf8_lossy(&out.stderr));
 }
 
 #[test]

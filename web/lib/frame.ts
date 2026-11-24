@@ -108,9 +108,16 @@ export type FrameEvent =
 export function parseBarOne(raw: unknown): BarOneEstimate | null {
   if (typeof raw !== "object" || raw === null) return null;
   const o = raw as Record<string, unknown>;
-  const { time_s, confidence, harmonic } = o;
+  const { time_s, confidence, harmonic, source, harmonic_time_s } = o;
   if (typeof time_s !== "number" || !Number.isFinite(time_s) || typeof confidence !== "number" || !(confidence >= 0 && confidence <= 1) || typeof harmonic !== "boolean") return null;
-  return { time_s, confidence, harmonic };
+  if (source === undefined && harmonic_time_s === undefined) return { time_s, confidence, harmonic };
+  if (source !== "beat-this" || typeof harmonic_time_s !== "number" || !Number.isFinite(harmonic_time_s)) return null;
+  return { time_s, confidence, harmonic, source, harmonic_time_s };
+}
+
+/** Whether Beat This and the harmony put bar 1 on different beats: the case to check by ear (ADR-0036). */
+export function barOneDisagrees(estimate: BarOneEstimate | null): boolean {
+  return estimate?.harmonic_time_s !== undefined && Math.abs(estimate.harmonic_time_s - estimate.time_s) > 1e-3;
 }
 
 /** What the ♩ popover says bar 1 is. */
@@ -119,6 +126,11 @@ export function barOneLabel(f: Frame, estimate: BarOneEstimate | null): string {
   const at = `${downbeat(f).toFixed(3)} s`;
   if (estimate === null || f.barOne !== estimate.time_s) return at;
   const pct = Math.round(estimate.confidence * 100);
+  if (estimate.source === "beat-this") {
+    const found = estimate.harmonic ? `${at} · Beat This (${pct}%)` : `${at} · the music's beat (Beat This found no downbeats)`;
+    const harmony = estimate.harmonic_time_s;
+    return harmony === undefined ? found : barOneDisagrees(estimate) ? `${found} · the harmony says ${harmony.toFixed(3)} s` : `${found} · the harmony agrees`;
+  }
   return estimate.harmonic ? `${at} · from the music (${pct}%)` : `${at} · the music's beat (bar unsure, ${pct}%)`;
 }
 
