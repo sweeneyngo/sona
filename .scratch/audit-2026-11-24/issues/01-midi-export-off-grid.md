@@ -1,6 +1,6 @@
 # 01 — MIDI export lands off the grid and on a different timeline from UST/USTX
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: —
 

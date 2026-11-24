@@ -2,7 +2,7 @@
 
 Status: needs-triage
 Type: prototype
-Blocked by: 03
+Blocked by: 03, audit A02 (export frame), audit A03 (what bar 1 means)
 
 ## What
 

@@ -1,8 +1,8 @@
 # 09 — Docs that disagree with the code (export timing, grid phase, CLI help, stale ADR lines)
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
-Blocked by: — (the export lines change again with 01/02; fix them in the same commits)
+Blocked by: 01, 02, 04, 05, 07
 
 ## Evidence
 

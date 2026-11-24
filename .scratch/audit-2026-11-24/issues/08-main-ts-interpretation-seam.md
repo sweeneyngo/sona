@@ -1,8 +1,8 @@
 # 08 — Pull note interpretation and timing edits out of `web/main.ts` so they can be tested
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
-Blocked by: 01 (it creates the export seam; this ticket does the rest)
+Blocked by: 01, 02
 
 ## Evidence
 

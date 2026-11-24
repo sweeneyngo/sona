@@ -1,6 +1,6 @@
 # 05 — `sona serve`: a panic kills the only worker silently; hung children block the queue
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: —
 

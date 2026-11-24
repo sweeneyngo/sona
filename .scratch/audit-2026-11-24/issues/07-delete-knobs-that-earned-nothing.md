@@ -1,8 +1,8 @@
 # 07 — Delete the knobs and code paths that were measured and lost
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
-Blocked by: —
+Blocked by: 05
 
 Project rule (`~/.claude/CLAUDE.md` §3, rules.md): "delete knobs that default off and earned nothing".
 Each item below was measured and rejected, or is a placeholder, and is still compiled into the product

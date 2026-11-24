@@ -1,6 +1,6 @@
 # 04 — Re-transcribing costs a full re-run: reuse separated stems, parallelise pYIN, clean the jobs dir
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: — (pairs with utau-edit-cost 04, "ask for the BPM first")
 

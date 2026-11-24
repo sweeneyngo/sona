@@ -1,6 +1,6 @@
 # 02 — Make OpenUtau's beats and measures match the editor's (export tick 0 is chosen modulo one cell)
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: — (do after 01, which creates the single export seam; utau-edit-cost 05 needs this to have any effect)
 

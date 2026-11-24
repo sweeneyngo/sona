@@ -1,6 +1,6 @@
 # 06 — The output invariants skip the engines sona recommends (GAME, GAME + learned stage)
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: —
 

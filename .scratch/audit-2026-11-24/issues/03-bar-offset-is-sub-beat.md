@@ -1,8 +1,8 @@
 # 03 — The bar offset is sub-beat: measure it in cells; "nearest grid line to 0 s" is a candidate prior
 
-Status: needs-triage
+Status: ready-for-agent
 Type: research
-Blocked by: utau-edit-cost 02 (frame metrics), to repeat with sona's own phase; 02 above, to make any prior reach the export
+Blocked by: — (utau-edit-cost 02 is resolved; a new default would also need audit 02 to reach the export)
 
 ## Evidence
 
@@ -62,3 +62,13 @@ under the prior beats today's rule (which this table predicts is near 0/10, unve
 song is explained, and the bias check is written down either way.
 
 ## Comments
+
+- 2026-11-24 (triage): **merged with utau-edit-cost 02's finding.** On 6/9 dev songs the drums stem's beat
+  phase peaks one cell *after* the UST's beat lines, and sona's tick 0 lands on the drums' beat on 5 of
+  those. Two readings: (a) Pifuyuu's grid is a 16th off the music on those songs, or (b) our
+  `alignment_offset_s` is biased early by about a cell (consonant onsets), which would make the UST look
+  early against the drums. Decide between them **before** proposing any default: compare
+  `alignment_offset_s` with an alignment on vowel onsets and with the drums' beat phase, per dev song.
+  For the user, the truth that matters is the **music's** beat and bar, because that is what they hear
+  against the instrumental in OpenUtau. Frame metrics live in `sona-eval-frame` (`sona_eval::frame`).
+

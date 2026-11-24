@@ -25,6 +25,11 @@ a line below.
 - 2026-11-24, **04 resolved** (merged af495ae, ADR-0028, verified): the BPM field starts empty and
   focused; the estimate and its ½× are whole-BPM hint buttons; decimals accepted; TLA+ adds `BpmIsYours`.
   Removes drift whenever the user types the true BPM.
+- 2026-11-24, **audit merged** (`../audit-2026-11-24/summary.md`): 9 tickets, all triaged ready. Two hit
+  this effort directly: MIDI export skips the grid shift (A01), and export tick 0 is the anchor mod one
+  cell, so the editor's beats match OpenUtau's 1 time in 4 and **05 has nowhere to put beat 1** until A02
+  lands. **05 is now blocked by A02 and A03.** A03 settles what "bar 1" means first: Pifuyuu's grid or the
+  music's beat (they disagree by a cell on 6/9 dev songs, possibly an alignment bias).
 
 ## Fog
 
