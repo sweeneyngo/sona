@@ -1,14 +1,15 @@
 # Browser drivers
 
-Playwright scripts that use the real app the way a person does and print what they observed. They are
-how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet (`docs/roadmap.md`, 6.4).
+Playwright scripts that use the real app the way a person does, print what they observed, and exit non-zero
+when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
+(`docs/roadmap.md`, 6.4).
 
 | Driver | Checks |
 |---|---|
 | `song_to_notes.py` | Drop a song: the BPM field is empty and focused, the estimate is only a hint, Transcribe refuses an empty field, picking the ½× hint fills it; Transcribe, notes loaded with fitted pitch; play/pause, the tempo popover, the View menu by keyboard, File → New song and Back. Needs `sona serve`. |
 | `bar_one.py` | Needs no annotation (writes its own, and a silent stem). The default UST is the pre-frame one and the MIDI sits on its ticks; Shift-click on the ruler makes that line a bar line in the ruler and in the UST/MIDI; undo/redo; a session reload exports the same UST; a ruler drag moves the bars with the grid; **Bar 1 → At playhead**. |
-| `pitch_handles.py` | Drag, add and remove pitch points; drag the vibrato's start, fades, depth and period; a typed value is committed before a drag. |
-| `pitch_pen.py` | The pitch pen draws and erases the white line; the singer's-pitch export carries it. |
+| `pitch_handles.py` | Add a point by double-clicking the curve, drag it, Alt-click another away; drag the vibrato's fades (and depth), period and start; a typed value is committed before a drag. |
+| `pitch_pen.py` | A pen stroke one row above a note draws that pitch over the note; Alt-drag erases part of it. |
 | `sung_pitch_export.py` | "USTX with the singer's pitch" equals the plain USTX apart from its `pitd` curve. |
 | `lyrics_export.py` | Paste lyrics, type lyrics, then UST/USTX export; a saved session reloads byte-identically. |
 | `fit_and_export.py` | Fit pitch, edit a vibrato, export UST/USTX; a session reload exports the same UST. |
@@ -22,18 +23,34 @@ how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
 
 ```sh
 pip install playwright && playwright install chromium
-(cd web && npm run dev)                     # the editor drivers, http://localhost:5173
-cargo run --release -p sona-cli -- serve    # song_to_notes (build web/dist first)
+(cd web && npm run dev)                          # the editor drivers, http://localhost:5173
+SONA_E2E_SKIP_SERVE=1 web/e2e/run_all.sh         # every editor driver, on the synthetic fixture
+```
 
+With nothing else set, the editor drivers use a **synthetic fixture** that `fixture.py` writes on first use
+(and again whenever the file changes): eight two-bar phrases at 125 BPM, short legato notes gliding into a
+held note with vibrato and a falling tail, as an annotation with its f0 contour and a three-harmonic stem
+that sings it. Nothing is committed and no recording is involved.
+
+To run on your own material, or to run `song_to_notes` and `cancel_and_retry`:
+
+```sh
+cargo run --release -p sona-cli -- serve               # song_to_notes, cancel_and_retry (build web/dist first)
 export SONA_E2E_ANNOTATION=/path/to/annotation.json   # `sona transcribe … --grid 16`, with its f0 contour
 export SONA_E2E_STEM=/path/to/stem.wav                 # that annotation's vocal stem
 export SONA_E2E_SONG=/path/to/short-song.mp3           # any 20–30 s full mix
-web/e2e/run_all.sh                                     # SONA_E2E_SKIP_SERVE=1 skips song_to_notes
+web/e2e/run_all.sh
 ```
 
-Screenshots and downloads go to `$SONA_E2E_OUT` (default `/tmp/sona-e2e`). The audio and annotations are
-yours and stay local: never commit them (CI's corpus guard enforces this for the UST corpus).
+`SONA_E2E_EDITOR_URL` and `SONA_E2E_SERVE_URL` point the drivers at a dev server or `sona serve` on another
+port, and `SONA_E2E_PYTHON` at a Python with Playwright. Screenshots and downloads go to `$SONA_E2E_OUT`
+(default `/tmp/sona-e2e`). Your audio and annotations stay local: never commit them (CI's corpus guard
+enforces this for the UST corpus). A failed `/api` call is not counted as a console error: without
+`sona serve`, the editor's capability probe fails by design.
 
-Some drivers find notes and handles by colour on the canvas, and a few use fixed screen positions tuned on
-a 1440–1500 × 860 viewport with the *Denpa* annotation at 125 BPM. On other material, adjust the
-positions, or read the driver's printout rather than its exit code.
+No driver clicks a fixed screen position. Notes are found on the canvas as note-green bars (`FIND_NOTES`,
+`FIND_NOTE`) and handles as handle-orange blobs (`FIND_HANDLES`); a note's row is read from its own first
+handle, and which handle is which from where it sits against that row. The drivers zoom and pan by wheel and
+then look again, so they work across viewports (checked at 1024 × 700 to 1920 × 1080) and on material
+whose notes are at least ~100 px wide at two zoom steps. A note selection opens the pitch bar and shrinks
+the roll, so positions found before a selection are found again after it.
