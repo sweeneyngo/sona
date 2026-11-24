@@ -22,6 +22,7 @@ pub mod confidence;
 pub mod game;
 pub mod grid;
 pub mod hmm;
+pub mod lyric_fit;
 pub mod midi;
 pub mod onnx_seed;
 pub mod onset;

@@ -71,6 +71,14 @@ a line below.
   random). So: **07 re-scoped** to same-pitch boundaries (split at moras via lyrics or a spectral detector,
   merge restarts), **11** wobble/scoop pieces, **12** single-note errors (after 07), **13** a confidence score
   that works; 06 last (its ceiling on the stage is 7–18%).
+- 2026-11-24, **07 resolved** (`reports/same-pitch-boundaries.md`; verified: Rust port = prototype on 18/18
+  song rows, default run byte-identical, 3 mutants caught). Without lyrics nothing pays: the spectral detector
+  (AUC 0.72–0.73) can't reach the ~50% precision a split needs; merges −1.8 [−3.8, +0.1] out of fold. A whole
+  song's lyric aligned by DP makes it worse (+0.9 … +15). **A lyric pasted per phrase and fitted to its notes**
+  (2-cell tail split, same-pitch join) lowers GAME lead 188.7 → 174.9 (−13.9 [−30.2, −3.8]; stage −17.8), and
+  phrases with the right note count go 29.7% → 45.4%. Opt-in `sona_core::lyric_fit` /
+  `--fit-phrase-lyrics`. The lever is now an editor feature (fit selected notes to a pasted phrase), the user's
+  call; a default needs holdout4.
 
 - 2026-11-24, **13 resolved** (ADR-0033; verified: Rust reproduces the prototype on all 4 700 dev notes, notes
   and cells unchanged, mutants caught): the learned stage's note confidence is now `1 − σ(2.27 − 4.44·class
@@ -83,6 +91,8 @@ a line below.
 
 - **Lyrics.** A pasted lyric is split into mora and laid on notes in order, so one extra or missing note
   shifts every later mora in the phrase. If users paste lyrics in sona, extras may not be cheap at all.
+  Measured in 07: the note count equals the mora count in 29.7% of the UST's phrases on GAME lead, 43.0% on
+  the stage. Fitting a pasted phrase to its notes raises that to 45.4% and 71.1%.
   Measure the share of phrases whose note count equals their mora count once 01 exists.
 - **Tempo changes and time signatures** (roadmap 2.2): the corpus has none by construction. Needs songs
   that have them before anything can be measured.

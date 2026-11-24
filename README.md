@@ -277,6 +277,11 @@ The metric is the share of grid cells that match the UST.
   hard it is to fix there. The shipped stack costs 180.2 edits per minute and leaves 23.8% of 4/4 measures
   clean; pYIN grid mode 338.4 and 3.1%. Notes joined into one are half the cost. The stack was trained on
   these songs, so its numbers flatter it ([ticket](.scratch/utau-edit-cost/issues/01-edit-cost-metric.md)).
+- **Joined notes need the lyrics** (opt-in, dev only): no spectral detector finds the hidden same-pitch
+  mora changes well enough to pay, and aligning a whole song's lyric to the notes makes things worse. A
+  user pasting each phrase's kana onto its notes, fitted by `sona_core::lyric_fit`, cuts GAME lead's cost
+  188.7 → 174.9 per minute (−13.9 [−30.2, −3.8]); not a default
+  ([report](crates/sona-eval/reports/same-pitch-boundaries.md)).
 
 How grid mode got there, on the dev songs:
 
