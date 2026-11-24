@@ -60,7 +60,7 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 | Layer | Where | Notes |
 |---|---|---|
 | Unit and property tests | `cargo test --workspace --release`; `cd web && npx vitest run` | Test behaviour through the public interface; random sequences for invariants |
-| Output invariants | `crates/sona-core/tests/output_invariants.rs` | One sorted, non-overlapping voice on random stems |
+| Output invariants | `crates/sona-core/tests/output_invariants.rs` | One sorted, non-overlapping voice on random stems (sona's decoders) and random raw GAME notes and cell choices (GAME, GAME + learned stage; `--features game` for the GAME half) |
 | Model checking (TLA+) | `verification/{grid-notes,lyric-editor,expr-bar,serve-jobs,start-flow}/check.sh` | Each runs its rules and **mutants that must be caught** |
 | Server | `crates/sona-cli/tests/serve.rs` | Drives the real binary with stub separators |
 | GAME determinism | `cargo test -p sona-core --features game -- --ignored same_notes`; `cargo test -p sona-cli --features game --test game_determinism -- --ignored` | Need `ORT_DYLIB_PATH`, `SONA_GAME_DIR` (and optionally `SONA_DETERMINISM_STEM`); not in CI |
