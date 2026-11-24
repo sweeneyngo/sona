@@ -62,6 +62,7 @@ fn main() -> ExitCode {
                 midi_pitch: n.midi_pitch,
                 confidence: 1.0,
                 sub_scores: SubScores { pitch_stability: 1.0, voicing: 1.0, onset_clarity: 1.0, offset_clarity: 1.0 },
+                stage_doubt: None,
             })
             .collect(),
         f0_contour: Vec::new(),

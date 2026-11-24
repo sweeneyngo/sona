@@ -132,6 +132,7 @@ mod tests {
                 onset_clarity: 0.9,
                 offset_clarity: 0.9,
             },
+            stage_doubt: None,
         }
     }
 

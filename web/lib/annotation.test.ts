@@ -22,6 +22,7 @@ const expected: Annotation = {
       midi_pitch: 69,
       confidence: 0.82,
       sub_scores: { pitch_stability: 0.95, voicing: 0.88, onset_clarity: 0.9, offset_clarity: 0.82 },
+      stage_doubt: { length: 0.75, unsure: 0.5 },
     },
   ],
   f0_contour: [
@@ -37,7 +38,7 @@ const expected: Annotation = {
     sona_commit: "v0.1.0-12-gabcdef0",
     created_unix_s: 1764000000,
     input: { role: "input", name: "lead.wav", bytes: 88244, sha256: sha("a") },
-    settings: { bpm: "174", engine: "game", grid: "24" },
+    settings: { bpm: "174", engine: "game+cells", grid: "24" },
     models: [{ role: "game/encoder", name: "encoder.onnx", bytes: 1024, sha256: sha("b") }],
     job: {
       id: "j1",

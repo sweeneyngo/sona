@@ -148,6 +148,21 @@ pub struct Note {
     /// The per-dimension scores the scalar is composed from — let the UI show
     /// *why* a note is flagged (e.g. "⚠ uncertain offset").
     pub sub_scores: SubScores,
+    /// For the learned cell stage's notes only: why the stage doubts the note (ADR-0034). Absent for
+    /// every other producer and in older annotations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_doubt: Option<StageDoubt>,
+}
+
+/// What lowers a learned cell stage note's confidence (ADR-0033), split into its two causes, each in
+/// log-odds and `>= 0`: how far the note's length and the model's uncertainty over its cells each pull it
+/// below a one-cell note the model is sure of. The larger one is the reason the editor gives.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct StageDoubt {
+    /// From the note's length: long notes are where several syllables hide.
+    pub length: f32,
+    /// From the model's top class probability over the note's cells: unsure cells are where notes get cut.
+    pub unsure: f32,
 }
 
 /// Per-dimension confidence sub-scores, each in `0.0..=1.0`. A note is only as
@@ -226,6 +241,7 @@ mod tests {
                     onset_clarity: 0.9,
                     offset_clarity: 0.82,
                 },
+                stage_doubt: None,
             }],
             f0_contour: vec![
                 F0Frame { time_s: 0.25, frequency_hz: 440.0, voicing: 0.9 },
@@ -258,10 +274,21 @@ mod tests {
         assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
     }
 
+    #[test]
+    fn stage_doubt_is_absent_from_the_json_unless_the_stage_made_the_note() {
+        let plain = serde_json::to_value(sample_annotation()).unwrap();
+        assert!(plain["notes"][0].get("stage_doubt").is_none(), "{plain}");
+        let mut with = sample_annotation();
+        with.notes[0].stage_doubt = Some(StageDoubt { length: 0.75, unsure: 0.5 });
+        let json = serde_json::to_value(&with).unwrap();
+        assert_eq!(json["notes"][0]["stage_doubt"], serde_json::json!({ "length": 0.75, "unsure": 0.5 }));
+        assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
+    }
+
     /// Every field the contract has, optional ones included.
     fn full_annotation() -> Annotation {
         let file = |role: &str, name: &str, bytes: u64, sha: char| FileFingerprint { role: role.into(), name: name.into(), bytes, sha256: sha.to_string().repeat(64) };
-        let settings = [("bpm", "174"), ("engine", "game"), ("grid", "24")].map(|(k, v)| (k.to_string(), v.to_string())).into();
+        let settings = [("bpm", "174"), ("engine", "game+cells"), ("grid", "24")].map(|(k, v)| (k.to_string(), v.to_string())).into();
         Annotation {
             producer: Producer::Game,
             bpm: 174.0,
@@ -283,6 +310,7 @@ mod tests {
                 }),
             }),
             bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }),
+            notes: sample_annotation().notes.into_iter().map(|n| Note { stage_doubt: Some(StageDoubt { length: 0.75, unsure: 0.5 }), ..n }).collect(),
             ..sample_annotation()
         }
     }

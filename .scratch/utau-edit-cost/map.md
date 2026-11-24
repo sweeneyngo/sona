@@ -110,6 +110,12 @@ a line below.
   - Starts and the remaining ends are symmetric rounding jitter: no bias, phase or pitch-track rule pays.
     Octaves are amaten's. Semitone errors sit near the rounding point but the track can't say which way.
   - Those are doubt signals for 14, not fixes. A default needs holdout4.
+- 2026-11-24, **14 resolved** (ADR-0034, [ticket](issues/14-flag-doubtful-notes.md); verified: web + e2e +
+  Rust tests, 15 mutants caught, pYIN and GAME-only pixel-identical to 1f6d5fa): a stage result outlines each
+  song's least sure **20%** (Settings slider) instead of the threshold; an outlined note says "long note, may
+  hide several syllables" or "the model was unsure here" from the larger of ADR-0033's two terms (new optional
+  `Note.stage_doubt`). Dev: 33.3% of cost caught at 20%; "long" flags catch 25.9% of joined vs 8.8% of chopped
+  cost, "unsure" 6.8% vs 27.4%, so the reasons point at the right fix. The share itself is a product call.
 
 ## Fog
 

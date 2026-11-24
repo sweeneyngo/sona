@@ -102,7 +102,10 @@ The app picks the best engine the server has, so nothing changes on the page.
   edge to resize it, double-click to add one, Delete to remove one. **Ctrl+Z** undoes and
   **Ctrl+Shift+Z** redoes any edit: a drag, a lyric, a pen stroke or a tempo change is one step each
   ([ADR-0025](docs/adr/0025-undo-redo.md)). Colours flag the notes worth
-  checking (Help explains them).
+  checking (Help explains them). On a learned-stage result the least sure **20%** of the song is outlined
+  (Settings → **Flag the doubtful**), and an outlined note says why: "long note, may hide several syllables"
+  or "the model was unsure here"; a note you edit loses its outline. Other results keep the **Flag
+  threshold** ([ADR-0034](docs/adr/0034-flag-doubtful-stage-notes-by-share.md)).
 - **Tempo, grid and key** are under the **♩** button. **View** holds the pitch curve, the pitch pen and
   the mutes.
 - **Bars and beat 1** ([ADR-0029](docs/adr/0029-export-frame-bar-one.md)). Bright lines are bar lines,
@@ -335,7 +338,7 @@ follow `mir_eval` and are reimplemented in Rust.
      harmonic salience and a spectral syllable cue (ADR-0015, ADR-0016);
    - optionally GAME notes with an octave check (ADR-0017), and the learned cell stage on top (ADR-0026),
      whose notes carry the stage's own confidence: low on long notes and on cells the model was unsure of,
-     where joined and chopped notes sit (ADR-0033);
+     where joined and chopped notes sit (ADR-0033), and why it doubts each one (ADR-0034);
    - `sona transcribe` without `--grid` runs the original grid-free note-HMM (ADR-0010).
 4. **Interpretation**, in the browser: snapping to a live grid and key, per-note confidence, lyrics,
    pitch fitting, handles and the pen (ADR-0003/0004, ADR-0018 to ADR-0021).
@@ -356,7 +359,7 @@ check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md).
 - the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
 - the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
   start screen;
-- the eleven editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The three that need
+- the twelve editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The three that need
   `sona serve` run locally.
 
 ```

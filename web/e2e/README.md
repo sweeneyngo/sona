@@ -20,6 +20,7 @@ when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was ver
 | `lite_autosave.py` | With storage forced full, pen edits survive a reload and resume. |
 | `motion.py` | Animations run, and are off under `prefers-reduced-motion`. |
 | `help_and_grids.py` | The Help names every export, the BPM-first start, bar 1 and the setup notes; the grid menus list `lib/grid.ts`'s grids; a 1/16T session reopens on 1/16T with the same UST. |
+| `doubtful_notes.py` | Needs no annotation (writes a learned-stage one from the fixture). Settings offers the share, not the threshold; 20% of the notes are outlined, each saying why ("long note…" on the held notes, "the model was unsure here" on two short ones), never a sub-score; 0% and 30% outline 0 and 14; a dragged note loses its outline and none takes its place. The plain (pYIN) fixture keeps the threshold and the weakest sub-score. Screenshot `shots/doubtful_notes.png`. |
 
 ## Running
 

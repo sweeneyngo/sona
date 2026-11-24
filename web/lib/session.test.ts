@@ -12,7 +12,7 @@ import { encodeUst } from "./ust";
 
 const example = () => JSON.parse(readFileSync(new URL("../../crates/sona-core/tests/fixtures/annotation-example.json", import.meta.url), "utf8"));
 
-const before: SessionState = { bpm: 99, division: 8, gridAnchor: 7, barOne: 3, flagThreshold: 0.2, snapKey: true };
+const before: SessionState = { bpm: 99, division: 8, gridAnchor: 7, barOne: 3, flagThreshold: 0.2, flagShare: 0.25, snapKey: true };
 
 /** Load the way the editor does: annotation, working notes, baseline, then settings. */
 function load(parsed: any, current: SessionState = before) {
@@ -65,10 +65,11 @@ describe("a saved session", () => {
         gridAnchor: rand() * 3 - 1,
         barOne: rand() < 0.5 ? null : rand() * 4,
         flagThreshold: rand(),
+        flagShare: rand(),
         snapKey: rand() < 0.5,
       };
       const file = JSON.parse(JSON.stringify(sessionFile(parsed.annotation, notes, parsed.baseline, settings)));
-      const reopened = load(file, { bpm: 1, division: 4, gridAnchor: 0, barOne: null, flagThreshold: 0, snapKey: false });
+      const reopened = load(file, { bpm: 1, division: 4, gridAnchor: 0, barOne: null, flagThreshold: 0, flagShare: 0, snapKey: false });
       expect(reopened.session).toBe(true);
       expect(reopened.notes).toEqual(notes);
       expect(reopened.baseline).toEqual(parsed.baseline);

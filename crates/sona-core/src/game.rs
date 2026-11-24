@@ -145,6 +145,8 @@ impl StageRuns {
 pub struct StageNotes {
     pub notes: Vec<(f64, f64, i32)>,
     pub confidence: Vec<f32>,
+    /// What lowers each note's confidence ([`note_doubt`](crate::cellstage::note_doubt)), in the same order.
+    pub doubt: Vec<crate::StageDoubt>,
 }
 
 /// The learned cell stage: decide every cell from `k0` for `n` cells, from the GAME runs, sona's grid
@@ -160,7 +162,7 @@ pub fn cell_stage_notes(
     anchor: f64,
     cells: (i64, usize),
 ) -> Result<StageNotes, GameError> {
-    use crate::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, StageInputs};
+    use crate::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, note_doubt, StageInputs};
     let inputs = StageInputs {
         spacing,
         anchor,
@@ -181,7 +183,8 @@ pub fn cell_stage_notes(
     let logits = model.logits(&x, n)?;
     let notes = cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor);
     let confidence = note_confidence(&logits, k0, spacing, anchor, &notes);
-    Ok(StageNotes { notes, confidence })
+    let doubt = note_doubt(&logits, k0, spacing, anchor, &notes);
+    Ok(StageNotes { notes, confidence, doubt })
 }
 
 /// The grid phase sona's grid notes sit on, in `[0, spacing)`: every note starts on a cell boundary. A
@@ -626,21 +629,22 @@ pub fn stage_segments(notes: &[(f64, f64, i32)]) -> Vec<NoteSegment> {
 }
 
 /// The cell stage's notes as annotation notes: timing, pitch and sub-scores as `scorer` gives them for
-/// [`stage_segments`], and the stage's own confidence as the scalar (ADR-0033). A note whose pitch is not a
-/// MIDI number is dropped.
+/// [`stage_segments`], the stage's own confidence as the scalar (ADR-0033) and what lowers it as the note's
+/// `stage_doubt` (ADR-0034). A note whose pitch is not a MIDI number is dropped.
 pub fn stage_annotation_notes(stage: &StageNotes, scorer: &ConfidenceScorer, envelope: &[EnergyFrame]) -> Vec<Note> {
-    let kept: Vec<(f64, f64, u8, f32)> = stage
+    let kept: Vec<(f64, f64, u8, f32, crate::StageDoubt)> = stage
         .notes
         .iter()
         .zip(&stage.confidence)
-        .filter_map(|(&(a, b, p), &c)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p, c)))
+        .zip(&stage.doubt)
+        .filter_map(|((&(a, b, p), &c), &d)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p, c, d)))
         .collect();
-    let midi: Vec<(f64, f64, u8)> = kept.iter().map(|&(a, b, p, _)| (a, b, p)).collect();
+    let midi: Vec<(f64, f64, u8)> = kept.iter().map(|&(a, b, p, ..)| (a, b, p)).collect();
     scorer
         .score_all(&grid_segments(&midi), envelope)
         .into_iter()
         .zip(&kept)
-        .map(|(note, &(.., confidence))| Note { confidence: confidence.clamp(0.0, 1.0), ..note })
+        .map(|(note, &(.., confidence, doubt))| Note { confidence: confidence.clamp(0.0, 1.0), stage_doubt: Some(doubt), ..note })
         .collect()
 }
 

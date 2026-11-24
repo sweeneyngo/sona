@@ -23,6 +23,7 @@ import {
   pitchTopRange,
 } from "./lib/view";
 import type { Scale } from "./lib/view";
+import { DEFAULT_FLAG_SHARE, doubtReason, flagReading, isStageResult } from "./lib/doubt";
 import { detectKey, keyName } from "./lib/key";
 import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
@@ -74,6 +75,10 @@ const el = {
   division: document.getElementById("division") as HTMLSelectElement,
   flag: document.getElementById("flag") as HTMLInputElement,
   flagVal: document.getElementById("flag-val") as HTMLOutputElement,
+  flagShare: document.getElementById("flag-share") as HTMLInputElement,
+  flagShareVal: document.getElementById("flag-share-val") as HTMLOutputElement,
+  flagThresholdSetting: document.getElementById("flag-threshold-setting") as HTMLElement,
+  flagShareSetting: document.getElementById("flag-share-setting") as HTMLElement,
   keyReadout: document.getElementById("key-readout") as HTMLOutputElement,
   barOneReadout: document.getElementById("bar-one-readout") as HTMLOutputElement,
   barOneHere: document.getElementById("bar-one-here") as HTMLButtonElement,
@@ -266,6 +271,8 @@ let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 // A downbeat the user chose (ADR-0029); null = bar 1 on the first grid line.
 let barOne: number | null = null;
 let flagThreshold = 0.5;
+// A learned cell stage result outlines this share of its notes instead (ADR-0034).
+let flagShare = DEFAULT_FLAG_SHARE;
 // Snap each note's pitch to the detected key's scale (display + export). Off by
 // default: out-of-key notes are flagged for review rather than auto-corrected.
 let snapKey = false;
@@ -520,13 +527,18 @@ function openChangesModal(): void {
   setModal(el.changesOverlay, true);
 }
 
+const sharePercent = (share: number) => `${Math.round(share * 100)}%`;
+
 /**
  * The notes as interpreted for display, playback, and export (`lib/interpret`).
  * Cached: recomputing this per frame was a big part of the playback jank on
- * long stems.
+ * long stems. A learned-stage result is flagged by share, any other by threshold.
  */
 function effectiveNotes(): EffectiveNote[] {
-  effectiveCache ??= interpret(workingNotes, currentFrame(), { flagThreshold, snapKey, key: currentKey() });
+  if (!effectiveCache) {
+    const flag = annotation ? flagReading(annotation, { flagThreshold, flagShare }) : { flagThreshold };
+    effectiveCache = interpret(workingNotes, currentFrame(), { ...flag, snapKey, key: currentKey() });
+  }
   return effectiveCache;
 }
 
@@ -619,6 +631,13 @@ el.flag.addEventListener("input", () => {
   el.flagVal.textContent = flagThreshold.toFixed(2);
   invalidateEffective();
   markDirty("flag");
+  redraw();
+});
+el.flagShare.addEventListener("input", () => {
+  flagShare = Number(el.flagShare.value) / 100;
+  el.flagShareVal.textContent = sharePercent(flagShare);
+  invalidateEffective();
+  markDirty("flag-share");
   redraw();
 });
 el.snapKey.addEventListener("change", () => {
@@ -1537,18 +1556,25 @@ function hitTest(px: number, py: number): Hitbox | null {
   return null;
 }
 
-function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px: number, py: number): void {
+/** The inspector's "why" line for a note, or "" when there's nothing to say. */
+function reasonCue(note: WorkingNote, effective: EffectiveNote | undefined): string {
+  if (effective?.escaped) return `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`;
+  // A learned-stage note's sub-scores didn't set its confidence (ADR-0033): it gives the stage's own reason, when it is outlined.
+  if (note.stage_doubt) {
+    const why = effective?.lowConfidence ? doubtReason(note) : null;
+    return why ? `<div class="reason">⚠ ${why}</div>` : "";
+  }
+  // Only warn if the weakest dimension is actually shaky — a perfect note
+  // (all sub-scores 1.00, e.g. a manual one) needs no ⚠ reason.
   const weakest = weakestSubScore(note.sub_scores);
+  return weakest && weakest.value < 1 ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>` : "";
+}
+
+function showTooltip(note: WorkingNote, effective: EffectiveNote | undefined, px: number, py: number): void {
   const rows = Object.entries(note.sub_scores)
     .map(([k, v]) => `<dt>${k.replace(/_/g, " ")}</dt><dd>${fmt(v)}</dd>`)
     .join("");
-  const cue = effective?.escaped
-    ? `<div class="reason" style="color:${ESCAPE_COLOR}">↷ off-grid — kept (escaped)</div>`
-    : // Only warn if the weakest dimension is actually shaky — a perfect note
-        // (all sub-scores 1.00, e.g. a manual one) needs no ⚠ reason.
-        weakest && weakest.value < 1
-        ? `<div class="reason">⚠ ${weakest.label} (${fmt(weakest.value)})</div>`
-        : "";
+  const cue = reasonCue(note, effective);
   const key = currentKey();
   const keyCue = effective?.outOfKey
     ? `<div class="reason" style="color:${OUT_OF_KEY_COLOR}">◇ out of key${key ? ` (${keyName(key)})` : ""}</div>`
@@ -1589,17 +1615,22 @@ function download(data: BlobPart, filename: string, mime: string): void {
 }
 
 function currentSettings(): SessionState {
-  return { bpm, division, gridAnchor, barOne, flagThreshold, snapKey };
+  return { bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey };
 }
 
 /** Make `s` the review settings, and show them in the toolbar and the settings. */
 function applySettings(s: SessionState): void {
-  ({ bpm, division, gridAnchor, barOne, flagThreshold, snapKey } = s);
+  ({ bpm, division, gridAnchor, barOne, flagThreshold, flagShare, snapKey } = s);
   el.bpm.value = String(bpm);
   el.division.value = String(division);
   el.flag.value = String(flagThreshold);
   el.flagVal.textContent = flagThreshold.toFixed(2);
+  el.flagShare.value = String(Math.round(flagShare * 100));
+  el.flagShareVal.textContent = sharePercent(flagShare);
   el.snapKey.checked = snapKey;
+  const byShare = annotation !== null && isStageResult(annotation);
+  el.flagShareSetting.hidden = !byShare;
+  el.flagThresholdSetting.hidden = byShare;
 }
 
 function buildSessionFile(): Annotation & { baseline: Note[]; session: SessionState } {

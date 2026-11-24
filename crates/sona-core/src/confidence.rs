@@ -141,6 +141,7 @@ impl ConfidenceScorer {
             midi_pitch: segment.midi_pitch,
             confidence,
             sub_scores,
+            stage_doubt: None,
         }
     }
 
