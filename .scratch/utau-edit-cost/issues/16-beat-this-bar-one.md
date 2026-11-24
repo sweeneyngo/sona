@@ -1,6 +1,6 @@
 # 16 — Beat This! downbeats as a second bar-1 source (opt-in until holdout4)
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 15
 
