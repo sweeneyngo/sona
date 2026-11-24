@@ -30,6 +30,14 @@ a line below.
   cell, so the editor's beats match OpenUtau's 1 time in 4 and **05 has nowhere to put beat 1** until A02
   lands. **05 is now blocked by A02 and A03.** A03 settles what "bar 1" means first: Pifuyuu's grid or the
   music's beat (they disagree by a cell on 6/9 dev songs, possibly an alignment bias).
+- 2026-11-24, **A03 resolved** (merged 825ee0d; `reports/bar-one.md`, verified): the alignment is **not**
+  biased (vowel re-alignment moves it −15..+11 ms), so past cell-accuracy numbers stand. **Pifuyuu's grid
+  is tied to the file, not the music**: his beat lines are off the music's beat on 7/9 dev songs and his
+  bar lines match the music's bar on 1/9. So the UST is the right reference for *notes* (cells line up)
+  but the wrong one for *where beat and bar 1 are*. `grid_phase(mix, one beat)` matches the drums' beat on
+  9/9 (verified). The music's downbeat is only a Python prototype with no ground truth (weak on 4/9).
+  Consequences: 05 becomes "beat from the mix (strong), bar from harmony (weak), opt-in"; the frame
+  metric must be re-anchored to the music (ticket 10); holdout4 needs ear-labelled beat/bar 1 to score 05.
 
 ## Fog
 
