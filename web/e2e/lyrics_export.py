@@ -40,8 +40,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"])
     ctx = b.new_context(viewport={"width": 1600, "height": 900}, accept_downloads=True)
     page = ctx.new_page()
-    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
-    page.on("pageerror", lambda e: errors.append(str(e)))
+    watch(page, errors)
     page.goto(EDITOR_URL)
     page.evaluate("localStorage.clear()")
     page.reload()
@@ -83,15 +82,17 @@ with sync_playwright() as p:
 
     # 4. reload the saved session in a fresh page: lyrics must survive
     page2 = ctx.new_page()
-    page2.on("pageerror", lambda e: errors.append(str(e)))
+    watch(page2, errors)
     page2.goto(EDITOR_URL)
     page2.evaluate("localStorage.clear()")
     page2.reload()
     load(page2, sess)
     ust2 = export(page2, "#export-ust", "e2e-reloaded.ust")
-    print("UST identical after session reload:", ust.read_bytes() == ust2.read_bytes())
+    check(ust.read_bytes() == ust2.read_bytes(), "UST identical after session reload")
     b.close()
 
 s = json.loads(sess.read_text())
-print("session notes with lyrics:", sum(1 for n in s["notes"] if n.get("lyric")), "of", len(s["notes"]))
-print("console errors:", errors or "none")
+lyrics = [n.get("lyric") for n in s["notes"]]
+check(sum(1 for l in lyrics if l) >= 40 and "テスト" in lyrics and "ら" in lyrics, f"session notes with lyrics: {sum(1 for l in lyrics if l)} of {len(lyrics)}, typed テスト and ら among them")
+check("Lyric=テスト" in ust.read_bytes().decode("cp932"), "the UST carries the typed lyric")
+finish(errors)

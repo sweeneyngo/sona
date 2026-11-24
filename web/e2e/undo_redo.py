@@ -14,11 +14,11 @@ def drawn(s):
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"])
     page = b.new_context(viewport={"width": 1500, "height": 860}, accept_downloads=True).new_page()
-    page.on("pageerror", lambda e: errors.append(str(e))); page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    watch(page, errors)
     page.goto(EDITOR_URL); page.evaluate("localStorage.clear()"); page.reload()
     mclick(page, "#settings"); page.set_input_files("#json-input", str(ANNOTATION)); page.click("#settings-close")
     undo_off = lambda: page.evaluate("document.querySelector('#edit-undo').disabled")
-    print("fresh file: Undo disabled", undo_off())
+    check(undo_off(), "fresh file: Undo disabled")
     s0 = save(page)
 
     page.click("#tempo-chip")
@@ -43,11 +43,12 @@ with sync_playwright() as p:
     page.mouse.move(box["x"] + 300, box["y"] + 330); page.mouse.down(); page.mouse.move(box["x"] + 500, box["y"] + 330, steps=10); page.mouse.up()
     page.keyboard.press("p"); time.sleep(0.2)
     s_pen = save(page)
-    print("edits made: bpm", s_drag["session"]["bpm"], "| note moved", notes_of(s_drag) != notes_of(s0), "| lyric", notes_of(s_lyric) != notes_of(s_drag), "| pen frames", drawn(s_pen) - drawn(s_lyric))
+    check(s_drag["session"]["bpm"] == 130 and notes_of(s_drag) != notes_of(s0) and notes_of(s_lyric) != notes_of(s_drag) and drawn(s_pen) > drawn(s_lyric),
+          f"edits made: bpm {s_drag['session']['bpm']}, note moved, lyric, pen frames {drawn(s_pen) - drawn(s_lyric)}")
 
     page.click("#expr-exact-toggle"); page.focus("#glide-start"); assert page.evaluate("document.activeElement.id") == "glide-start"; page.keyboard.press("Control+z")
     page.evaluate("document.activeElement.blur()"); page.click("#expr-exact-toggle")
-    print("Ctrl+Z in a text field left the document alone:", drawn(save(page)) == drawn(s_pen))
+    check(drawn(save(page)) == drawn(s_pen), "Ctrl+Z in a text field left the document alone")
 
     states = [s_pen, s_lyric, s_drag]
     labels = ["pen", "lyric", "drag"]
@@ -55,35 +56,35 @@ with sync_playwright() as p:
         page.keyboard.press("Control+z"); time.sleep(0.15)
         now = save(page)
         if label == "pen":
-            print("undo pen stroke:", drawn(now) == drawn(s_lyric) and notes_of(now) == notes_of(s_lyric))
+            check(drawn(now) == drawn(s_lyric) and notes_of(now) == notes_of(s_lyric), "undo pen stroke")
         elif label == "lyric":
-            print("undo lyric:", notes_of(now) == notes_of(s_drag))
+            check(notes_of(now) == notes_of(s_drag), "undo lyric")
         else:
-            print("undo drag:", notes_of(now) == notes_of(s0), "| bpm still", now["session"]["bpm"])
+            check(notes_of(now) == notes_of(s0) and now["session"]["bpm"] == 130, f"undo drag, bpm still {now['session']['bpm']}")
     page.keyboard.press("Control+z"); time.sleep(0.15)
     now = save(page)
-    print("undo tempo burst (one step):", now["session"]["bpm"] == s0["session"]["bpm"], "| Undo now disabled:", undo_off())
+    check(now["session"]["bpm"] == s0["session"]["bpm"] and undo_off(), "undo tempo burst (one step), Undo now disabled")
     for _ in range(4):
         page.keyboard.press("Control+Shift+z"); time.sleep(0.15)
     now = save(page)
-    print("redo all four:", notes_of(now) == notes_of(s_pen) and drawn(now) == drawn(s_pen) and now["session"]["bpm"] == 130)
+    check(notes_of(now) == notes_of(s_pen) and drawn(now) == drawn(s_pen) and now["session"]["bpm"] == 130, "redo all four")
     mclick(page, "#edit-undo"); time.sleep(0.15)
-    print("Edit → Undo works:", drawn(save(page)) == drawn(s_lyric))
+    check(drawn(save(page)) == drawn(s_lyric), "Edit → Undo works")
 
     # review cases: Ctrl+Z with focus on a select or the pitch bar
     page.click("#tempo-chip"); page.focus("#division"); page.select_option("#division", "8")
     page.keyboard.press("Control+z"); time.sleep(0.15)
-    print("Ctrl+Z with the grid select focused undoes the grid change:", save(page)["session"]["division"] == 16)
+    check(save(page)["session"]["division"] == 16, "Ctrl+Z with the grid select focused undoes the grid change")
     page.keyboard.press("Escape")
     pt = page.evaluate(FIND_NOTE); page.mouse.click(pt["x"], pt["y"]); time.sleep(0.2)
     page.click("#expr-vib"); time.sleep(0.1)
     page.keyboard.press("Control+z"); time.sleep(0.15)
-    print("after undo from the pitch bar, it no longer shows a replaced note:", page.is_hidden("#expr-bar"))
+    check(page.is_hidden("#expr-bar"), "after undo from the pitch bar, it no longer shows a replaced note")
     bad = OUT / "bad.json"; bad.write_text('{"version": 1}')
     page.mouse.click(pt["x"], pt["y"]); page.keyboard.press("Delete")
     mclick(page, "#settings"); page.set_input_files("#json-input", str(bad)); page.click("#settings-close"); time.sleep(0.2)
-    print("a malformed file leaves no old history: Undo disabled", undo_off())
+    check(undo_off(), "a malformed file leaves no old history: Undo disabled")
     mclick(page, "#settings"); page.set_input_files("#json-input", str(ANNOTATION)); page.click("#settings-close"); time.sleep(0.3)
-    print("loading a file starts fresh: Undo disabled", undo_off(), "| Redo disabled", page.evaluate("document.querySelector('#edit-redo').disabled"))
+    check(undo_off() and page.evaluate("document.querySelector('#edit-redo').disabled"), "loading a file starts fresh: Undo and Redo disabled")
     b.close()
-print("console errors:", errors or "none")
+finish(errors)
