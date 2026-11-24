@@ -31,6 +31,12 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   with the job (`lyric=`, kept as `job.lyric`), the notes take it in order until 04, and sessions and
   re-transcription keep it. [ADR-0035](../../docs/adr/0035-lyrics-are-required.md),
   [03](issues/03-lyric-on-start-screen.md)
+- 2026-11-24 (08): `web/lib/units/` gives Japanese units with the UST's conventions (っ no note, marks
+  `clipped`; tails `optional`; `mora_of` kinds; refused characters with positions). Dev 5.35% with tails
+  optional vs pron-merge 5.14% (paired [−0.6, +1.2] pts). The gap is the particle は (3.64% vs 5.07%
+  with particles scored equal). Laid in order, only ー and おう are held. The USTs give えい (67%) and a
+  repeated vowel (68%) their own note, and skipping every tail is worse (6.7% vs 8.3%). Edit → Lyrics…
+  is hiragana-only now. [08](issues/08-japanese-sound-units.md)
 
 ## Fog
 
