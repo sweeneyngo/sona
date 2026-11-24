@@ -64,7 +64,7 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 | Model checking (TLA+) | `verification/{grid-notes,lyric-editor,expr-bar,serve-jobs,start-flow}/check.sh` | Each runs its rules and **mutants that must be caught** |
 | Server | `crates/sona-cli/tests/serve.rs` | Drives the real binary with stub separators |
 | GAME determinism | `cargo test -p sona-core --features game -- --ignored same_notes`; `cargo test -p sona-cli --features game --test game_determinism -- --ignored` | Need `ORT_DYLIB_PATH`, `SONA_GAME_DIR` (and optionally `SONA_DETERMINISM_STEM`); not in CI |
-| Browser | `web/e2e/run_all.sh` | Playwright drivers that use the app as a person does ([README](../web/e2e/README.md)) |
+| Browser | `scripts/ci/e2e.sh` (CI); `web/e2e/run_all.sh` | Playwright drivers that use the app as a person does ([README](../web/e2e/README.md)). CI runs the ten editor drivers; the two that need `sona serve` run locally |
 | Review passes | pstack: statechart, comment-sicko, typescript practices | Every bug a pass finds is replayed (a test or a driver) before it's fixed |
 
 **A check isn't trusted until it has failed once on a deliberately broken version** (a mutant).
@@ -72,7 +72,7 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 ## 5. Ship
 
 - CI (`.github/workflows/ci.yml`) runs the corpus guard, clippy with warnings as errors, the Rust and web
-  tests and every TLA+ model. Push only when the local equivalents pass, then watch CI go green.
+  tests, every TLA+ model and the editor's browser drivers. Push only when the local equivalents pass, then watch CI go green.
 - Commit at each verified step, with the numbers in the message.
 - Update the README after any change a user would notice, and add an ADR for a decision someone will
   later ask "why?" about.

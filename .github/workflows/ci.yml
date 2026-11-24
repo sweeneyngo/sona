@@ -60,6 +60,40 @@ jobs:
       # Includes the grid.ts / quantize.rs drift guard (shared fixtures/quantize cases).
       - run: npx vitest run
 
+  e2e:
+    # The editor's browser drivers (web/e2e, every one that needs no `sona serve`) on the synthetic
+    # fixture, against a Vite dev server. scripts/ci/e2e.sh is the same run locally.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SONA_E2E_OUT: ${{ github.workspace }}/e2e-out
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: npm ci
+        working-directory: web
+      # Pinned: Playwright fixes the Chromium build, so a release can't change what the drivers see.
+      - run: python -m pip install playwright==1.62.0
+      - run: python -m playwright install --with-deps chromium
+      - run: scripts/ci/e2e.sh
+        env:
+          SONA_E2E_PYTHON: python
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots
+          path: |
+            ${{ env.SONA_E2E_OUT }}
+            !${{ env.SONA_E2E_OUT }}/fixture-*
+          if-no-files-found: ignore
+
   model-check:
     # TLA+ model of grid-mode note assembly + review-surface snap
     # (verification/grid-notes): every rule, plus mutants that must be caught.

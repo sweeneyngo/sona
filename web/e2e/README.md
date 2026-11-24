@@ -1,8 +1,8 @@
 # Browser drivers
 
 Playwright scripts that use the real app the way a person does, print what they observed, and exit non-zero
-when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was verified. They are not in CI yet
-(`docs/roadmap.md`, 6.4).
+when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was verified. CI runs the editor drivers (job `e2e`,
+`scripts/ci/e2e.sh`); the two that need `sona serve` run locally only (`docs/roadmap.md`, 6.4).
 
 | Driver | Checks |
 |---|---|
@@ -26,6 +26,10 @@ pip install playwright && playwright install chromium
 (cd web && npm run dev)                          # the editor drivers, http://localhost:5173
 SONA_E2E_SKIP_SERVE=1 web/e2e/run_all.sh         # every editor driver, on the synthetic fixture
 ```
+
+Or in one step, as CI runs them: `SONA_E2E_PYTHON=/path/to/python scripts/ci/e2e.sh` starts a dev server on
+port 5180 (`SONA_E2E_PORT`), waits for it, runs the editor drivers into a fresh `$SONA_E2E_OUT` and stops the
+server. CI pins Playwright 1.62.0 and uploads `$SONA_E2E_OUT` when a driver fails.
 
 With nothing else set, the editor drivers use a **synthetic fixture** that `fixture.py` writes on first use
 (and again whenever the file changes): eight two-bar phrases at 125 BPM, short legato notes gliding into a
