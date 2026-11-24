@@ -150,6 +150,27 @@ fn help_and_version_succeed() {
 }
 
 #[test]
+fn the_missing_stem_error_names_every_transcribe_option_as_help_does() {
+    let help = String::from_utf8(sona().arg("--help").output().expect("run sona").stdout).unwrap();
+    let section = help.split("OPTIONS (transcribe):").nth(1).and_then(|s| s.split("OPTIONS (serve):").next()).expect("a transcribe section");
+    let options: Vec<&str> = section
+        .lines()
+        .filter_map(|l| l.strip_prefix("    --").map(|rest| rest.split([' ', '<']).next().unwrap()))
+        .collect();
+    let parsed = ["bpm", "midi", "grid", "no-salience", "no-spectral-cue", "game", "no-octave-check", "cell-model", "vocals", "bar-one"];
+    assert_eq!(options, parsed, "--help lists the options the parser takes");
+
+    let out = sona().args(["transcribe", "--bpm", "120"]).output().expect("run sona");
+    assert!(!out.status.success());
+    let err = String::from_utf8(out.stderr).unwrap();
+    let usage = err.split("USAGE:\n").nth(1).expect("a usage block").trim_end();
+    for option in options {
+        assert!(usage.contains(&format!("[--{option}")) || usage.contains(&format!(" --{option} ")), "the usage misses --{option}:\n{usage}");
+    }
+    assert!(help.contains(usage), "the error's usage is --help's:\n{usage}");
+}
+
+#[test]
 fn grid_flag_decodes_notes_onto_the_grid() {
     let wav = tmp("two_note_grid.wav");
     write_wav(&wav, &two_note_stem());

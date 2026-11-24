@@ -30,6 +30,34 @@ export interface NoteFlags {
 }
 
 /**
+ * The grids the app offers, by note-value `division` (24 = 16th triplets): the
+ * editor's grid menu lists them all, a `sona serve` job decodes on those marked
+ * `job` (`sona transcribe --grid`), and a saved session reopens on any of them.
+ */
+export const GRIDS = [
+  { division: 4, label: "1/4", job: false },
+  { division: 8, label: "1/8", job: false },
+  { division: 16, label: "1/16", job: true },
+  { division: 24, label: "1/16T", job: true },
+  { division: 32, label: "1/32", job: false },
+] as const;
+
+type Grid = (typeof GRIDS)[number];
+export type Division = Grid["division"];
+export type JobDivision = Extract<Grid, { job: true }>["division"];
+
+export const DIVISIONS: readonly Division[] = GRIDS.map((g) => g.division);
+export const JOB_GRIDS = GRIDS.filter((g): g is Extract<Grid, { job: true }> => g.job);
+export const DEFAULT_DIVISION: JobDivision = 16;
+
+export const isDivision = (d: number): d is Division => (DIVISIONS as readonly number[]).includes(d);
+
+/** The job grid a menu value names, else the default. */
+export function jobDivision(value: string): JobDivision {
+  return JOB_GRIDS.find((g) => String(g.division) === value)?.division ?? DEFAULT_DIVISION;
+}
+
+/**
  * Seconds per grid cell for a note-value `division` (4 = quarter, 8 = eighth,
  * 16 = sixteenth, …) at `bpm`. A whole note is 4 beats, so a 1/division cell is
  * `4/division` beats: `240 / (bpm × division)` seconds.

@@ -66,7 +66,7 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
 | Model checking (TLA+) | `verification/{grid-notes,lyric-editor,expr-bar,serve-jobs,start-flow}/check.sh` | Each runs its rules and **mutants that must be caught** |
 | Server | `crates/sona-cli/tests/serve.rs` | Drives the real binary with stub separators |
 | GAME determinism | `cargo test -p sona-core --features game -- --ignored same_notes`; `cargo test -p sona-cli --features game --test game_determinism -- --ignored` | Need `ORT_DYLIB_PATH`, `SONA_GAME_DIR` (and optionally `SONA_DETERMINISM_STEM`); not in CI |
-| Browser | `scripts/ci/e2e.sh` (CI); `web/e2e/run_all.sh` | Playwright drivers that use the app as a person does ([README](../web/e2e/README.md)). CI runs the ten editor drivers; the two that need `sona serve` run locally |
+| Browser | `scripts/ci/e2e.sh` (CI); `web/e2e/run_all.sh` | Playwright drivers that use the app as a person does ([README](../web/e2e/README.md)). CI runs the eleven editor drivers; the two that need `sona serve` run locally |
 | Review passes | pstack: statechart, comment-sicko, typescript practices | Every bug a pass finds is replayed (a test or a driver) before it's fixed |
 
 **A check isn't trusted until it has failed once on a deliberately broken version** (a mutant).

@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  DIVISIONS,
+  JOB_GRIDS,
+  isDivision,
+  jobDivision,
   gridSpacingSeconds,
   snapTime,
   quantizeNote,
@@ -175,4 +179,11 @@ test("resolveOverlaps leaves a monophonic line with every note kept", () => {
     for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i].onset_s >= sorted[i - 1].offset_s - 1e-9, JSON.stringify(notes));
     for (const n of out) assert.ok(n.offset_s > n.onset_s + 1e-9, JSON.stringify(notes));
   }
+});
+
+test("the grids: every division the menu offers reopens, and a job runs on the two sona serve decodes", () => {
+  assert.deepEqual(DIVISIONS, [4, 8, 16, 24, 32]);
+  assert.ok(DIVISIONS.every(isDivision) && !isDivision(12) && !isDivision(NaN));
+  assert.deepEqual(JOB_GRIDS.map((g) => g.division), [16, 24]);
+  assert.deepEqual(["16", "24", "32", ""].map(jobDivision), [16, 24, 16, 16]);
 });

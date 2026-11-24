@@ -18,6 +18,7 @@ when a check fails. They are how every UI change in ADR-0018 to ADR-0022 was ver
 | `stale_hover.py` | Delete after a scroll acts on what is under the mouse now. |
 | `lite_autosave.py` | With storage forced full, pen edits survive a reload and resume. |
 | `motion.py` | Animations run, and are off under `prefers-reduced-motion`. |
+| `help_and_grids.py` | The Help names every export, the BPM-first start, bar 1 and the setup notes; the grid menus list `lib/grid.ts`'s grids; a 1/16T session reopens on 1/16T with the same UST. |
 
 ## Running
 

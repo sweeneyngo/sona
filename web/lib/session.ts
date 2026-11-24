@@ -8,6 +8,7 @@ import type { Annotation, BarOneEstimate, Note, WorkingNote } from "./annotation
 import { unpackContour } from "./contourStore";
 import { isExpression } from "./expression";
 import { parseBarOne } from "./frame";
+import { isDivision } from "./grid";
 import { firstOnset } from "./interpret";
 import { parseProvenance, type Provenance } from "./provenance";
 
@@ -111,7 +112,7 @@ export function settingsOnLoad(parsed: any, annotation: Annotation, notes: reado
   const div = Number(s.division);
   return {
     bpm: Number(s.bpm) > 0 ? Number(s.bpm) : current.bpm,
-    division: [4, 8, 16, 32].includes(div) ? div : current.division,
+    division: isDivision(div) ? div : current.division,
     gridAnchor: Number.isFinite(Number(s.gridAnchor)) ? Number(s.gridAnchor) : firstOnset(notes),
     barOne: typeof s.barOne === "number" && Number.isFinite(s.barOne) ? s.barOne : null,
     flagThreshold: Number.isFinite(Number(s.flagThreshold)) ? Math.min(1, Math.max(0, Number(s.flagThreshold))) : current.flagThreshold,

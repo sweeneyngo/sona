@@ -1,3 +1,5 @@
+import type { JobDivision } from "./grid";
+
 export type Separation = "none" | "vocals" | "lead";
 export type Engine = "pyin" | "game" | "cells";
 export type Phase = "queued" | "decoding" | "separating-vocals" | "separating-lead" | "transcribing" | "done" | "failed" | "cancelled";
@@ -27,7 +29,7 @@ export interface JobStatus {
 
 export interface JobRequest {
   bpm: number;
-  grid: 16 | 24;
+  grid: JobDivision;
   separation: Separation;
   engine: Engine;
   name: string;

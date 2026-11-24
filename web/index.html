@@ -1130,13 +1130,7 @@
             </div>
             <div class="pop-row">
               <label for="division">Grid</label>
-              <select id="division">
-                <option value="4">1/4</option>
-                <option value="8">1/8</option>
-                <option value="16" selected>1/16</option>
-                <option value="24">1/16T</option>
-                <option value="32">1/32</option>
-              </select>
+              <select id="division"></select>
             </div>
             <div class="pop-row">
               <span class="label">Key</span>
@@ -1186,7 +1180,7 @@
               <details id="song-more" class="more">
                 <summary>Options</summary>
                 <div class="more-grid">
-                  <span class="field"><label for="song-grid">Grid</label><select id="song-grid"><option value="16" selected>1/16</option><option value="24">1/16T</option></select></span>
+                  <span class="field"><label for="song-grid">Grid</label><select id="song-grid"></select></span>
                   <span class="field">
                     <label for="song-separation">Vocal</label>
                     <select id="song-separation">
@@ -1263,12 +1257,16 @@
           <section>
             <h3>Workflow</h3>
             <ol class="help-steps">
-              <li><b>Drop a song</b> on the start screen. sona suggests its tempo; check it (½× if it
-                sounds twice too fast), then press <b>Transcribe</b>.</li>
+              <li><b>Drop a song</b> on the start screen and type its <b>BPM</b>: it sets the grid
+                the notes snap to. sona's guess sits beside the field (with half of it); click one
+                to use it. Then press <b>Transcribe</b>.</li>
+              <li><b>Find bar 1:</b> <span class="kbd">Shift</span>-click the ruler on the beat you
+                hear as beat 1, so OpenUtau's bars land on the song's.</li>
               <li><b>Play</b> (Space) to hear the singer against the notes, and fix what's wrong.</li>
               <li>Add lyrics (<b>Edit → Lyrics…</b>) and shape the pitch (below).</li>
-              <li><b>Export</b> to OpenUtau (USTX), UTAU (UST) or MIDI. <b>File → Save session</b>
-                keeps everything for later; the page also autosaves.</li>
+              <li><b>Export</b> to OpenUtau (USTX, or USTX with the singer's pitch), UTAU (UST)
+                or MIDI. <b>File → Save session</b> keeps everything for later; the page also
+                autosaves.</li>
             </ol>
           </section>
 
@@ -1293,13 +1291,15 @@
           </section>
 
           <section>
-            <h3>Pitch</h3>
+            <h3>Tempo, grid and bar 1</h3>
             <p>
-              With <b>pitch curve</b> on, the selected note shows its pitch handles on the
-              orange curve. Circles are portamento points: drag one to move it, double-click
-              the curve to add one, Alt-click or hover and press Delete to remove one. Diamonds
-              shape the vibrato: drag where it starts, the top corners for depth and fades,
-              the lower one for its period. The bar under the roll takes exact values.
+              The <b>♩</b> button holds the tempo (½×, 2×), the grid (1/16T is the triplet one)
+              and <b>Bar 1</b>. Bar 1 starts on the first grid line, or where the music put it;
+              <span class="kbd">Shift</span>-click the ruler, or <b>At playhead</b>, moves it, and
+              <b>Auto</b> puts it back. Bright lines
+              are bars, numbered as OpenUtau will number them: every export puts OpenUtau's bars
+              and beats on these lines. After an export, the status line says where bar 1
+              falls in the stem.
             </p>
           </section>
 
@@ -1307,34 +1307,37 @@
             <h3>From a song</h3>
             <p>
               Transcribing a song needs the page opened from <code>sona serve</code>, which runs
-              the vocal separators and the note engines on this computer. <b>More options</b> on
-              the start screen picks the separation, the note engine and a triplet grid.
-              The tempo and grid of a loaded song are under the <b>♩</b> button.
+              the vocal separators and the note engines on this computer. If something is
+              missing, the start screen says what and how to add it; the separators' models
+              download the first time they run. <b>Options</b> picks the separation, the note
+              engine, the triplet grid and <b>Bar 1 from the music</b> (experimental): sona finds
+              the song's beat and first bar, and the ♩ button says how sure it is.
             </p>
           </section>
 
           <section>
-            <h3>Lyrics and UTAU export</h3>
+            <h3>Lyrics</h3>
             <p>
               Select a note and press <span class="kbd">L</span> to type its lyric:
               <span class="kbd">Enter</span> or <span class="kbd">Tab</span> saves it and
               moves to the next note (<span class="kbd">Shift</span>+<span class="kbd">Tab</span>
-              the previous), <span class="kbd">Esc</span> stops. <b>あ Lyrics</b> pastes a
-              whole text at once. <b>UST</b> (UTAU) and <b>USTX</b> (OpenUtau) export the
-              same snapped notes as MIDI, with lyrics; a note without one sings あ. The
-              notes move onto the editor's grid, so the vocal starts up to one grid cell
-              earlier than the stem (the status line says how much).
+              the previous), <span class="kbd">Esc</span> stops. <b>Edit → Lyrics…</b> pastes a
+              whole text at once. Every export carries the lyrics; a note without one sings あ.
             </p>
           </section>
 
           <section>
             <h3>Pitch: portamento and vibrato</h3>
             <p>
-              <b>〰 Fit pitch</b> reads each note's glide and vibrato from the stem's pitch
-              track (the white line). The orange <b>curve</b> is what the exported notes will
-              sing in OpenUtau. Select a note to edit its glide and vibrato in the bar under
-              the roll, or press <span class="kbd">V</span> to toggle its vibrato. UST and USTX
-              export carry them (USTX pitch points and vibrato; UST PBS/PBW/PBY/PBM and VBR).
+              <b>Edit → Fit pitch</b> reads each note's glide and vibrato from the white line.
+              With <b>pitch curve</b> on, the selected note shows its handles on the orange
+              curve. Circles are portamento points: drag one to move it, double-click the curve
+              to add one, Alt-click or hover and press Delete to remove one. Diamonds shape the
+              vibrato: drag where it starts, the top corners for depth and fades, the lower one
+              for its period. The bar under the roll takes exact values;
+              <span class="kbd">V</span> toggles the vibrato. The <b>pitch pen</b>
+              (<span class="kbd">P</span>) redraws the white line. UST and USTX carry the glides
+              and vibrato; <b>USTX with the singer's pitch</b> also carries the white line.
             </p>
           </section>
 
@@ -1344,9 +1347,6 @@
               The roll shows ~2 octaves at a time. Scroll to move pitch, Shift-scroll to
               move time, ⌘/Ctrl-scroll to zoom (double-click the ruler to reset). Click the
               top ruler to seek; drag it to shift the grid phase.
-              <span class="kbd">Shift</span>-click the ruler on the beat you hear as beat 1:
-              that line becomes a bar line. Bright lines are bars, numbered as OpenUtau
-              will number them; every export puts OpenUtau's bars and beats on these lines.
             </p>
           </section>
 
@@ -1366,6 +1366,7 @@
               <div><span class="kbd">Del</span> delete selected note</div>
               <div><span class="kbd">L</span> type the selected note's lyric</div>
               <div><span class="kbd">V</span> vibrato on / off for the selected note</div>
+              <div><span class="kbd">P</span> pitch pen on / off</div>
               <div><span class="kbd">?</span> this help</div>
             </div>
           </section>
