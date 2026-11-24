@@ -8,8 +8,8 @@ top three overall are at the end.
 
 - **Notes.** Cell accuracy against Pifuyuu's USTs:
   - 87% on dev, with GAME plus the octave rule;
-  - **78.8%** on the last fresh test, holdout3, for the full stack, which includes a learned stage that
-    exists only in Python;
+  - **78.8%** on the last fresh test, holdout3, for the full stack, which includes the learned stage, now in
+    Rust (ADR-0026);
   - 72.5% for the default pYIN grid mode.
 
   Measured ceilings (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch
@@ -77,6 +77,13 @@ top three overall are at the end.
 | 6.3 | **Errors a user can act on**: a missing separator or model, an unreadable file, out of disk, each with the fix | Some errors still surface as raw tool output | S | Fault-injection tests in `tests/serve.rs` |
 | 6.4 | **Browser drivers in CI** (Playwright against `sona serve` with stub separators) | They run locally only (`web/e2e/`) | M | Green in CI |
 | 6.5 | **Eval dashboards**: per-song history across commits for cells, tempo and curve error | Numbers live in reports and commit messages | M | — |
+
+## Current effort (2026-11-24): edit cost in OpenUtau
+
+The target moved from cell accuracy to **how hard sona's mistakes are to fix in OpenUtau**: pitch and
+length errors are cheap there, while a wrong BPM or notes in the wrong measures are the hardest fixes.
+Spec, map and tickets: [`.scratch/utau-edit-cost/`](../.scratch/utau-edit-cost/spec.md). It reorders
+the list below: 2.3 (beat 1 of the measure) and chopped/joined notes come before more cell-accuracy work.
 
 ## Top three overall
 
