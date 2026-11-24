@@ -1,6 +1,6 @@
 # 03 — The lyric box on the start screen
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: none
 
