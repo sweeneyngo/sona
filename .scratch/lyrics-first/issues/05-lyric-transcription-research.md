@@ -1,6 +1,6 @@
 # 05 — Transcribing the lyric when none is pasted
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: none
 
