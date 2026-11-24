@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DIVISIONS, fixtureSessions, lcg, randomSessions, readMidi, snapLikeTheEditor, type RawNote } from "./exportCases";
+import { fixtureSessions, lcg, randomSessions, readMidi, snapLikeTheEditor, type RawNote } from "./exportCases";
 import { barNumber, barOneLabel, barSeconds, cellSeconds, downbeat, gridLines, gridPhase, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./frame";
-import { snapTime } from "./grid";
+import { DIVISIONS, snapTime } from "./grid";
 import { encodeMidiFile } from "./midi";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type LyricNote, type Sequence } from "./sequence";
 import { encodeUst, ustText } from "./ust";

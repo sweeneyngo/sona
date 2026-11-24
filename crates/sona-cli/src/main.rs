@@ -23,11 +23,22 @@ mod provenance;
 mod serve;
 mod stems;
 
-const USAGE: &str = "\
+/// `sona transcribe` with every option it takes: `--help` and the missing-stem error both print it.
+macro_rules! transcribe_synopsis {
+    () => {
+        "sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>] [--no-salience]\n                    \
+         [--no-spectral-cue] [--game <DIR>] [--no-octave-check] [--cell-model <DIR>]\n                    \
+         [--vocals <WAV>] [--bar-one <MIX>]"
+    };
+}
+
+const USAGE: &str = concat!("\
 sona — vocal-to-MIDI perception core (CLI)
 
 USAGE:
     sona <COMMAND> [OPTIONS]
+    ", transcribe_synopsis!(), "
+    sona serve [OPTIONS]
 
 COMMANDS:
     transcribe <STEM> --bpm <BPM>    Transcribe a WAV vocal stem to annotation JSON
@@ -82,7 +93,7 @@ OPTIONS (serve):
 
 The core emits the annotation JSON contract (raw note events + confidence +
 f0 contour + energy envelope); the web review surface interprets it (grid,
-quantization, correction, MIDI export). See CONTEXT.md.";
+quantization, correction) and exports UST, USTX and MIDI. See CONTEXT.md.");
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -339,8 +350,8 @@ fn grid_mode(division: u32, args: &TranscribeArgs) -> GridMode {
     mode
 }
 
-/// Hand-rolled parse of `<STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24>]`. Accepts both
-/// `--flag value` and `--flag=value` forms; the stem is the lone positional.
+/// Hand-rolled parse of the arguments `transcribe_synopsis!` lists. Accepts both `--flag value` and
+/// `--flag=value` forms; the stem is the lone positional.
 fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
     let mut stem: Option<String> = None;
     let mut bpm: Option<f64> = None;
@@ -410,7 +421,7 @@ fn parse_transcribe_args(args: &[String]) -> Result<TranscribeArgs, String> {
         i += 1;
     }
 
-    let stem = stem.ok_or("transcribe needs a <STEM> path\n\nUSAGE:\n    sona transcribe <STEM> --bpm <BPM> [--midi <PATH>] [--grid <16|24> [--no-salience] [--no-spectral-cue]]")?;
+    let stem = stem.ok_or(concat!("transcribe needs a <STEM> path\n\nUSAGE:\n    ", transcribe_synopsis!()))?;
     let bpm = bpm.ok_or("transcribe needs --bpm <BPM>")?;
     let refinement = args.iter().any(|a| matches!(a.as_str(), "--no-salience" | "--no-spectral-cue"));
     if refinement && grid.is_none() {

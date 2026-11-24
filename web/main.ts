@@ -30,6 +30,7 @@ import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, splitLyrics } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
 import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
+import { DEFAULT_DIVISION, GRIDS, JOB_GRIDS, isDivision, jobDivision } from "./lib/grid";
 import { effectiveNotes as interpret, exportNotes, noteSpan, notesInTimeOrder as inTimeOrder, playbackNotes, renderNotes, type EffectiveNote } from "./lib/interpret";
 import { movedNote, newNote, resizedNote, withoutNote, type Grabbed } from "./lib/noteEdits";
 import { docText, isSession, normalizeAnnotation, parseDoc, baselineFrom, sessionFile, settingsOnLoad, workingNotesFrom, type SessionState } from "./lib/session";
@@ -176,6 +177,13 @@ const el = {
 for (const [k, v] of Object.entries(el)) if (!v) throw new Error(`index.html is missing the element for ${k}`);
 const ctx2d = el.canvas.getContext("2d")!;
 
+/** A grid menu with the grids from `lib/grid.ts`, the default chosen. */
+function fillGridMenu(select: HTMLSelectElement, grids: readonly { division: number; label: string }[]): void {
+  select.replaceChildren(...grids.map((g) => new Option(g.label, String(g.division), g.division === DEFAULT_DIVISION, g.division === DEFAULT_DIVISION)));
+}
+fillGridMenu(el.division, GRIDS);
+fillGridMenu(el.songGrid, JOB_GRIDS);
+
 // --- Types -----------------------------------------------------------------
 
 interface Hitbox {
@@ -246,7 +254,7 @@ let dirty = false;
 
 // Musical interpretation. Seeded on load; edited via the toolbar.
 let bpm = 120;
-let division = 16;
+let division: number = DEFAULT_DIVISION;
 let gridAnchor = 0; // grid phase in seconds (auto = first onset, draggable).
 // A downbeat the user chose (ADR-0029); null = bar 1 on the first grid line.
 let barOne: number | null = null;
@@ -2363,7 +2371,7 @@ async function transcribeSong(): Promise<void> {
   dispatchStart({ type: "transcribe", attempt });
   const s = startState;
   if (!awaitingJob(attempt) || s.kind !== "running" || !songBlob) return;
-  const grid = el.songGrid.value === "24" ? 24 : 16;
+  const grid = jobDivision(el.songGrid.value);
   try {
     const separation = el.songSeparation.value as Separation;
     const barOneWanted = el.songBarOne.checked && separation !== "none";
@@ -2412,7 +2420,7 @@ async function loadJobResults(j: JobStatus, jobBpm: number, grid: number): Promi
   }
   bpm = jobBpm;
   el.bpm.value = String(jobBpm);
-  if (Array.from(el.division.options).some((o) => o.value === String(grid))) {
+  if (isDivision(grid)) {
     division = grid;
     el.division.value = String(grid);
   }

@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { WorkingNote } from "./annotation";
 import { NEUTRAL_EXPRESSION } from "./expression";
 import { lcg } from "./exportCases";
+import { DIVISIONS } from "./grid";
+import { effectiveNotes, exportNotes } from "./interpret";
+import { detectKey } from "./key";
+import { exportSequence } from "./sequence";
 import { baselineFrom, docText, isSession, normalizeAnnotation, parseDoc, sessionFile, settingsOnLoad, workingNotesFrom, type SessionState } from "./session";
+import { encodeUst } from "./ust";
 
 const example = () => JSON.parse(readFileSync(new URL("../../crates/sona-core/tests/fixtures/annotation-example.json", import.meta.url), "utf8"));
 
@@ -14,6 +19,13 @@ function load(parsed: any, current: SessionState = before) {
   const annotation = normalizeAnnotation(parsed);
   const notes = workingNotesFrom(parsed.notes);
   return { annotation, notes, baseline: baselineFrom(parsed), settings: settingsOnLoad(parsed, annotation, notes, current), session: isSession(parsed) };
+}
+
+/** The UST the editor exports for these notes and settings. */
+function ust(notes: WorkingNote[], s: SessionState): Uint8Array {
+  const frame = { bpm: s.bpm, division: s.division, anchor: s.gridAnchor, barOne: s.barOne };
+  const effective = effectiveNotes(notes, frame, { flagThreshold: s.flagThreshold, snapKey: s.snapKey, key: detectKey(notes) });
+  return encodeUst(exportSequence(exportNotes(effective), frame), { bpm: s.bpm, projectName: "sona" }).bytes;
 }
 
 describe("opening a fresh annotation", () => {
@@ -49,7 +61,7 @@ describe("a saved session", () => {
       }));
       const settings: SessionState = {
         bpm: 40 + rand() * 200,
-        division: [4, 8, 16, 32][trial % 4],
+        division: DIVISIONS[trial % DIVISIONS.length],
         gridAnchor: rand() * 3 - 1,
         barOne: rand() < 0.5 ? null : rand() * 4,
         flagThreshold: rand(),
@@ -62,6 +74,19 @@ describe("a saved session", () => {
       expect(reopened.baseline).toEqual(parsed.baseline);
       expect(reopened.settings).toEqual(settings);
     }
+  });
+
+  it("exports the same UST bytes after a reopen on every grid the app offers, 1/16T included", () => {
+    const parsed = load(example());
+    const fresh: SessionState = { ...parsed.settings, division: 16 };
+    for (const division of DIVISIONS) {
+      const settings: SessionState = { ...fresh, division };
+      const file = JSON.parse(JSON.stringify(sessionFile(parsed.annotation, parsed.notes, parsed.baseline, settings)));
+      const reopened = load(file, fresh);
+      expect(reopened.settings.division).toBe(division);
+      expect(ust(reopened.notes, reopened.settings)).toEqual(ust(parsed.notes, settings));
+    }
+    expect(ust(parsed.notes, { ...fresh, division: 24 })).not.toEqual(ust(parsed.notes, fresh));
   });
 
   it("puts the grid phase on the first onset when the session has none, and keeps what it gets wrong", () => {

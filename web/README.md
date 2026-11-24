@@ -8,9 +8,10 @@ exports MIDI.
 
 The annotation JSON contract it consumes is the TypeScript in
 [`lib/annotation.ts`](lib/annotation.ts), mirroring the Serde types in
-`crates/sona-core/src/annotation.rs` (ADR-0004) — keep the two in sync. Because
-the whole app is typed against it, a drifting field is a compile error, not a
-silent bug.
+`crates/sona-core/src/annotation.rs` (ADR-0004). `lib/annotation.test.ts` reads
+an annotation the Rust core writes with every field
+(`crates/sona-core/tests/fixtures/annotation-full.json`) into these types, so a
+field renamed on either side fails a test.
 
 Built with **Vite + TypeScript** (ADR-0009); tests run under **Vitest**.
 
@@ -40,9 +41,18 @@ just static files.
   - [`annotation.ts`](lib/annotation.ts) — the core↔UI JSON contract types.
   - [`view.ts`](lib/view.ts) — pitch/colour formatting and the time/pitch scale
     (+ its inverses, for editing).
-  - [`grid.ts`](lib/grid.ts) — grid spacing from BPM/division, snapping, grid
-    lines, the hard-snap quantizer with the confidence-aware escape hatch, and
+  - [`grid.ts`](lib/grid.ts) — the grids the app offers (the grid menus, job
+    options and session restore all read it), grid spacing from BPM/division,
+    snapping, the hard-snap quantizer with the confidence-aware escape hatch, and
     flag state.
+  - [`interpret.ts`](lib/interpret.ts) — the effective notes: each working note
+    snapped to the frame's grid (or escaped), flagged and keyed, as the roll,
+    the synth and every export read them.
+  - [`noteEdits.ts`](lib/noteEdits.ts) — what a move, resize, add or delete does
+    to a note.
+  - [`session.ts`](lib/session.ts) — reading an annotation or a saved session
+    into the editor's notes, baseline and settings, writing it back, and the
+    undo snapshot.
   - [`synth.ts`](lib/synth.ts) — MIDI→freq and the playback schedule.
   - [`midi.ts`](lib/midi.ts) — the format-0 Standard MIDI File encoder.
 

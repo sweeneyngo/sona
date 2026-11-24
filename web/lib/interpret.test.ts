@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { WorkingNote } from "./annotation";
-import { DIVISIONS, lcg } from "./exportCases";
+import { lcg } from "./exportCases";
 import { cellSeconds, type Frame } from "./frame";
+import { DIVISIONS } from "./grid";
 import { effectiveNotes, exportNotes, firstOnset, noteSpan, notesInTimeOrder, type EffectiveNote, type Reading } from "./interpret";
 import { detectKey, isInKey } from "./key";
 import { movedNote, newNote, resizedNote, withoutNote } from "./noteEdits";

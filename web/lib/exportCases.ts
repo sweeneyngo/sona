@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Expression } from "./expression";
+import { DIVISIONS } from "./grid";
 import { effectiveNotes, exportNotes } from "./interpret";
 import type { LyricNote } from "./sequence";
 
@@ -27,8 +28,6 @@ export interface EditorSession {
   anchor: number;
   notes: LyricNote[];
 }
-
-export const DIVISIONS = [4, 8, 16, 24, 32] as const;
 
 export function lcg(seed: number): () => number {
   let s = seed;

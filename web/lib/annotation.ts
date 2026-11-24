@@ -5,10 +5,12 @@ import type { Provenance } from "./provenance";
  * The **annotation JSON** — sona's primary artifact and the core↔UI contract
  * (ADR-0004). The Rust perception core (`crates/sona-core/src/annotation.rs`)
  * emits it; this review surface interprets it (grid anchoring, hard-snap
- * quantization, correction, MIDI export).
+ * quantization, correction) and exports UST, USTX and MIDI.
  *
- * These types mirror the Serde types one-for-one — keep the two in sync. All
- * timing is in **seconds** (raw, unquantized): snapping is a UI concern.
+ * These types mirror the Serde types one-for-one: `annotation.test.ts` reads an
+ * annotation the Rust core wrote with every field into them, so a field renamed
+ * on either side fails it. All timing is in **seconds** (raw, unquantized):
+ * snapping is a UI concern.
  */
 
 /** Current annotation schema version (`SCHEMA_VERSION` in the Rust core). */

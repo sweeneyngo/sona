@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LYRIC, TICKS_PER_QUARTER, exportSequence, type LyricNote } from "./sequence";
 import { gridPhase, type Frame } from "./frame";
-import { DIVISIONS } from "./exportCases";
+import { DIVISIONS } from "./grid";
 import { encodeShiftJis } from "./sjis";
 import { encodeUst, ustText } from "./ust";
 import { toYaml, ustxProject, ustxText } from "./ustx";

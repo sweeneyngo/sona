@@ -216,7 +216,8 @@ add it.
 The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
 score with four sub-scores per note, the f0 contour and the energy envelope. Two optional fields are
 left out below: `provenance` (what produced it, ADR-0024) and `bar_one` (only with `--bar-one`, ADR-0031).
-The TypeScript side is `web/lib/annotation.ts`.
+The TypeScript side is `web/lib/annotation.ts`; a test reads an annotation the core writes with every field
+(`crates/sona-core/tests/fixtures/annotation-full.json`) into it, so the two can't drift apart.
 
 ```jsonc
 {
@@ -328,7 +329,7 @@ check. The judgment rules are in [`docs/agents/rules.md`](docs/agents/rules.md).
 - the Rust and web tests, including output invariants on random stems and the shared quantizer cases;
 - the TLA+ models with their mutants: grid notes, the lyric editor, the pitch bar, the job queue and the
   start screen;
-- the ten editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The two that need
+- the eleven editor browser drivers (`web/e2e/`, through `scripts/ci/e2e.sh`). The two that need
   `sona serve` run locally.
 
 ```

@@ -1,13 +1,14 @@
 //! The **annotation JSON** — sona's primary artifact and the core↔UI contract
 //! (ADR-0004). The perception core emits it; the web review surface interprets
-//! it (grid, quantization, correction, MIDI export).
+//! it (grid, quantization, correction, and the UST, USTX and MIDI exports).
 //!
 //! Everything here is *raw perception*, invariant to musical settings: note
 //! events with onset/offset in **seconds** (not beats — snapping is a UI
 //! concern), per-note confidence (a scalar plus per-dimension sub-scores), and
 //! two display aids (the f0 contour and the energy/RMS envelope). The matching
-//! TypeScript types live in `web/lib/annotation.ts`; keep the two in sync (no test
-//! checks it yet).
+//! TypeScript types live in `web/lib/annotation.ts`. The two are held together by
+//! `tests/fixtures/annotation-full.json`: a test here writes it with every optional
+//! field, and `web/lib/annotation.test.ts` reads it into the TypeScript types.
 //!
 //! The contract is versioned via [`SCHEMA_VERSION`]; any breaking change to the
 //! field set must bump it so a consumer can reject annotations it can't read.
@@ -246,6 +247,47 @@ mod tests {
         let json = serde_json::to_value(&with).unwrap();
         assert_eq!(json["bar_one"], serde_json::json!({ "time_s": 0.42, "confidence": 0.75, "harmonic": true }));
         assert_eq!(serde_json::from_value::<Annotation>(json).unwrap(), with);
+    }
+
+    /// Every field the contract has, optional ones included.
+    fn full_annotation() -> Annotation {
+        let file = |role: &str, name: &str, bytes: u64, sha: char| FileFingerprint { role: role.into(), name: name.into(), bytes, sha256: sha.to_string().repeat(64) };
+        let settings = [("bpm", "174"), ("engine", "game"), ("grid", "24")].map(|(k, v)| (k.to_string(), v.to_string())).into();
+        Annotation {
+            producer: Producer::Game,
+            bpm: 174.0,
+            provenance: Some(Provenance {
+                sona_version: "0.1.0".into(),
+                sona_commit: Some("v0.1.0-12-gabcdef0".into()),
+                created_unix_s: 1_764_000_000,
+                input: file("input", "lead.wav", 88_244, 'a'),
+                settings,
+                models: vec![file("game/encoder", "encoder.onnx", 1_024, 'b')],
+                job: Some(JobRecord {
+                    id: "j1".into(),
+                    upload: file("upload", "song.mp3", 4_096, 'c'),
+                    steps: vec![StepTime { step: "transcribing".into(), seconds: 1.5 }],
+                    tools: [("demucs".to_string(), "4.0.1".to_string())].into(),
+                    models: vec![file("separator/lead", "UVR.onnx", 2_048, 'd')],
+                    stems: Some(StemSource { key: "e".repeat(64), reused: true, separated_by: "j0".into() }),
+                }),
+            }),
+            bar_one: Some(BarOneEstimate { time_s: 0.42, confidence: 0.75, harmonic: true }),
+            ..sample_annotation()
+        }
+    }
+
+    /// The contract fixture the web reads (`web/lib/annotation.test.ts`); `UPDATE_GOLDEN=1` rewrites it.
+    #[test]
+    fn full_annotation_matches_the_contract_fixture() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/annotation-full.json");
+        let written = serde_json::to_string_pretty(&full_annotation()).unwrap() + "\n";
+        if std::env::var_os("UPDATE_GOLDEN").is_some() {
+            std::fs::write(&path, &written).unwrap();
+        }
+        let fixture = std::fs::read_to_string(&path).expect("the contract fixture");
+        assert_eq!(fixture, written, "rewrite it with UPDATE_GOLDEN=1, then run the web's annotation test");
+        assert_eq!(serde_json::from_str::<Annotation>(&fixture).unwrap(), full_annotation());
     }
 
     #[test]
