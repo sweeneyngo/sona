@@ -22,6 +22,9 @@ a line below.
   after the UST's bar 1, so **this corpus can't test bar-1 detection (05)**. sona's tick 0 sits **one cell
   after the UST's** on 9/9; on 6/9 the UST's own beat grid is a 16th off the drums, so the residual
   measures agreement with Pifuyuu's grid, not with the music. 03 decides whether the residual counts.
+- 2026-11-24, **04 resolved** (merged af495ae, ADR-0028, verified): the BPM field starts empty and
+  focused; the estimate and its ½× are whole-BPM hint buttons; decimals accepted; TLA+ adds `BpmIsYours`.
+  Removes drift whenever the user types the true BPM.
 
 ## Fog
 
