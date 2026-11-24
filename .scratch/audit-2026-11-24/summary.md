@@ -50,3 +50,4 @@ so separation is inflated); job dir 134 MB, never deleted.
 - 2026-11-24: **A08 resolved** (merged): `web/lib/{interpret,noteEdits,session}.ts` with property tests (random edit sequences, undo, save/reopen); main.ts 2,873 → 2,680. Found ticket 16 (1/16T sessions reopen on another grid).
 - 2026-11-24: **A15, A16 resolved** (merged): CLI usage from one source; Rust↔web annotation contract test; Help rewritten (BPM first, bar 1, setup notes, exports) with a browser driver; one grid list, so 1/16T sessions reopen on 1/16T.
 - 2026-11-24: **A10 resolved** (merged, ADR-0032): jobs by upload hash (`upload=<sha256>`, 404 → upload); the editor offers "Re-transcribe at N BPM" after a tempo/grid change, as one undoable step. Found ticket 17 (ffmpeg probe times out under load).
+- 2026-11-24: **A17 resolved** (merged): ffmpeg probe outcome is printed / failed / timed out; only a failure means missing.
