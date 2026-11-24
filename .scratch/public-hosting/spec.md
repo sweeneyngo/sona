@@ -1,6 +1,6 @@
 # Spec: sona as a public page at ifuxyl.dev/sona
 
-Status: needs-triage (opened 2026-11-24)
+Status: wontfix (2026-11-24, user: drop public hosting; sona is run locally, and the README covers that)
 
 ## Question
 

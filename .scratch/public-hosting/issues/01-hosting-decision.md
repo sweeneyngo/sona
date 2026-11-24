@@ -1,6 +1,6 @@
 # 01 — Decide how sona goes public
 
-Status: needs-info
+Status: wontfix
 Type: research
 Blocked by: —
 
@@ -20,3 +20,5 @@ Research the options in `../spec.md` far enough to choose one:
 - Any budget for a hosted backend (option C), or static only?
 
 ## Comments
+
+2026-11-24: dropped by the user. sona stays local-only; the README's "Run it on your computer" section is the way to use it.

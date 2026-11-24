@@ -5,18 +5,74 @@ notes on the song's grid, reads their glides and vibrato, and exports the result
 **UTAU (UST)** or **MIDI**, all on your computer. It is built for grid-locked, pitch-precise singing such
 as Vocaloid songs, and its accuracy is measured against hand-made USTs rather than eyeballed.
 
-## Quick start
+## Run it on your computer
+
+sona runs locally: `sona serve` hosts the app at http://127.0.0.1:8977 and does the separation and
+transcription on your machine. Nothing is uploaded. It is developed on Linux; macOS should work the same
+way, and on Windows use WSL2 (neither is tested).
+
+**You need:**
+- [Rust](https://rustup.rs) via rustup. The pinned toolchain (1.88) installs itself on the first build.
+- [Node.js](https://nodejs.org) 22 or newer.
+- Python 3.10, 3.11 or 3.12, for the vocal separators.
+- [ffmpeg](https://ffmpeg.org) on your `PATH`, to read MP3, FLAC and other non-WAV files.
+- About 5 GB of disk and an internet connection for the first run (the separators and their models
+  download once).
+
+**Set up (once):**
 
 ```bash
 git clone https://github.com/sweeneyngo/sona.git && cd sona
-cargo build --release                       # Rust, stable
-(cd web && npm install && npm run build)    # Node 22+
-scripts/setup-separators.sh                 # vocal separators (Python 3.10–3.12, ~4 GB, one-time)
-./target/release/sona serve                 # open http://127.0.0.1:8977
+cargo build --release                       # the `sona` binary
+(cd web && npm install && npm run build)    # the app that `sona serve` hosts
+scripts/setup-separators.sh                 # demucs + the UVR lead-vocal separator (~4 GB, CPU)
+```
+
+**Run:**
+
+```bash
+./target/release/sona serve                 # then open http://127.0.0.1:8977
 ```
 
 Drop a song on the page. sona suggests its tempo (press **½×** if it's twice too fast), and **Transcribe**
-does the rest. A 25 s clip takes about 80 s on a laptop CPU. For better notes, add GAME (below).
+does the rest. A 25 s clip takes about 80 s on a laptop CPU; the first job is slower while the
+separator models download. Then edit the notes and use **Export → USTX** (OpenUtau), **UST** (UTAU) or
+**MIDI**.
+
+### Better notes with GAME (optional)
+
+openvpi's [GAME](https://github.com/openvpi/GAME) singing-transcription model gives better notes than the
+default (76.3% vs 72.5% of grid cells on fresh songs; see *How well it works*). Its weights are
+CC BY-NC-SA 4.0 (non-commercial), so sona never bundles them: you download them yourself.
+
+1. Download `GAME-1.0.3-medium-onnx.zip` (release v1.0.3) from [GAME's releases](https://github.com/openvpi/GAME/releases)
+   and unzip it: `unzip GAME-1.0.3-medium-onnx.zip -d ~/models` creates `~/models/GAME-1.0.3-medium-onnx`.
+2. Point `ORT_DYLIB_PATH` at an ONNX Runtime library. `setup-separators.sh` already installed one:
+
+   ```bash
+   export ORT_DYLIB_PATH="$(ls ~/.local/share/sona/separator-venv/lib/python3.*/site-packages/onnxruntime/capi/libonnxruntime.so.* | head -1)"
+   # macOS: libonnxruntime.*.dylib in the same folder
+   ```
+3. Build with GAME and serve with it:
+
+   ```bash
+   cargo build --release -p sona-cli --features game
+   ./target/release/sona serve --game ~/models/GAME-1.0.3-medium-onnx
+   ```
+
+The app picks the best engine the server has, so nothing changes on the page.
+
+### If something goes wrong
+
+- **The page says "Start sona serve to transcribe":** the page isn't talking to `sona serve`. Open it
+  from http://127.0.0.1:8977, not from a file.
+- **Under Options, only "Already a stem" can be chosen:** `scripts/setup-separators.sh` didn't
+  finish. Rerun it; if your Python isn't found, set `SONA_PYTHON=/path/to/python3.12`. Custom
+  locations go to `sona serve --demucs-venv DIR --separator-venv DIR`.
+- **"ffmpeg could not read the file":** install ffmpeg, or drop a WAV.
+- **GAME is greyed out under Options:** the binary must be built with `--features game`, and `ORT_DYLIB_PATH` must be
+  set in the shell that runs `sona serve`.
+- **Port 8977 is taken:** `sona serve --port 9000`.
 
 ## Using the app
 
@@ -101,12 +157,12 @@ separate lead-vocal stem added nothing (it does help GAME).
 listens on 127.0.0.1 only and refuses requests for other host names ([ADR-0020](docs/adr/0020-one-click-generation-sona-serve.md)).
 Options: `--port`, `--jobs-dir`, `--demucs-venv`, `--separator-venv`, `--game DIR`.
 
-**GAME** (openvpi's singing-transcription model) gives better notes, and **GAME plus the learned cell
-stage** the best (`--cell-model DIR --vocals VOCALS.wav`, or `sona serve --cell-model DIR`;
-[ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)). The stage is trained on Pifuyuu's USTs, so
-like GAME's weights it is built and kept locally. Its weights are CC BY-NC-SA 4.0
-(non-commercial), so you download them yourself. Build with `--features game`, set `ORT_DYLIB_PATH` to
-an ONNX Runtime library, and pass `--game ~/models/GAME-1.0.3-medium-onnx`.
+**GAME** (openvpi's singing-transcription model; setup above) gives better notes. **GAME plus the
+learned cell stage** is the best measured (`--cell-model DIR --vocals VOCALS.wav`, or
+`sona serve --cell-model DIR`; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)), but the stage
+is **not distributed**: it is trained on Pifuyuu's USTs, whose author forbids redistribution, so its
+weights exist only on the machine that trained them. A fresh install runs pYIN grid mode, or GAME if you
+add it.
 
 The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
 score with four sub-scores per note, the f0 contour and the energy envelope.
@@ -145,7 +201,7 @@ The metric is the share of grid cells that match the UST.
 |---|---|---|
 | grid mode, pYIN (the default) | 79.5% | 70.0% (holdout2), 72.5% (holdout3) |
 | GAME + octave check | 87.4% | 76.3% (holdout3) |
-| + learned per-cell stage (in the app since [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3, with the grid phase sona estimates from onsets: [ADR-0027](docs/adr/0027-grid-phase-from-onsets.md)) |
+| + learned per-cell stage (not distributed; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)) | — | **78.8%** (holdout3, with the grid phase sona estimates from onsets: [ADR-0027](docs/adr/0027-grid-phase-from-onsets.md)) |
 
 - **Ceilings** (ADR-0017): perfect sung/rest decisions would give 91.4%, and the best available pitch per
   cell 95.6%.
