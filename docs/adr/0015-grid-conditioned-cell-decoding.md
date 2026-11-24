@@ -1,6 +1,6 @@
 # Grid-conditioned cell decoding for grid-locked material (opt-in)
 
-**Status: Accepted.** It amends [ADR-0004](0004-core-emits-raw-perception-ui-interprets.md) for an opt-in mode only; the default path is unchanged.
+**Status: Accepted.** It amends [ADR-0004](0004-core-emits-raw-perception-ui-interprets.md) for an opt-in mode of the core; `sona transcribe` without `--grid` is unchanged. Since [ADR-0020](0020-one-click-generation-sona-serve.md), `sona serve` (the app) runs grid mode on every job, and since [ADR-0016](0016-grid-evidence-salience-and-spectral-cue.md) grid mode includes salience and the spectral cue by default. The "opt-in, never the default" below describes the core and CLI.
 
 ## Context
 

@@ -4,6 +4,8 @@
 - GAME + the octave rule raises cell accuracy 72.5% → 76.3%. That is +3.8 with 95% interval [−0.6, +7.5], short of the pre-registered +5 bar, so GAME stays opt-in and experimental.
 - The octave rule (+0.3, interval [+0.1, +0.6]) and the learned cell stage (+2.2, interval [+0.8, +3.5]) both passed their own bars.
 
+Later: GAME is seeded and deterministic ([ADR-0023](0023-deterministic-game.md)); the learned stage is ported to Rust ([ADR-0026](0026-learned-cell-stage-in-rust.md)) and takes its grid phase from the vocals' onsets ([ADR-0027](0027-grid-phase-from-onsets.md)).
+
 ## Context
 
 After ADR-0016, grid mode reached 79.5% dev cell accuracy. The Vocal2Midi project ([Xiantaidu/Vocal2Midi](https://github.com/Xiantaidu/Vocal2Midi)) builds on openvpi's **GAME**, a singing-to-notes model trained on Japanese and other singing with accompaniment augmentation. A 3-worker read of that repo found that GAME is the only stage that produces notes. Every other Vocal2Midi stage was reproduced on dev and none helped: language-neutral id, the silence slicer, the metrical quantizer, the lyric/forced-alignment path.
@@ -20,7 +22,7 @@ After ADR-0016, grid mode reached 79.5% dev cell accuracy. The Vocal2Midi projec
    - **Rule:** if the song's median ratio is below −0.25, raise notes below 0; elsewhere, raise only notes below −1.5.
    - **28 songs:** 79.5% → 83.7%.
    - **holdout3:** +0.3, no song worse, one song +2.2.
-3. **Learned cell stage (prototype, Python, not yet ported).**
+3. **Learned cell stage (prototype, Python; ported in ADR-0026).**
    - **Model:** a BiGRU over grid cells picks rest, or a pitch from GAME-lead, GAME-vocals, sona, or GAME-lead ±12.
    - **Features:** GAME encoder embeddings plus each system's note context.
    - **Training data:** dev plus the two spent holdouts (28 songs, logged in the ledger as training use).
@@ -56,11 +58,11 @@ After ADR-0016, grid mode reached 79.5% dev cell accuracy. The Vocal2Midi projec
 
 ## Consequences
 
-- **holdout3 is spent.** A further confirmation needs holdout4, which needs a BowlRoll fetcher: the OneDrive share holds only part of Pifuyuu's USTs.
+- **holdout3 is spent.** A further confirmation needs holdout4. *(2026-11-24: not from BowlRoll, whose terms forbid mechanical collection; from older songs in Pifuyuu's OneDrive share, see `.scratch/utau-edit-cost/issues/08-holdout4.md`.)*
 - **90% is not reached.** holdout3's best is 78.8%. The ceilings: perfect sung-vs-rest decisions give 91.4%; choosing the best available pitch per cell gives 95.6%.
 - **Fine-tuning GAME on the labelled songs was tried (2026-11-22) and is not adopted.**
   - **Setup:** trained on the 30 spent-holdout songs, scored on dev over 5 fixed segmenter seeds.
   - **Cells:** +0.80 (95% CI −0.53 to +1.91), against a pre-registered +2.0 bar.
   - **Report:** [`game-finetune.md`](../../crates/sona-eval/reports/game-finetune.md).
-- **Run-to-run noise:** GAME's D3PM segmenter samples boundaries at random, so this ADR's unseeded GAME runs carry about ±0.2–0.4 points of run-to-run noise.
+- **Run-to-run noise:** GAME's D3PM segmenter samples boundaries at random, so this ADR's unseeded GAME runs carry about ±0.2–0.4 points of run-to-run noise. Seeded since ADR-0023.
 - **Port:** done in ADR-0026 (holdout3 parity: 78.83% on the true phase, 78.18% on sona's estimated phase).

@@ -5,8 +5,9 @@
 //! Everything here is *raw perception*, invariant to musical settings: note
 //! events with onset/offset in **seconds** (not beats — snapping is a UI
 //! concern), per-note confidence (a scalar plus per-dimension sub-scores), and
-//! two display aids (the f0 contour and the energy/RMS envelope). A matching
-//! TypeScript declaration lives at `web/annotation.d.ts`; keep the two in sync.
+//! two display aids (the f0 contour and the energy/RMS envelope). The matching
+//! TypeScript types live in `web/lib/annotation.ts`; keep the two in sync (no test
+//! checks it yet).
 //!
 //! The contract is versioned via [`SCHEMA_VERSION`]; any breaking change to the
 //! field set must bump it so a consumer can reject annotations it can't read.

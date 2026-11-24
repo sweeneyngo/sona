@@ -1,6 +1,6 @@
 # Scope: from "stops at MIDI" to a transcribe-to-UTAU/OpenUtau tool
 
-**Status: Accepted (2026-11-22, maintainer decision).** This supersedes the "Output stops at MIDI; notation, UST/VSQX, and source separation are out of scope" line in `CONTEXT.md`.
+**Status: Accepted (2026-11-22, maintainer decision).** This supersedes the "Output stops at MIDI; notation, UST/VSQX, and source separation are out of scope" line in `CONTEXT.md`. Grid alignment amended by [ADR-0029](0029-export-frame-bar-one.md).
 
 ## Context
 
@@ -20,7 +20,7 @@ sona becomes an all-in-one path from a song to an editable singing-synth project
 
 ## Consequences
 
-- `CONTEXT.md` is updated: UST/USTX export and lyrics are in scope. Source separation is planned but not yet built.
+- `CONTEXT.md` is updated: UST/USTX export and lyrics are in scope. Source separation is planned but not yet built (since built: ADR-0020).
 - **Shift-JIS output.** Browsers can decode Shift-JIS but not encode it, so the exporter builds its encoding table from the platform's own decoder at export time, with no table shipped.
 - **Testing.**
   - The UST writer is checked against sona's existing Rust UST parser (`sona-eval`'s `ust.rs`), using a committed synthetic golden file.

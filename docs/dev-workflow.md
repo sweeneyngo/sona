@@ -30,7 +30,8 @@ cargo run --release -p sona-cli -- serve   # the app with one-click transcriptio
 
 Use this loop when the work is "make X better" (accuracy, tempo, curve error), not for routine edits.
 
-1. **Pin the metric** with the user (for notes, cell accuracy against Pifuyuu's USTs). Measure the
+1. **Pin the metric** with the user (for notes, the edit cost in OpenUtau since 2026-11-24, with cell
+   accuracy against Pifuyuu's USTs alongside). Measure the
    baseline, then an **oracle**: the best any version of the idea could do. Build only what the oracle
    says can move the number.
 2. **Iterate on dev**:
@@ -38,7 +39,8 @@ Use this loop when the work is "make X better" (accuracy, tempo, curve error), n
      go, and has `--per-song`, `--diag`, `--dump` and `--edit-cost`;
    - `sona-eval-cellstage --edit-cost` for the shipped stack (GAME + learned stage). The edit cost
      weights each error by how hard it is to fix in OpenUtau (`sona_eval::correction::edit_cost`);
-   - `sona-eval-tempo` for tempo.
+   - `sona-eval-tempo` for tempo, and `sona-eval-frame` for the frame (BPM drift, beat and bar 1 against
+     the UST and the music; `--estimate-bar-one` scores ADR-0031).
    - Prototype in Python on dumped intermediates, and port to Rust only once it wins. The port must
      reproduce the prototype's numbers.
 3. **Pre-register**, before any held-out read: write the decision rule in `.scratch/<feature>/spec.md`

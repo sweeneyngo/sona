@@ -17,7 +17,7 @@
 //! contour. `--cand-diag` prints how often the lead's pitch is pYIN's f0 or a
 //! top-k candidate, monophonic vs polyphonic.
 //! The spectral re-articulation cue (`g.cue=spectral`, `g.sc.*`) needs
-//! `--features spectral`.
+//! the `spectral` feature (on by default).
 //!
 //! `--edit-cost` adds, per config, the OpenUtau edit cost of the quantized notes against the UST
 //! (`sona_eval::correction::edit_cost`): per song and pooled, with song-bootstrap intervals.

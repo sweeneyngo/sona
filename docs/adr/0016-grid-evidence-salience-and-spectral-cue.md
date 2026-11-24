@@ -16,7 +16,7 @@ Both were attacked in parallel by a 4-worker swarm from `c1d81b5`, each on its o
 
 ## Decision
 
-Two opt-in evidence tracks for `GridDecoder`, combined through `GridDecoder::segment_with_evidence`:
+Two evidence tracks for `GridDecoder`, combined through `GridDecoder::segment_with_evidence`. Both were opt-in when decided and became the default after holdout2 (see Status):
 
 1. **Harmonic-salience pitch evidence** (`GridDecoder::candidates`, from W3).
    - **What:** Melodia-style harmonic summation (`pitch::HarmonicSalience`, pure Rust, its own radix-2 FFT, no new dependency) gives up to 5 salient f0s per frame.
@@ -47,12 +47,12 @@ The two tracks touch different parts of the decode (cell pitch versus held-note 
 - **Salience:** 7 knobs were tuned on 9 songs, on a broad plateau. Song-bootstrap intervals on the gain exclude zero on both stems.
 - **Spectral cue:** its weights were cross-validated per song. The shipped weights are refit on all 9.
 - **Regressions:** fukagyakuteki regresses with salience on vocals (0.50 → 0.45), and two songs lose ≤ 0.03 with the spectral cue.
-- **No out-of-sample confirmation yet.** That is why both stay opt-in.
+- **No out-of-sample confirmation at the time of the decision**, so both started opt-in. holdout2 then confirmed them, and they became the default (Status).
 
 ## Consequences
 
 - **Cost:** salience costs about one pYIN pass (≈ 22 CPU-seconds per 4-minute song).
-- **Default output is unchanged.** `GridDecoder::default()` and the note-HMM path are byte-identical; both features are `None` / `VoicingEnergy` by default.
+- **Default output (when decided).** `GridDecoder::default()` and the note-HMM path were byte-identical, with both features `None` / `VoicingEnergy`. Since the holdout2 confirmation, `GridDecoder::default()` turns both on (`candidates: Some(..)`, `CueModel::Spectral`); the note-HMM path is still unchanged.
 - **Model check still applies.** The TLA+ model (`verification/grid-notes`) covers `notes_from_path` and `fill_gaps`, which this change leaves untouched.
 - **Done:** the holdout2 confirmation, and making both the default.
 - **Known limitations** (found when the defaults were flipped, on synthetic test signals; both are already included in the confirmed holdout2 numbers):

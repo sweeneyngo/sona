@@ -19,6 +19,6 @@ commits; the mousedown handler commits the bar first (`applyExprBar`, then blur)
 1. **Why it happened.** Clicking a note selects it on mousedown, before the field you were editing blurs and commits.
 2. **The effect.** Committing to the *selected* note moved your typed value onto the note you just clicked.
 3. **Confirmation.** The path was replayed in the browser before the fix.
-4. **The fix.** The bar is bound to the note it shows (`exprBarNote`).
+4. **The fix.** The bar is bound to the note it shows (`noteShownInExprBar` in `web/main.ts`, `exprBarNote` in the model).
 
 CI runs `check.sh` in the `model-check` job.
