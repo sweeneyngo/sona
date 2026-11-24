@@ -162,27 +162,31 @@ impl EditCost {
     }
 }
 
+/// A note on the UST's cells; `index` is its position in the notes it came from.
 #[derive(Debug, Clone, Copy)]
-struct Cells {
-    start: i64,
-    end: i64,
-    pitch: i64,
+pub(crate) struct Cells {
+    pub(crate) start: i64,
+    pub(crate) end: i64,
+    pub(crate) pitch: i64,
+    pub(crate) index: usize,
 }
 
 impl Cells {
-    fn len(&self) -> i64 {
+    pub(crate) fn len(&self) -> i64 {
         self.end - self.start
     }
-    fn shared(&self, o: &Cells) -> i64 {
+    pub(crate) fn shared(&self, o: &Cells) -> i64 {
         (self.end.min(o.end) - self.start.max(o.start)).max(0)
     }
 }
 
-fn to_cells(notes: &[EditNote], g: &CellGrid) -> Vec<Cells> {
+/// `notes` on the grid's cells: sorted, notes under half a cell dropped, overlaps cut at the next start.
+pub(crate) fn to_cells(notes: &[EditNote], g: &CellGrid) -> Vec<Cells> {
     let cell = |t: f64| ((t - g.anchor_s) / g.spacing_s).round() as i64;
     let mut v: Vec<Cells> = notes
         .iter()
-        .map(|n| Cells { start: cell(n.onset_s), end: cell(n.offset_s), pitch: n.midi_pitch.round() as i64 })
+        .enumerate()
+        .map(|(index, n)| Cells { start: cell(n.onset_s), end: cell(n.offset_s), pitch: n.midi_pitch.round() as i64, index })
         .filter(|c| c.end > c.start)
         .collect();
     v.sort_by_key(|c| (c.start, c.end));
@@ -287,6 +291,11 @@ pub fn edit_cost(reference: &[EditNote], output: &[EditNote], g: &CellGrid) -> E
 /// A 95% percentile interval of `stat` over `iters` resamples of `songs` with replacement (fixed seed,
 /// so the interval is reproducible).
 pub fn bootstrap(songs: &[EditCost], iters: usize, stat: impl Fn(&EditCost) -> f64) -> (f64, f64) {
+    bootstrap_pooled(songs, iters, EditCost::add, stat)
+}
+
+/// [`bootstrap`] for any per-song tally that pools with `add`.
+pub fn bootstrap_pooled<T: Default>(songs: &[T], iters: usize, add: impl Fn(&mut T, &T), stat: impl Fn(&T) -> f64) -> (f64, f64) {
     if songs.is_empty() {
         return (f64::NAN, f64::NAN);
     }
@@ -299,9 +308,9 @@ pub fn bootstrap(songs: &[EditCost], iters: usize, stat: impl Fn(&EditCost) -> f
     };
     let mut draws: Vec<f64> = (0..iters)
         .map(|_| {
-            let mut pool = EditCost::default();
+            let mut pool = T::default();
             for _ in 0..songs.len() {
-                pool.add(&songs[(next() % songs.len() as u64) as usize]);
+                add(&mut pool, &songs[(next() % songs.len() as u64) as usize]);
             }
             stat(&pool)
         })

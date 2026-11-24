@@ -1,6 +1,6 @@
 # 01 — Lyric placement metric and line oracle
 
-Status: claimed
+Status: resolved
 Type: research
 Blocked by: none
 
@@ -69,3 +69,41 @@ quarters of (a)'s gain over the unfitted output and its wrong moras per minute a
 interval. Otherwise 02 splits lines further at sona's rests (DP over lines × rests), and this ticket
 measures that bound as well: (b) with each line also cut at the UST's own rests inside it is (a) by
 construction, so the gap (a) − (b) is the most such a split could recover.
+
+## Answer
+
+Full report: `crates/sona-eval/reports/lyric-placement.md`. Dev only; GAME lead (out of sample) first, stage
+(in-sample) second. Δ = edit cost against the same output with no lyric, paired song bootstrap.
+
+| landing | lead cost/min (Δ) | lead wrong moras/min · placed | stage cost/min (Δ) · placed |
+|---|---|---|---|
+| (d) pasted in order, today | 188.7 (0) | 183.2 · 4.9% | 180.2 (0) · 4.3% |
+| (a′) 07 as ported | 174.9 (−13.9) | 71.6 · 62.9% | 162.4 (−17.8) · 69.8% |
+| (a) UST phrases, shipped fit | 205.2 (+16.5 [+3.4, +29.6]) | 76.6 · 60.3% | 176.5 (−3.7) · 68.2% |
+| (a) UST phrases, rests hold moras | 174.7 (−14.1 [−31.1, −3.5]) | 74.0 [48.9, 102.1] · 61.6% | 162.0 (−18.2) · 67.2% |
+| (b) lines, rests hold moras | 176.7 (−12.0 [−30.2, −1.1]) | 93.1 [70.4, 118.3] · 51.7% | 167.4 (−12.8) · 50.1% |
+| (b+) lines and spaces, rests | 175.2 (−13.5 [−31.1, −2.7]) | 83.4 [58.7, 110.7] · 56.7% | 167.4 (−12.8) · 55.3% |
+| lines cut at UST phrases, rests | 168.9 (−19.8 [−38.7, −7.9]) | 66.1 · 65.7% | 155.8 (−24.4) · 71.0% |
+| (c) whole song, rests | 189.0 (+0.3) | 179.4 · 6.9% | 180.7 (+0.5) · 8.0% |
+
+- **Pasting in order places 4.9% of moras**: one missing or extra note shifts the rest of the song.
+- **The shipped `fit_phrase` needs the rests.** 07's −13.9 relied on a simulated user who pastes onto each run of
+  sona's notes only the moras sung inside it. With honest phrases (the UST's), moras sona missed are forced
+  into neighbours: +16.5. Letting the phrase's rests hold moras (`sona_core::lyric_fit::fit_span_moras`, new,
+  07's 1b DP) gives −14.1, the same as 07's number.
+- **Decision rule: lines pass.** With rests, lines keep 85% of the UST phrases' gain on GAME lead (rule: 75%),
+  with wrong moras inside (a)'s interval; lines plus spaces keep 96% and lose fewer moras. The stage keeps 70%.
+  The rule's "lines cut at UST rests is (a) by construction" was wrong: lines break inside UST phrases too, and
+  cutting at both beats either (−5.8 [−10.4, −1.9] against (a)).
+- **Lines and sona's rests disagree**: 49% of line breaks fall on a GAME lead rest, 36% of its rests are line
+  breaks; 41% of line breaks have no rest in the UST either. 02 cannot snap lines to rests.
+- **amaten carries most of the edit-cost gain** (−85 of 394 cost/min); the placement gain is on every song.
+- **Ported:** `sona_eval::correction::lyric_placement` (metric, report), `lyric_fit::{fit_phrase_moras,
+  fit_span_moras, mora_blocks}`, and `sona-eval-cellstage --lyric-placement [--lyric-lines DIR]`. The Rust
+  reproduces the prototype on all 198 song × output × landing rows; the default run and
+  `--fit-phrase-lyrics` are byte-identical to 07's.
+
+**Recommendation for 02:** phrases from the pasted lines and the spaces in them; place each line on a run of
+sona's notes by a song-level DP on mora counts and the fit's cost (a break may fall where notes touch); fit each
+line with `fit_span_moras`. Ceiling (lines placed by the UST): −13.5 cost/min and 83 wrong moras/min on GAME
+lead.

@@ -11,10 +11,14 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
 ## Decisions so far
 
 - 2026-11-24: lyrics are required; the fallback is lyric transcription; hiragana only for now (user).
+- 2026-11-24 (01): pasting in order places 4.9% of moras. Lines (and spaces) give phrases nearly as well as the
+  UST's own phrases (GAME lead −13.5 vs −14.1 cost/min) if the fit lets rests hold moras (`fit_span_moras`); the
+  shipped fit on honest phrases costs +16.5. Only 49% of line breaks sit on a sona rest, so 02 places lines by
+  a song-level DP. [01](issues/01-lyric-placement-metric.md), `crates/sona-eval/reports/lyric-placement.md`.
 
 ## Fog
 
-- Do users' line breaks match sung phrases? Pifuyuu's lyric texts have lines, but those are a lyric site's
-  lines, not his phrases. Measure it (01).
+- Do users' line breaks match sung phrases? Partly (01): 59% of a lyric site's line breaks are UST rests,
+  and 49% sit on a GAME lead rest. As phrases for the fit they work nearly as well as the UST's (01).
 - Repeated choruses: a pasted lyric may write a chorus once and mean it twice.
 - Long vowels written out (ああ) vs held (ー) vs not written at all.

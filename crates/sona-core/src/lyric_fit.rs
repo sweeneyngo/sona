@@ -29,6 +29,8 @@ const NOTE_WITHOUT_MORA: f64 = 2.0;
 const MORA_WITHOUT_NOTE: f64 = 3.0;
 const HIDDEN_CONSONANT: f64 = 0.15;
 const HIDDEN_OPEN: f64 = 0.55;
+/// The cost of a mora sung where the notes have a rest ([`fit_span_moras`]).
+pub const MORA_IN_REST: f64 = 0.0;
 
 /// The kind of one UST lyric (kana, katakana, romaji, or VCV `a か`).
 pub fn mora_of(lyric: &str) -> Mora {
@@ -51,13 +53,30 @@ pub fn mora_of(lyric: &str) -> Mora {
 /// block's first costs `-ln P(hidden | kind)`, and a note's cells per mora should stay near the
 /// phrase's.
 pub fn mora_counts(lens: &[i64], moras: &[Mora]) -> Vec<usize> {
-    let (n, m) = (lens.len(), moras.len());
+    mora_blocks(lens, moras).into_iter().map(|(_, k)| k).collect()
+}
+
+/// [`mora_counts`] with each note's first mora: `(first, count)`, the note singing `moras[first..first + count]`.
+pub fn mora_blocks(lens: &[i64], moras: &[Mora]) -> Vec<(usize, usize)> {
+    let stretches: Vec<Stretch> = lens.iter().map(|&len| Stretch { len, note: true }).collect();
+    stretch_blocks(&stretches, moras)
+}
+
+/// A stretch of a phrase: a note, or a rest that may hold moras the notes missed.
+#[derive(Clone, Copy)]
+struct Stretch {
+    len: i64,
+    note: bool,
+}
+
+fn stretch_blocks(stretches: &[Stretch], moras: &[Mora]) -> Vec<(usize, usize)> {
+    let (n, m) = (stretches.len(), moras.len());
     let attach = |k: Mora| -match k {
         Mora::Consonant => HIDDEN_CONSONANT,
         Mora::Open => HIDDEN_OPEN,
     }
     .ln();
-    let cells_per_mora = lens.iter().sum::<i64>() as f64 / m.max(1) as f64;
+    let cells_per_mora = stretches.iter().filter(|s| s.note).map(|s| s.len).sum::<i64>() as f64 / m.max(1) as f64;
     #[derive(Clone, Copy)]
     enum Step {
         Skip,
@@ -70,19 +89,23 @@ pub fn mora_counts(lens: &[i64], moras: &[Mora]) -> Vec<usize> {
         cost[0][j] = cost[0][j - 1] + MORA_WITHOUT_NOTE;
     }
     for i in 1..=n {
-        let len = lens[i - 1];
+        let Stretch { len, note } = stretches[i - 1];
         for j in 0..=m {
-            let mut best = (cost[i - 1][j] + NOTE_WITHOUT_MORA, Step::Take(0));
+            let mut best = (cost[i - 1][j] + if note { NOTE_WITHOUT_MORA } else { 0.0 }, Step::Take(0));
             if j > 0 && cost[i][j - 1] + MORA_WITHOUT_NOTE < best.0 {
                 best = (cost[i][j - 1] + MORA_WITHOUT_NOTE, Step::Skip);
             }
             let mut attached = 0.0;
             for k in 1..=usize::try_from(len).unwrap_or(0).min(MAX_MORAS_PER_NOTE).min(j) {
-                if k > 1 {
-                    attached += attach(moras[j - k + 1]);
-                }
-                let duration = DURATION_WEIGHT * ((len as f64 / k as f64) / cells_per_mora).ln().abs();
-                let c = cost[i - 1][j - k] + attached + duration;
+                let c = if note {
+                    if k > 1 {
+                        attached += attach(moras[j - k + 1]);
+                    }
+                    let duration = DURATION_WEIGHT * ((len as f64 / k as f64) / cells_per_mora).ln().abs();
+                    cost[i - 1][j - k] + attached + duration
+                } else {
+                    cost[i - 1][j - k] + MORA_IN_REST * k as f64
+                };
                 if c < best.0 {
                     best = (c, Step::Take(k));
                 }
@@ -91,19 +114,19 @@ pub fn mora_counts(lens: &[i64], moras: &[Mora]) -> Vec<usize> {
             step[i][j] = best.1;
         }
     }
-    let mut counts = vec![0; n];
+    let mut blocks = vec![(0, 0); n];
     let (mut i, mut j) = (n, m);
     while i > 0 || j > 0 {
         match step[i][j] {
             Step::Skip => j -= 1,
             Step::Take(k) => {
-                counts[i - 1] = k;
+                blocks[i - 1] = (j - k, k);
                 j -= k;
                 i -= 1;
             }
         }
     }
-    counts
+    blocks
 }
 
 fn cuts(note: &CellNote, k: usize) -> Vec<i64> {
@@ -119,26 +142,62 @@ fn cuts(note: &CellNote, k: usize) -> Vec<i64> {
 /// phrase's notes split and merged to carry one mora each where the DP finds them; with no moras, the
 /// notes unchanged.
 pub fn fit_phrase(notes: &[CellNote], moras: &[Mora]) -> Vec<CellNote> {
+    fit_phrase_moras(notes, moras).into_iter().map(|(n, _)| n).collect()
+}
+
+/// [`fit_phrase`], with the mora each fitted note sings: `Some(i)` for `moras[i]`, `None` for a note the
+/// DP gives none. A mora the DP leaves unsung, or one beyond the pieces a short note splits into, is on
+/// no note.
+pub fn fit_phrase_moras(notes: &[CellNote], moras: &[Mora]) -> Vec<(CellNote, Option<usize>)> {
     if moras.is_empty() {
-        return notes.to_vec();
+        return notes.iter().map(|n| (*n, None)).collect();
     }
     let lens: Vec<i64> = notes.iter().map(|n| n.end - n.start).collect();
-    let counts = mora_counts(&lens, moras);
-    let mut out: Vec<CellNote> = Vec::with_capacity(notes.len());
-    for (i, (note, &k)) in notes.iter().zip(&counts).enumerate() {
+    place_blocks(notes, &mora_blocks(&lens, moras))
+}
+
+/// [`fit_phrase_moras`] for a phrase that spans the cells `span.0..span.1` (a pasted line): a rest in
+/// it, before, between or after the notes, may hold moras the notes missed, up to one per cell, at
+/// [`MORA_IN_REST`] each. Those moras are on no note (a missing note the user draws). Without this,
+/// a mora sung where the transcription has a gap is forced into a neighbour, and the split costs more
+/// than it saves (lyrics-first 01).
+pub fn fit_span_moras(notes: &[CellNote], moras: &[Mora], span: (i64, i64)) -> Vec<(CellNote, Option<usize>)> {
+    if moras.is_empty() {
+        return notes.iter().map(|n| (*n, None)).collect();
+    }
+    let mut stretches = Vec::with_capacity(2 * notes.len() + 1);
+    let mut end = span.0;
+    for n in notes {
+        if n.start > end {
+            stretches.push(Stretch { len: n.start - end, note: false });
+        }
+        stretches.push(Stretch { len: n.end - n.start, note: true });
+        end = end.max(n.end);
+    }
+    if span.1 > end {
+        stretches.push(Stretch { len: span.1 - end, note: false });
+    }
+    let blocks: Vec<(usize, usize)> = stretches.iter().zip(stretch_blocks(&stretches, moras)).filter(|(s, _)| s.note).map(|(_, b)| b).collect();
+    place_blocks(notes, &blocks)
+}
+
+fn place_blocks(notes: &[CellNote], blocks: &[(usize, usize)]) -> Vec<(CellNote, Option<usize>)> {
+    let mut out: Vec<(CellNote, Option<usize>)> = Vec::with_capacity(notes.len());
+    for (i, (note, &(first, k))) in notes.iter().zip(blocks).enumerate() {
         let continues = i > 0 && notes[i - 1].end == note.start && notes[i - 1].pitch == note.pitch;
         match out.last_mut() {
-            Some(last) if k == 0 && continues && last.end == note.start => last.end = note.end,
+            Some((last, _)) if k == 0 && continues && last.end == note.start => last.end = note.end,
             _ if k > 1 => {
-                let mut start = note.start;
+                let (mut start, mut mora) = (note.start, first);
                 for c in cuts(note, k).into_iter().filter(|&c| note.start < c && c < note.end).chain([note.end]) {
                     if c > start {
-                        out.push(CellNote { start, end: c, pitch: note.pitch });
+                        out.push((CellNote { start, end: c, pitch: note.pitch }, Some(mora)));
                         start = c;
+                        mora += 1;
                     }
                 }
             }
-            _ => out.push(*note),
+            _ => out.push((*note, (k == 1).then_some(first))),
         }
     }
     out

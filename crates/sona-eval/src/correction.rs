@@ -21,6 +21,7 @@
 use serde::Deserialize;
 
 pub mod edit_cost;
+pub mod lyric_placement;
 
 /// A note as stored in a session file: raw seconds, MIDI pitch. Extra fields
 /// (confidence, sub-scores, `manual`) are ignored.
