@@ -28,6 +28,7 @@ pub mod correction;
 pub mod error;
 pub mod estimate;
 pub mod fixtures;
+pub mod frame;
 pub mod holdout;
 pub mod metrics;
 pub mod quantize;
