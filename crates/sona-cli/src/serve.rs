@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::http::{read_request, write_response, HttpError, Limits, Request, Response};
 use crate::jobs::{wav_rate, Engine, Input, Job, JobSpec, NotKept, Phase, Queue, Separation, Settings, ToolTimeout, Tools, STEM_RATE};
+use crate::provenance::ToolRun;
 
 const LIMITS: Limits = Limits { max_header_bytes: 16 * 1024, max_body_bytes: 500 * 1_000_000 };
 const DEFAULT_PORT: u16 = 8977;
@@ -96,7 +97,8 @@ struct Server {
     port: u16,
     web_dir: Option<PathBuf>,
     tools: Tools,
-    /// Whether `ffmpeg -version` ran at start-up.
+    /// Whether ffmpeg runs: `ffmpeg -version` succeeded at start-up, or was still running at its limit (a
+    /// busy machine, not a missing ffmpeg). Only a failed start or a non-zero exit turns it off.
     ffmpeg_runs: bool,
     queue: Arc<Queue>,
 }
@@ -117,7 +119,8 @@ pub fn run_serve(args: &[String]) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", a.port)).map_err(|e| format!("binding 127.0.0.1:{}: {e}", a.port))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let jobs_dir = a.settings.jobs_dir.clone();
-    let ffmpeg_runs = crate::provenance::tool_stdout(Command::new(&a.tools.ffmpeg).arg("-version"), Duration::from_secs(5)).is_some();
+    let ffmpeg_probe = crate::provenance::tool_run(Command::new(&a.tools.ffmpeg).arg("-version"), Duration::from_secs(5));
+    let ffmpeg_runs = ffmpeg_probe != ToolRun::Failed;
     let queue = Queue::start(a.settings, a.tools.clone()).map_err(|e| format!("jobs dir {}: {e}", jobs_dir.display()))?;
     let server = Arc::new(Server { port, web_dir: a.web_dir, tools: a.tools, ffmpeg_runs, queue });
     println!("sona: serving http://127.0.0.1:{port}");
@@ -126,6 +129,9 @@ pub fn run_serve(args: &[String]) -> Result<(), String> {
     }
     use std::io::Write;
     let _ = std::io::stdout().flush();
+    if ffmpeg_probe == ToolRun::TimedOut {
+        let _ = writeln!(std::io::stderr(), "sona: `{} -version` took over 5 s; assuming ffmpeg runs.", server.tools.ffmpeg.display());
+    }
     for note in server.setup() {
         let _ = writeln!(std::io::stderr(), "sona: {}", note.message);
     }

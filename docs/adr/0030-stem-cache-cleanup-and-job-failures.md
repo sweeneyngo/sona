@@ -67,9 +67,12 @@ Tickets: `.scratch/audit-2026-11-24/issues/04-cheap-retranscribe.md`, `05-serve-
    - `sona serve --help` and `sona transcribe -h` print the usage. The 409 for a missing separator names
      `scripts/setup-separators.sh` and the venv flags.
    - `/api/capabilities` lists what separation still needs under `setup`, each with its fix (audit 12).
-     ffmpeg is probed once at start-up (`ffmpeg -version`, 5 s limit). The venvs, the htdemucs weights in
-     torch's cache and the lead model are checked on each request with a file test, so a first download
-     or a setup run shows without a restart. A missing ffmpeg or venv turns off the separations it
+     ffmpeg is probed once at start-up (`ffmpeg -version`, 5 s limit). Only an ffmpeg that can't start or
+     exits non-zero is missing. One still running at the limit is a busy machine, not a missing ffmpeg: it
+     counts as present (stderr says it wasn't verified) and is never cached as missing (audit 17). The
+     stem-cache key's version probe still reads a timed-out ffmpeg as `unknown`. The venvs, the htdemucs
+     weights in torch's cache and the lead model are checked on each request with a file test, so a first
+     download or a setup run shows without a restart. A missing ffmpeg or venv turns off the separations it
      blocks, and the 409 repeats its fix. Missing weights or a missing lead model only mean a download on
      the first job, so they don't. Without ffmpeg, an upload that isn't a 44.1 kHz WAV is refused before
      it is queued. The start screen lists the notes, and the tempo hint shows `/api/tempo`'s error.
@@ -88,10 +91,13 @@ Tickets: `.scratch/audit-2026-11-24/issues/04-cheap-retranscribe.md`, `05-serve-
   - a panicking job failed with its message and `panic.log`, and the next two jobs finished;
   - a separator that prints a progress bar and hangs showed that line in the job's log, was stopped at its
     limit with that line in the error, and the next job finished;
-  - a 48 kHz WAV became a 44.1 kHz stem with the right notes; `--help` works; foreign Origins get 403.
+  - a 48 kHz WAV became a 44.1 kHz stem with the right notes; `--help` works; foreign Origins get 403;
+  - an ffmpeg that exits 1 or doesn't exist turns separation off; one whose `-version` outlasts the 5 s
+    limit leaves it on, with no ffmpeg note, and a 48 kHz WAV is queued.
 - **Mutants** (each applied to the code and caught by the test named): no `catch_unwind` (panic test),
   no deadline (hang test), no cache hit (cache test), clean-up deleting queued jobs or any folder (clean-up
-  test), no resampling (48 kHz test), no tool line (hang test), no Origin check (guard test). Web: no
+  test), no resampling (48 kHz test), no tool line (hang test), no Origin check (guard test), a probe
+  timeout cached as missing and a non-zero exit read as a timeout (ffmpeg probe test). Web: no
   cancel on a lost poll, and a `stems` record that doesn't parse, are each caught by vitest.
 - **Model** (`verification/serve-jobs`, TLA+): a job may now panic, hang its tool or be cleaned up. New
   rules: `OnlyFinishedJobsAreRemoved`, `TheRunningJobKeepsItsFolder`, and the liveness property

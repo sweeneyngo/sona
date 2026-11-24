@@ -501,6 +501,27 @@ fn without_ffmpeg_separation_is_off_and_a_file_that_needs_it_is_refused_with_the
 }
 
 #[test]
+fn an_ffmpeg_that_fails_is_missing_but_a_slow_one_is_not() {
+    let tools = temp_dir("ffmpeg-stubs");
+    let (broken, slow) = (tools.0.join("broken/ffmpeg"), tools.0.join("slow/ffmpeg"));
+    script(&broken, "echo 'ffmpeg: error while loading shared libraries' >&2\nexit 1");
+    script(&slow, "exec sleep 10");
+    let broken_srv = start_with("broken-ffmpeg", "", &[], &[("SONA_FFMPEG", broken.to_str().unwrap())]);
+    let (_, caps) = json(broken_srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!(caps["separation"], serde_json::json!({ "none": true, "vocals": false, "lead": false }), "{caps}");
+    assert_eq!(setup_note(&caps, "ffmpeg").expect("a broken ffmpeg is reported")["status"], "missing");
+
+    let t0 = Instant::now();
+    let slow_srv = start_with("slow-ffmpeg", "", &[], &[("SONA_FFMPEG", slow.to_str().unwrap())]);
+    assert!(t0.elapsed() >= Duration::from_secs(5), "the probe waited for its limit");
+    let (_, caps) = json(slow_srv.port, "GET", "/api/capabilities", b"");
+    assert_eq!(caps["separation"], serde_json::json!({ "none": true, "vocals": true, "lead": true }), "a slow ffmpeg is not a missing one: {caps}");
+    assert!(setup_note(&caps, "ffmpeg").is_none() && !caps.to_string().contains("install ffmpeg"), "{caps}");
+    let (status, body) = json(slow_srv.port, "POST", "/api/jobs?bpm=120&separation=none&name=song48k.wav", &song_wav_at(48_000));
+    assert_eq!(status, 201, "a file that needs ffmpeg is queued: {body}");
+}
+
+#[test]
 fn a_missing_lead_separator_or_model_is_reported_with_its_fix() {
     let torch = temp_dir("torch-home");
     let srv = start_with("nolead", "", &["--separator-venv", "/nonexistent/separator-venv"], &[("TORCH_HOME", torch.0.to_str().unwrap())]);

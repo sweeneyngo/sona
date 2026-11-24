@@ -49,23 +49,41 @@ pub fn provenance(input: FileFingerprint, settings: BTreeMap<String, String>, mo
 
 /// What a command prints, or `None` if it fails, is missing, or takes longer than `limit`.
 pub fn tool_stdout(cmd: &mut Command, limit: Duration) -> Option<String> {
-    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    match tool_run(cmd, limit) {
+        ToolRun::Printed(out) => Some(out),
+        ToolRun::Failed | ToolRun::TimedOut => None,
+    }
+}
+
+/// How a tool run ended: a missing tool or one that exits non-zero has `Failed`, a slow one has `TimedOut`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ToolRun {
+    Printed(String),
+    Failed,
+    TimedOut,
+}
+
+/// Runs `cmd`, killing it after `limit`.
+pub fn tool_run(cmd: &mut Command, limit: Duration) -> ToolRun {
+    let Ok(mut child) = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return ToolRun::Failed };
     let start = Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => break,
-            Ok(Some(_)) | Err(_) => return None,
+            Ok(Some(_)) | Err(_) => return ToolRun::Failed,
             Ok(None) if start.elapsed() > limit => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                return ToolRun::TimedOut;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
         }
     }
     let mut out = String::new();
-    child.stdout.take()?.read_to_string(&mut out).ok()?;
-    Some(out)
+    match child.stdout.take().map(|mut s| s.read_to_string(&mut out)) {
+        Some(Ok(_)) => ToolRun::Printed(out),
+        _ => ToolRun::Failed,
+    }
 }
 
 #[cfg(test)]
@@ -89,5 +107,13 @@ mod tests {
         assert_eq!(tool_stdout(Command::new("sh").args(["-c", "exit 3"]), Duration::from_secs(5)), None);
         assert_eq!(tool_stdout(Command::new("sh").args(["-c", "sleep 5"]), Duration::from_millis(200)), None);
         assert_eq!(tool_stdout(&mut Command::new("/nonexistent/tool"), Duration::from_secs(1)), None);
+    }
+
+    #[test]
+    fn only_a_slow_tool_times_out() {
+        assert_eq!(tool_run(Command::new("sh").args(["-c", "sleep 5"]), Duration::from_millis(200)), ToolRun::TimedOut);
+        assert_eq!(tool_run(Command::new("sh").args(["-c", "exit 1"]), Duration::from_secs(5)), ToolRun::Failed);
+        assert_eq!(tool_run(&mut Command::new("/nonexistent/tool"), Duration::from_secs(1)), ToolRun::Failed);
+        assert_eq!(tool_run(Command::new("sh").args(["-c", "echo ok"]), Duration::from_secs(5)), ToolRun::Printed("ok\n".into()));
     }
 }
