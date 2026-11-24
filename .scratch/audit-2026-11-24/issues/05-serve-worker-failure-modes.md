@@ -1,6 +1,6 @@
 # 05 — `sona serve`: a panic kills the only worker silently; hung children block the queue
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: —
 
@@ -68,3 +68,54 @@ normal job, gives "failed" followed by "done".
 
 - `verification/serve-jobs` models the queue. Adding "a job's run may crash" as an action would show the
   stuck state in TLA+ too. Worth it only if the model is cheap to extend.
+
+## Answer
+
+Done together with 04 on branch `audit-a04-a05-serve`:
+[ADR-0030](../../../docs/adr/0030-stem-cache-cleanup-and-job-failures.md) (numbered 0030 on the branch; the
+number may change at merge). Item by item:
+
+1. **Panic guard.** Each job runs under `catch_unwind` (`jobs.rs`, `Queue::start`). A panic stops the job's
+   tool and writes the message and a backtrace to `<job>/panic.log` (a panic hook keeps them per thread).
+   It fails the job with "sona hit an internal error (…); the details are in …/panic.log" and writes its
+   `job.json`. The worker then takes the next job. Test hook: `SONA_TEST_PANIC=<upload name>` panics where
+   transcription runs. In `tests/serve.rs::a_panic_fails_that_job_and_the_worker_goes_on`, the panicking
+   job ends `failed` and the next two end `done`. Mutant (no `catch_unwind`): the panicking job stays
+   `transcribing`, and the test fails.
+2. **Deadline.** It is a total deadline proportional to the audio, not an inactivity one, because ffmpeg
+   with `-loglevel error` prints nothing during a long decode. The limit is `--tool-timeout S` (default
+   600) or `--tool-timeout-ratio R` (default 20 s per second of audio), whichever is longer. The length is
+   exact for a WAV, ffmpeg's `Duration:` otherwise, and the file size at 128 kbit/s failing both. Past the
+   limit the tool is killed, and the job fails with the tool's last printed line and the flags to raise.
+   **Progress:** while a tool runs, the job's log ends with `<tool>: <its last line>` (`\r` counts as a line
+   end), so demucs's bar reaches the UI with no UI change. Test: a stub demucs prints a tqdm-like bar and
+   sleeps 30 s. The status showed `demucs: 40%|####      | 4/10 …`, the job failed at its 2 s limit with
+   that line in the error, and the next job finished. Both mutants (no deadline, no tool line) are caught.
+3. **Ghost jobs.** `serveClient.fetchJobOrCancel`: when a poll fails, the client cancels the job on the
+   server (best effort) and rethrows. `main.ts` changes only in its import and the poll call. Vitest with a
+   stubbed `fetch`: a failing poll sends `DELETE`, a good one doesn't. The mutant (no cancel) is caught.
+4. **Capabilities that say ready when they aren't: not done.** ffmpeg, the UVR model file and the demucs
+   weights still aren't checked, and the client still swallows a 422 from `/api/tempo`. Checking the model
+   file is cheap. The demucs weights live in torch's cache, and the first run downloads them.
+5. **Sample rate.** `to_mono_wav` sends every WAV that isn't 44.1 kHz through ffmpeg, as it does any other
+   format. With no ffmpeg the error reads "resampling the 48000 Hz WAV to 44100 Hz: could not start
+   ffmpeg …". Test: a 48 kHz upload with no separation gives a 44.1 kHz mono stem with A4 and B4. The
+   mutant is caught. A 44.1 kHz WAV takes the old in-process path, byte for byte.
+6. **409 and `--help`.** `sona serve --help` and `sona transcribe -h|--help` print the usage, which now
+   lists the new serve options. The 409 says "run scripts/setup-separators.sh, or start sona serve with
+   --demucs-venv and --separator-venv (see `sona serve --help`)". Both are tested.
+7. **Origin.** `/api/*` requests whose `Origin` is neither `http://127.0.0.1:<port>` nor
+   `http://localhost:<port>` get 403. The Vite dev proxy rewrites its own `localhost:5173` origin to the
+   server's. Tests: foreign and `null` origins get 403, the server's own pass. The mutant is caught.
+
+**Model** (`verification/serve-jobs`):
+- A running job may now panic, hang its tool (failed at the deadline), or be cleaned up between jobs.
+- New liveness property `EveryJobFinishes`, with only the worker's steps fair. New invariants
+  `OnlyFinishedJobsAreRemoved` and `TheRunningJobKeepsItsFolder`.
+- `CancelAndFailureStick` now says a job reports at most one outcome. The model now skips a job cancelled
+  while queued (as `run` does), which closed the path the old `set-phase-not-absorbing` mutant was caught
+  through; the stronger rule catches it again.
+- 7/7 mutants caught, including `panic-kills-worker` and `no-deadline` (both by `EveryJobFinishes`).
+
+**Not tested:** missing ffmpeg or venvs beyond the 409 and the resample message, and a real hung
+separator.

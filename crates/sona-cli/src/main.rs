@@ -20,6 +20,7 @@ mod http;
 mod jobs;
 mod provenance;
 mod serve;
+mod stems;
 
 const USAGE: &str = "\
 sona — vocal-to-MIDI perception core (CLI)
@@ -61,7 +62,14 @@ OPTIONS (transcribe):
 OPTIONS (serve):
     --port <N>             Listen on 127.0.0.1:<N> (default 8977; 0 picks a free port)
     --web-dir <DIR>        The built review surface (default: web/dist in this checkout)
-    --jobs-dir <DIR>       Where uploads and results go (default: a temp folder)
+    --cache-dir <DIR>      Where jobs and the stem cache go (default $XDG_CACHE_HOME/sona,
+                           else ~/.cache/sona; ADR-0030)
+    --jobs-dir <DIR>       Where uploads and results go (default <cache-dir>/jobs)
+    --keep-jobs <N>        Finished jobs kept on disk, newest first (default 20)
+    --keep-stems <N>       Separated songs kept in <cache-dir>/stems, so transcribing one again at
+                           another BPM, grid or engine skips separation (default 10; 0 turns it off)
+    --tool-timeout <S>     Stop a separator or ffmpeg run after S seconds (default 600) or after
+    --tool-timeout-ratio <R>  R seconds per second of audio (default 20), whichever is longer
     --demucs-venv <DIR>    demucs venv for vocal separation (default ~/.local/share/sona/demucs-venv)
     --separator-venv <DIR> audio-separator venv for the lead (default ~/.local/share/sona/separator-venv)
     --game <DIR>           Offer GAME note extraction (needs --features game and ORT_DYLIB_PATH)
@@ -81,6 +89,10 @@ fn main() -> ExitCode {
         }
         // No command, or an explicit help request: print usage.
         None | Some("-h") | Some("--help") => {
+            println!("{USAGE}");
+            ExitCode::SUCCESS
+        }
+        Some("transcribe" | "serve") if args[1..].iter().any(|a| a == "-h" || a == "--help") => {
             println!("{USAGE}");
             ExitCode::SUCCESS
         }

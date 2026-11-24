@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 struct Server {
     child: Child,
     port: u16,
-    _dir: TempDir,
+    dir: TempDir,
 }
 
 impl Drop for Server {
@@ -42,31 +42,47 @@ fn script(path: &Path, body: &str) {
 
 /// demucs: `python -m demucs -n htdemucs --two-stems vocals -o OUT IN` → OUT/htdemucs/<name>/vocals.wav.
 /// audio-separator: `audio-separator IN … --output_dir OUT …` → OUT/<name>_(Vocals)_model.wav.
+/// Each run adds a line to `demucs.calls` / `uvr.calls` beside the venvs.
 fn stub_separators(root: &Path, demucs_extra: &str) -> (PathBuf, PathBuf) {
     let demucs = root.join("demucs-venv");
+    let r = root.display();
     script(
         &demucs.join("bin/python"),
         &format!(
-            "{demucs_extra}\nwhile [ \"$1\" != \"-o\" ]; do shift; done\nout=$2; in=$3\nmkdir -p \"$out/htdemucs/song\"\ncp \"$in\" \"$out/htdemucs/song/vocals.wav\""
+            "{demucs_extra}\nwhile [ \"$1\" != \"-o\" ]; do shift; done\necho run >> \"{r}/demucs.calls\"\nout=$2; in=$3\nmkdir -p \"$out/htdemucs/song\"\ncp \"$in\" \"$out/htdemucs/song/vocals.wav\""
         ),
     );
     let sep = root.join("separator-venv");
-    script(&sep.join("bin/audio-separator"), "in=$1\nwhile [ \"$1\" != \"--output_dir\" ]; do shift; done\nmkdir -p \"$2\"\ncp \"$in\" \"$2/vocals_(Vocals)_UVR.wav\"");
+    script(
+        &sep.join("bin/audio-separator"),
+        &format!("in=$1\nwhile [ \"$1\" != \"--output_dir\" ]; do shift; done\necho run >> \"{r}/uvr.calls\"\nmkdir -p \"$2\"\ncp \"$in\" \"$2/vocals_(Vocals)_UVR.wav\""),
+    );
     (demucs, sep)
 }
 
+fn calls(srv: &Server, tool: &str) -> usize {
+    std::fs::read_to_string(srv.dir.0.join(format!("{tool}.calls"))).map_or(0, |t| t.lines().count())
+}
+
 fn start(tag: &str, demucs_extra: &str) -> Server {
+    start_with(tag, demucs_extra, &[], &[])
+}
+
+/// `sona serve` on a free port, with stub separators and its cache (jobs and stems) in a fresh folder.
+fn start_with(tag: &str, demucs_extra: &str, args: &[&str], env: &[(&str, &str)]) -> Server {
     let dir = temp_dir(tag);
     let (demucs, sep) = stub_separators(&dir.0, demucs_extra);
     let mut child = Command::new(env!("CARGO_BIN_EXE_sona"))
         .args(["serve", "--port", "0", "--web-dir"])
         .arg(&dir.0)
-        .arg("--jobs-dir")
-        .arg(dir.0.join("jobs"))
+        .arg("--cache-dir")
+        .arg(&dir.0)
         .arg("--demucs-venv")
         .arg(&demucs)
         .arg("--separator-venv")
         .arg(&sep)
+        .args(args)
+        .envs(env.iter().copied())
         .stdout(Stdio::piped())
         .spawn()
         .expect("start sona serve");
@@ -74,13 +90,17 @@ fn start(tag: &str, demucs_extra: &str) -> Server {
     let mut line = String::new();
     BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
     let port = line.trim().rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or_else(|| panic!("no port in {line:?}"));
-    Server { child, port, _dir: dir }
+    Server { child, port, dir }
 }
 
 fn request(port: u16, method: &str, path: &str, host: Option<&str>, body: &[u8]) -> (u16, Vec<u8>) {
-    let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
     let host = host.map(str::to_string).unwrap_or_else(|| format!("127.0.0.1:{port}"));
-    write!(s, "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\n\r\n", body.len()).unwrap();
+    request_with(port, method, path, &format!("Host: {host}\r\n"), body)
+}
+
+fn request_with(port: u16, method: &str, path: &str, headers: &str, body: &[u8]) -> (u16, Vec<u8>) {
+    let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(s, "{method} {path} HTTP/1.1\r\n{headers}Content-Length: {}\r\n\r\n", body.len()).unwrap();
     s.write_all(body).unwrap();
     let mut raw = Vec::new();
     s.read_to_end(&mut raw).unwrap();
@@ -95,12 +115,17 @@ fn json(port: u16, method: &str, path: &str, body: &[u8]) -> (u16, serde_json::V
 }
 
 fn song_wav() -> Vec<u8> {
-    let spec = hound::WavSpec { channels: 2, sample_rate: 44_100, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    song_wav_at(44_100)
+}
+
+/// A4 then B4, stereo, at `rate`.
+fn song_wav_at(rate: u32) -> Vec<u8> {
+    let spec = hound::WavSpec { channels: 2, sample_rate: rate, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let mut cursor = std::io::Cursor::new(Vec::new());
     let mut w = hound::WavWriter::new(&mut cursor, spec).unwrap();
     for (freq, secs) in [(0.0f32, 0.3f32), (440.0, 0.8), (0.0, 0.3), (494.0, 0.8), (0.0, 0.3)] {
-        for i in 0..(secs * 44_100.0) as usize {
-            let v = (0.4 * (std::f32::consts::TAU * freq * i as f32 / 44_100.0).sin() * i16::MAX as f32) as i16;
+        for i in 0..(secs * rate as f32) as usize {
+            let v = (0.4 * (std::f32::consts::TAU * freq * i as f32 / rate as f32).sin() * i16::MAX as f32) as i16;
             w.write_sample(v).unwrap();
             w.write_sample(v).unwrap();
         }
@@ -110,13 +135,17 @@ fn song_wav() -> Vec<u8> {
 }
 
 fn wait_final(port: u16, id: &str) -> serde_json::Value {
+    wait_final_within(port, id, Duration::from_secs(120))
+}
+
+fn wait_final_within(port: u16, id: &str, limit: Duration) -> serde_json::Value {
     let t0 = Instant::now();
     loop {
         let (_, s) = json(port, "GET", &format!("/api/jobs/{id}"), b"");
         if ["done", "failed", "cancelled"].contains(&s["phase"].as_str().unwrap_or("")) {
             return s;
         }
-        assert!(t0.elapsed() < Duration::from_secs(120), "job never finished: {s}");
+        assert!(t0.elapsed() < limit, "job never finished: {s}");
         std::thread::sleep(Duration::from_millis(100));
     }
 }
@@ -199,6 +228,12 @@ fn cancelling_stops_a_running_separator_and_never_reports_done() {
 fn refuses_foreign_hosts_bad_input_and_paths_outside_the_web_build() {
     let srv = start("guard", "");
     assert_eq!(request(srv.port, "GET", "/api/capabilities", Some("evil.example:8977"), b"").0, 403, "DNS-rebinding host");
+    let host = format!("Host: 127.0.0.1:{}\r\n", srv.port);
+    let from = |origin: &str| request_with(srv.port, "POST", "/api/jobs?bpm=0&name=a.wav", &format!("{host}Origin: {origin}\r\n"), b"x").0;
+    assert_eq!(from("https://evil.example"), 403, "a cross-origin simple POST from another site");
+    assert_eq!(from("null"), 403);
+    assert_eq!(from(&format!("http://localhost:{}", srv.port)), 400, "the server's own page gets as far as the bad bpm");
+    assert_eq!(from(&format!("http://127.0.0.1:{}", srv.port)), 400);
     assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=0&name=a.wav", b"x").0, 400);
     assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=120&grid=7&name=a.wav", b"x").0, 400);
     assert_eq!(json(srv.port, "POST", "/api/jobs?bpm=120&engine=game&name=a.wav", b"x").0, 409, "GAME not configured");
@@ -261,4 +296,164 @@ fn estimates_a_songs_tempo_from_wav_and_through_ffmpeg() {
     assert_eq!(status, 400);
     let (status, _) = json(s.port, "POST", "/api/tempo?name=x.mp3", b"not audio at all");
     assert_eq!(status, 422);
+}
+
+fn submit(port: u16, query: &str, audio: &[u8]) -> String {
+    let (status, job) = json(port, "POST", &format!("/api/jobs?{query}"), audio);
+    assert_eq!(status, 201, "{job}");
+    job["id"].as_str().unwrap().to_string()
+}
+
+fn annotation(port: u16, id: &str) -> serde_json::Value {
+    let (status, ann) = json(port, "GET", &format!("/api/jobs/{id}/annotation"), b"");
+    assert_eq!(status, 200, "{ann}");
+    ann
+}
+
+fn steps(ann: &serde_json::Value) -> Vec<String> {
+    ann["provenance"]["job"]["steps"].as_array().unwrap().iter().map(|s| s["step"].as_str().unwrap().to_string()).collect()
+}
+
+#[test]
+fn transcribing_a_song_again_reuses_its_separated_stems() {
+    let srv = start("cache", "");
+    let song = song_wav();
+    let first = submit(srv.port, "bpm=120&separation=lead&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &first)["phase"], "done");
+    let again = submit(srv.port, "bpm=120&separation=lead&name=song.wav", &song);
+    let fin = wait_final(srv.port, &again);
+    assert_eq!(fin["phase"], "done", "{fin}");
+    let half = submit(srv.port, "bpm=60&grid=24&separation=lead&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &half)["phase"], "done");
+    assert_eq!((calls(&srv, "demucs"), calls(&srv, "uvr")), (1, 1), "both separators ran once for three jobs");
+
+    let (a, b) = (annotation(srv.port, &first), annotation(srv.port, &again));
+    assert_eq!(a["notes"], b["notes"], "the same stem gives the same notes");
+    assert_eq!(request(srv.port, "GET", &format!("/api/jobs/{first}/stem"), None, b"").1, request(srv.port, "GET", &format!("/api/jobs/{again}/stem"), None, b"").1);
+    let (made, reused) = (&a["provenance"]["job"]["stems"], &b["provenance"]["job"]["stems"]);
+    assert_eq!((made["reused"].as_bool(), made["separated_by"].as_str()), (Some(false), Some(first.as_str())));
+    assert_eq!((reused["reused"].as_bool(), reused["separated_by"].as_str()), (Some(true), Some(first.as_str())));
+    assert_eq!(made["key"], reused["key"]);
+    assert_eq!(made["key"].as_str().map(str::len), Some(64));
+    assert_eq!(steps(&a), ["queued", "separating-vocals", "separating-lead", "transcribing"]);
+    assert_eq!(steps(&b), ["queued", "reused-stems", "transcribing"]);
+    assert!(fin["log"].as_array().unwrap().iter().any(|l| l.as_str().unwrap().contains(&format!("separation reused from job {first}"))), "{fin}");
+    let h = annotation(srv.port, &half);
+    assert_eq!((h["bpm"].as_f64(), h["provenance"]["settings"]["grid"].as_str()), (Some(60.0), Some("24")));
+    assert_eq!(h["provenance"]["job"]["stems"]["reused"], true);
+
+    let vocals_only = submit(srv.port, "bpm=120&separation=vocals&name=song.wav", &song);
+    assert_eq!(wait_final(srv.port, &vocals_only)["phase"], "done");
+    let mut other = song.clone();
+    other.extend_from_slice(&[0, 0, 0, 0]);
+    let other = submit(srv.port, "bpm=120&separation=lead&name=song.wav", &other);
+    assert_eq!(wait_final(srv.port, &other)["phase"], "done");
+    assert_eq!(calls(&srv, "demucs"), 3, "another separation or another upload separates again");
+    for id in [&first, &other] {
+        let dir = srv.dir.0.join("jobs").join(id);
+        assert!(dir.join("stem.wav").is_file() && !dir.join("demucs").exists() && !dir.join("uvr").exists(), "the separators' working folders go once the stem is out");
+    }
+}
+
+#[test]
+fn old_jobs_and_stems_are_deleted_but_never_a_queued_one() {
+    let srv = start_with("tidy", "case \"$*\" in *htdemucs*) sleep 1;; esac", &["--keep-jobs", "1", "--keep-stems", "1"], &[]);
+    let jobs = srv.dir.0.join("jobs");
+    for (name, log) in [("0abc", true), ("notes", true), ("0def", false)] {
+        std::fs::create_dir_all(jobs.join(name)).unwrap();
+        if log {
+            std::fs::write(jobs.join(name).join("job.log"), "[ 0.0s] received 1 bytes\n").unwrap();
+        }
+    }
+    let mut b_song = song_wav();
+    b_song.extend_from_slice(&[0, 0, 0, 0]);
+    let a = submit(srv.port, "bpm=120&separation=vocals&name=a.wav", &song_wav());
+    let b = submit(srv.port, "bpm=120&separation=vocals&name=b.wav", &b_song);
+    let c = submit(srv.port, "bpm=120&separation=none&name=c.wav", &song_wav());
+    for id in [&a, &b, &c] {
+        let fin = wait_final(srv.port, id);
+        assert_eq!(fin["phase"], "done", "a queued job keeps its folder: {fin}");
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(json(srv.port, "GET", &format!("/api/jobs/{a}"), b"").0, 404, "the oldest job is gone");
+    assert_eq!(json(srv.port, "GET", &format!("/api/jobs/{b}"), b"").0, 404);
+    assert_eq!(annotation(srv.port, &c)["notes"].as_array().map(|n| !n.is_empty()), Some(true), "the newest is kept");
+    let mut left: Vec<String> = std::fs::read_dir(&jobs).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    left.sort();
+    assert_eq!(left, vec!["0def".to_string(), c.clone(), "notes".to_string()], "only job folders (hex, with a job log) are ever deleted");
+    let stems = std::fs::read_dir(srv.dir.0.join("stems")).unwrap().count();
+    assert_eq!(stems, 1, "the stem cache keeps one song");
+}
+
+#[test]
+fn a_panic_fails_that_job_and_the_worker_goes_on() {
+    let srv = start_with("panic", "", &[], &[("SONA_TEST_PANIC", "boom.wav")]);
+    let boom = submit(srv.port, "bpm=120&separation=none&name=boom.wav", &song_wav());
+    let next = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song_wav());
+    let fin = wait_final_within(srv.port, &boom, Duration::from_secs(30));
+    assert_eq!(fin["phase"], "failed", "{fin}");
+    let error = fin["error"].as_str().unwrap();
+    assert!(error.contains("internal error") && error.contains("asked for a panic") && error.contains("panic.log"), "{error}");
+    let report = std::fs::read_to_string(srv.dir.0.join("jobs").join(&boom).join("panic.log")).unwrap();
+    assert!(report.contains("asked for a panic in boom.wav"), "{report}");
+    let (status, record) = json(srv.port, "GET", &format!("/api/jobs/{boom}/provenance"), b"");
+    assert_eq!((status, record["outcome"].as_str()), (200, Some("failed")));
+    assert_eq!(wait_final_within(srv.port, &next, Duration::from_secs(30))["phase"], "done", "the worker survived");
+    let after = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song_wav());
+    assert_eq!(wait_final_within(srv.port, &after, Duration::from_secs(30))["phase"], "done");
+}
+
+#[test]
+fn a_hung_separator_is_stopped_at_its_time_limit_and_shows_its_progress() {
+    let hang = "case \"$*\" in *htdemucs*) printf ' 40%%|####      | 4/10 [00:02<00:03]\\r'; sleep 30;; esac";
+    let srv = start_with("hang", hang, &["--tool-timeout", "1", "--tool-timeout-ratio", "0.6"], &[]);
+    let t0 = Instant::now();
+    let id = submit(srv.port, "bpm=120&separation=vocals&name=song.wav", &song_wav());
+    let mut progress = None;
+    let fin = loop {
+        let (_, s) = json(srv.port, "GET", &format!("/api/jobs/{id}"), b"");
+        if let Some(line) = s["log"].as_array().unwrap().iter().filter_map(|l| l.as_str()).find(|l| l.starts_with("demucs: ")) {
+            progress = Some(line.to_string());
+        }
+        if ["done", "failed", "cancelled"].contains(&s["phase"].as_str().unwrap_or("")) {
+            break s;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(10), "the hung separator held the job: {s}");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(progress.as_deref(), Some("demucs: 40%|####      | 4/10 [00:02<00:03]"), "the tool's last line shows while it runs");
+    assert_eq!(fin["phase"], "failed");
+    let error = fin["error"].as_str().unwrap();
+    assert!(error.contains("demucs was stopped after 2 s, its time limit for") && error.contains("s of audio") && error.contains("4/10") && error.contains("--tool-timeout"), "{error}");
+    let next = submit(srv.port, "bpm=120&separation=none&name=song.wav", &song_wav());
+    assert_eq!(wait_final_within(srv.port, &next, Duration::from_secs(10))["phase"], "done", "the queue moved on");
+}
+
+#[test]
+fn a_48_khz_wav_becomes_a_44_1_khz_stem() {
+    if Command::new("ffmpeg").arg("-version").output().is_err() {
+        return;
+    }
+    let srv = start("rate", "");
+    let id = submit(srv.port, "bpm=120&separation=none&engine=pyin&name=song48k.wav", &song_wav_at(48_000));
+    assert_eq!(wait_final(srv.port, &id)["phase"], "done");
+    let (_, stem) = request(srv.port, "GET", &format!("/api/jobs/{id}/stem"), None, b"");
+    let reader = hound::WavReader::new(std::io::Cursor::new(stem)).unwrap();
+    assert_eq!((reader.spec().channels, reader.spec().sample_rate), (1, 44_100));
+    let pitches: Vec<i64> = annotation(srv.port, &id)["notes"].as_array().unwrap().iter().map(|n| n["midi_pitch"].as_i64().unwrap()).collect();
+    assert!(pitches.contains(&69) && pitches.contains(&71), "A4 and B4 expected, got {pitches:?}");
+}
+
+#[test]
+fn help_works_on_both_subcommands_and_a_missing_separator_says_what_to_do() {
+    for args in [["serve", "--help"], ["transcribe", "-h"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_sona")).args(args).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("--keep-stems"), "{args:?}");
+    }
+    let srv = start_with("nosep", "", &["--demucs-venv", "/nonexistent/demucs-venv"], &[]);
+    let (status, body) = json(srv.port, "POST", "/api/jobs?bpm=120&separation=lead&name=song.wav", &song_wav());
+    assert_eq!(status, 409);
+    let error = body["error"].as_str().unwrap();
+    assert!(error.contains("setup-separators.sh") && error.contains("--demucs-venv") && error.contains("sona serve --help"), "{error}");
 }

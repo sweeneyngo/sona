@@ -40,7 +40,7 @@ import { detailSections, parseProvenance, type Provenance } from "./lib/provenan
 import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
-import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJob, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
+import { PHASE_LABEL, cancelJob, defaultJob, fetchCapabilities, fetchJobOrCancel, fetchResults, fetchTempo, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
 import { hintBpm, parseBpm, phaseProgress, startStep, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
@@ -2491,7 +2491,7 @@ function pollJob(id: string, jobBpm: number, grid: number): void {
   pollTimer = window.setTimeout(async () => {
     if (startState.kind !== "running" || startState.job !== id) return;
     try {
-      const j = await fetchJob(id);
+      const j = await fetchJobOrCancel(id);
       if (!watching(id)) return;
       showJobProgress(j);
       if (!isFinal(j.phase)) return pollJob(id, jobBpm, grid);

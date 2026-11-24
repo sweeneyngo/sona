@@ -19,6 +19,7 @@ const fromServe = {
     ],
     tools: { demucs: "4.0.1", ffmpeg: "7.0.2", odd: 3 },
     models: [{ role: "separator/lead", name: "UVR_MDXNET_KARA_2.onnx", bytes: 52_000_000, sha256: sha("d") }],
+    stems: { key: sha("e"), reused: true, separated_by: "j0" },
   },
 };
 
@@ -44,6 +45,17 @@ describe("provenance", () => {
     expect(Object.keys(s.Models)).toEqual(["game/segmenter", "separator/lead"]);
     expect(s.Steps.total).toBe("60.7 s");
     expect(s.Settings.engine).toBe("game");
+    expect(s.Stems).toEqual({ separated: "reused from job j0", "cache key": "eeeeeeeeeeee" });
+  });
+
+  it("keeps where the stems came from through a session, and drops a malformed record", () => {
+    const p = parseProvenance(fromServe)!;
+    expect(parseProvenance(JSON.parse(JSON.stringify(p)))).toEqual(p);
+    expect(p.job?.stems).toEqual({ key: sha("e"), reused: true, separated_by: "j0" });
+    const odd = { ...fromServe, job: { ...fromServe.job, stems: { key: sha("e"), reused: "yes" } } };
+    expect(parseProvenance(odd)!.job?.stems).toBeUndefined();
+    const { stems: _stems, ...noStems } = fromServe.job;
+    expect(detailSections(parseProvenance({ ...fromServe, job: noStems })!).map((x) => x.title)).not.toContain("Stems");
   });
 
   it("leaves out job sections for a CLI annotation", () => {

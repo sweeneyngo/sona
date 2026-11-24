@@ -83,6 +83,20 @@ pub struct JobRecord {
     pub tools: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub models: Vec<FileFingerprint>,
+    /// Where the separated stems came from (ADR-0030); absent when the job separated nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stems: Option<StemSource>,
+}
+
+/// A job's separated stems, by stem-cache key: the SHA-256 of the upload's hash and every separator
+/// version and setting that shapes the stems (ADR-0030).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StemSource {
+    pub key: String,
+    /// `true` when this job took the stems from the cache instead of running the separators.
+    pub reused: bool,
+    /// The job that ran the separators.
+    pub separated_by: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,6 +1,7 @@
 # ADR-0024: Every result says what produced it
 
-Status: accepted (2026-11-23)
+Status: accepted (2026-11-23). Amended by ADR-0030: jobs record where their stems came from, and the
+stem-cache key waits (bounded, cancellable) for the tool-version probe.
 
 ## Context
 

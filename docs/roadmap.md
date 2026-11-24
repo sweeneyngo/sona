@@ -65,7 +65,7 @@ top three overall are at the end.
 | # | Frontier | Evidence | Cost | How to tell |
 |---|---|---|---|---|
 | 5.1 | **Compare separators on the corpus** (htdemucs_ft, MDX23C, BS-RoFormer, Mel-RoFormer karaoke) by cell accuracy downstream | Only htdemucs + UVR_MDXNET_KARA_2 has been measured | M (GPU helps) | Dev cells per separator, then holdout4 |
-| 5.2 | **Faster separation**: GPU when present, a quality/speed choice, cache by file hash | Separation dominates the 76 s run on CPU | S–M | Wall time per minute of audio |
+| 5.2 | **Faster separation**: GPU when present, a quality/speed choice (cache by file hash: done, ADR-0030) | Separation dominates the 76 s run on CPU | S–M | Wall time per minute of audio |
 | 5.3 | **Harmony and backing stems** as extra tracks (Pifuyuu's USTs have them) | Only the lead is transcribed | L | Cells on the corpus's `cho`/harmony USTs |
 
 ## 6. Reproducibility, logging and operations

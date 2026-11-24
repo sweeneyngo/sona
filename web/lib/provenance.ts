@@ -13,6 +13,8 @@ export interface JobRecord {
   steps: { step: string; seconds: number }[];
   tools: Record<string, string>;
   models: FileFingerprint[];
+  /** Where the separated stems came from (ADR-0030). */
+  stems?: { key: string; reused: boolean; separated_by: string };
 }
 
 export interface Provenance {
@@ -53,6 +55,9 @@ export function parseProvenance(v: unknown): Provenance | null {
         steps: Array.isArray(v.job.steps) ? v.job.steps.filter(isObj).map((s) => ({ step: str(s.step), seconds: num(s.seconds) })) : [],
         tools: strMap(v.job.tools),
         models: files(v.job.models),
+        ...(isObj(v.job.stems) && typeof v.job.stems.key === "string" && typeof v.job.stems.reused === "boolean"
+          ? { stems: { key: v.job.stems.key, reused: v.job.stems.reused, separated_by: str(v.job.stems.separated_by) } }
+          : {}),
       };
     }
   }
@@ -96,6 +101,8 @@ export function detailSections(p: Provenance): DetailSection[] {
     const total = p.job.steps.reduce((t, s) => t + s.seconds, 0);
     out.push({ title: "Steps", rows: [...p.job.steps.map((s): [string, string] => [s.step, `${s.seconds.toFixed(1)} s`]), ["total", `${total.toFixed(1)} s`]] });
     out.push({ title: "Tools", rows: Object.entries(p.job.tools) });
+    const st = p.job.stems;
+    if (st) out.push({ title: "Stems", rows: [["separated", st.reused ? `reused from job ${st.separated_by}` : "by this job"], ["cache key", short(st.key)]] });
   }
   return out;
 }

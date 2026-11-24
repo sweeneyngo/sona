@@ -95,6 +95,17 @@ async function call(path: string, init?: RequestInit): Promise<unknown> {
 export const fetchCapabilities = async (): Promise<Capabilities> => parseCapabilities(await call("/api/capabilities"));
 export const fetchJob = async (id: string): Promise<JobStatus> => parseJobStatus(await call(`/api/jobs/${encodeURIComponent(id)}`));
 export const cancelJob = async (id: string): Promise<JobStatus> => parseJobStatus(await call(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }));
+
+/** The job's status for a watcher that gives up on any error: the job is then cancelled on the server
+ * too (best effort), so a retry doesn't queue behind a job nobody is watching. */
+export async function fetchJobOrCancel(id: string): Promise<JobStatus> {
+  try {
+    return await fetchJob(id);
+  } catch (err) {
+    await cancelJob(id).catch(() => undefined);
+    throw err;
+  }
+}
 export const submitJob = async (r: JobRequest, audio: Blob): Promise<JobStatus> => parseJobStatus(await call(jobQuery(r), { method: "POST", body: audio }));
 
 export async function fetchTempo(audio: Blob, name: string): Promise<number | null> {
