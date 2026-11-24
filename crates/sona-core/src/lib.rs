@@ -31,6 +31,7 @@ pub mod pitch;
 pub mod prefilter;
 pub mod segment;
 pub mod timbre;
+pub mod unheard_pieces;
 #[cfg(feature = "spectral")]
 pub mod tempo;
 #[cfg(feature = "spectral")]
