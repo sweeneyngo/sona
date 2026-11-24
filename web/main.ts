@@ -23,22 +23,23 @@ import {
   pitchTopRange,
 } from "./lib/view";
 import type { Scale } from "./lib/view";
-import { detectKey, keyName, isInKey, snapToKey } from "./lib/key";
+import { detectKey, keyName } from "./lib/key";
 import type { KeyEstimate } from "./lib/key";
 import { buildSchedule } from "./lib/synth";
-import { clampPitch } from "./lib/math";
-import { gridSpacingSeconds, snapTime, quantizeNote, resolveOverlaps, noteFlags } from "./lib/grid";
 import { encodeMidiFile } from "./lib/midi";
 import { assignLyrics, splitLyrics } from "./lib/lyrics";
 import { TICKS_PER_QUARTER, exportSequence, sequenceInSeconds, type Sequence } from "./lib/sequence";
-import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, parseBarOne, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
+import { barNumber, barOneLabel, barSeconds, downbeat, gridLines, tickZero, updateFrame, type Frame, type FrameEvent, type LineKind } from "./lib/frame";
+import { effectiveNotes as interpret, exportNotes, noteSpan, notesInTimeOrder as inTimeOrder, playbackNotes, renderNotes, type EffectiveNote } from "./lib/interpret";
+import { movedNote, newNote, resizedNote, withoutNote, type Grabbed } from "./lib/noteEdits";
+import { docText, isSession, normalizeAnnotation, parseDoc, baselineFrom, sessionFile, settingsOnLoad, workingNotesFrom, type SessionState } from "./lib/session";
 import { encodeUst } from "./lib/ust";
 import { ustxText } from "./lib/ustx";
 import { sungPitchCurve } from "./lib/sungPitch";
 import { penErase, penStroke } from "./lib/pitchPen";
-import { packContour, unpackContour } from "./lib/contourStore";
-import { detailSections, parseProvenance, type Provenance } from "./lib/provenance";
-import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Expression, type RenderNote } from "./lib/expression";
+import { packContour } from "./lib/contourStore";
+import { detailSections } from "./lib/provenance";
+import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, renderPitch, type Expression } from "./lib/expression";
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
 import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
@@ -46,7 +47,7 @@ import { hintBpm, parseBpm, phaseProgress, startStep, usableBpm, type StartEvent
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
-import type { Annotation, BarOneEstimate, F0Frame, Note, WorkingNote } from "./lib/annotation";
+import type { Annotation, F0Frame, Note, WorkingNote } from "./lib/annotation";
 
 const RULER_H = 18; // top strip: click to seek, drag to shift the grid phase.
 const PAD = { left: 44, top: RULER_H, bottom: 22 };
@@ -177,18 +178,6 @@ const ctx2d = el.canvas.getContext("2d")!;
 
 // --- Types -----------------------------------------------------------------
 
-interface EffectiveNote {
-  raw: WorkingNote;
-  onset_s: number;
-  offset_s: number;
-  pitch: number;
-  flagged: boolean;
-  lowConfidence: boolean;
-  escaped: boolean;
-  /** The note's pitch is outside the detected key (only when snap-to-key is off). */
-  outOfKey: boolean;
-}
-
 interface Hitbox {
   x: number;
   y: number;
@@ -210,9 +199,7 @@ type Drag =
   | (DragBase & {
       mode: "move" | "resize";
       note: WorkingNote;
-      origOnset: number;
-      origOffset: number;
-      origPitch: number;
+      orig: Grabbed;
     });
 
 interface Playback {
@@ -334,50 +321,19 @@ el.json.addEventListener("change", async () => {
  */
 function applyLoadedJson(parsed: any): boolean {
   annotation = normalizeAnnotation(parsed);
-  // Build the editable set straight from the parsed notes so a saved session's
-  // `manual` flags and exact raw positions survive the round-trip.
-  workingNotes = (parsed.notes as any[]).map((n) => ({
-    onset_s: Number(n.onset_s),
-    offset_s: Number(n.offset_s),
-    midi_pitch: Number(n.midi_pitch),
-    confidence: Number(n.confidence),
-    sub_scores: n.sub_scores ?? {},
-    ...(n.manual ? { manual: true as const } : {}),
-    ...(typeof n.lyric === "string" && n.lyric ? { lyric: n.lyric } : {}),
-    ...(isExpression(n.expr) ? { expr: n.expr } : {}),
-  }));
-  // The producer's original notes: a saved session carries its own `baseline`;
-  // a fresh annotation is its own baseline. Clone into fresh objects so later
-  // edits to `workingNotes` don't leak in. Keep confidence + sub-scores so the
-  // saved session stays calibration-ready (older sessions may lack them).
-  const baselineSource: any[] = Array.isArray(parsed.baseline) ? parsed.baseline : parsed.notes;
-  baselineNotes = baselineSource.map((n) => ({
-    onset_s: Number(n.onset_s),
-    offset_s: Number(n.offset_s),
-    midi_pitch: Number(n.midi_pitch),
-    confidence: n.confidence !== undefined ? Number(n.confidence) : 1,
-    sub_scores: n.sub_scores ?? {},
-  }));
+  workingNotes = workingNotesFrom(parsed.notes);
+  baselineNotes = baselineFrom(parsed);
 
   selectedNote = null;
   seekOffset = 0;
   invalidateEffective();
 
-  const session = parsed.session;
-  if (session && typeof session === "object") {
-    restoreSession(session); // a saved session carries its own review settings
-  } else {
-    // A fresh annotation: seed BPM from the file, grid phase on the first onset.
-    bpm = annotation.bpm > 0 ? annotation.bpm : 120;
-    el.bpm.value = String(bpm);
-    gridAnchor = workingNotes.length ? Math.min(...workingNotes.map((n) => n.onset_s)) : 0;
-    barOne = annotation.bar_one?.time_s ?? null;
-  }
+  applySettings(settingsOnLoad(parsed, annotation, workingNotes, currentSettings()));
   resetView(); // zoomed-in default + 2-octave window centred on the notes.
   rebuild();
   edits.reset();
   syncUndoMenu();
-  return !!(session && typeof session === "object");
+  return isSession(parsed);
 }
 
 async function loadStemBytes(bytes: ArrayBuffer): Promise<void> {
@@ -398,50 +354,7 @@ el.audio.addEventListener("change", async () => {
   if (file) await loadStemBytes(await file.arrayBuffer());
 });
 
-/**
- * Validate the shape we depend on and coerce the fields the roll reads. Throws
- * a human-readable error if the file isn't an annotation.
- */
-function normalizeAnnotation(raw: any): Annotation {
-  if (!raw || typeof raw !== "object" || !Array.isArray(raw.notes)) {
-    throw new Error("expected an object with a `notes` array");
-  }
-  return {
-    version: Number(raw.version) || 0,
-    sample_rate: Number(raw.sample_rate) || 0,
-    bpm: Number(raw.bpm) || 0,
-    duration_s: Number(raw.duration_s) || 0,
-    producer: raw.producer ?? "unknown",
-    notes: raw.notes.map((n: any) => ({
-      onset_s: Number(n.onset_s),
-      offset_s: Number(n.offset_s),
-      midi_pitch: Number(n.midi_pitch),
-      confidence: Number(n.confidence),
-      sub_scores: n.sub_scores ?? {},
-    })),
-    f0_contour: unpackContour(raw.f0_contour),
-    energy_envelope: Array.isArray(raw.energy_envelope) ? raw.energy_envelope : [],
-    ...withProvenance(raw.provenance),
-    ...withBarOne(raw.bar_one),
-  };
-}
-
-function withBarOne(raw: unknown): { bar_one?: BarOneEstimate } {
-  const b = parseBarOne(raw);
-  return b ? { bar_one: b } : {};
-}
-
-function withProvenance(raw: unknown): { provenance?: Provenance } {
-  const p = parseProvenance(raw);
-  return p ? { provenance: p } : {};
-}
-
 // --- Musical interpretation (grid) -----------------------------------------
-
-/** Current grid cell size in seconds. */
-function spacing(): number {
-  return gridSpacingSeconds(bpm, division);
-}
 
 /** The frame the editor draws and the export writes (ADR-0029). */
 function currentFrame(): Frame {
@@ -591,46 +504,13 @@ function openChangesModal(): void {
 }
 
 /**
- * The notes as interpreted for display, playback, and export: each working note
- * hard-snapped to the grid (or escaped) with its flag state. Manual notes never
- * escape — the user placed them deliberately, so they always snap. Cached:
- * recomputing this per frame was a big part of the playback jank on long stems.
+ * The notes as interpreted for display, playback, and export (`lib/interpret`).
+ * Cached: recomputing this per frame was a big part of the playback jank on
+ * long stems.
  */
 function effectiveNotes(): EffectiveNote[] {
-  if (effectiveCache) return effectiveCache;
-  const s = spacing();
-  const key = currentKey();
-  // Manual notes never escape; everything else uses grid.ts's documented
-  // escape-hatch defaults (ADR-0003).
-  const snapped = resolveOverlaps(
-    workingNotes.map((n) =>
-      quantizeNote(
-        n,
-        n.manual ? { spacing: s, anchor: gridAnchor, escapeDistanceCells: Infinity } : { spacing: s, anchor: gridAnchor },
-      ),
-    ),
-    s,
-  );
-  effectiveCache = workingNotes.map((n, i) => {
-    const q = snapped[i];
-    const flags = noteFlags(n, q, flagThreshold);
-    // Pitch interpretation: snap to the detected key's scale when enabled, else
-    // keep the raw pitch and flag it if it falls outside the key.
-    const pitch = key && snapKey ? snapToKey(n.midi_pitch, key) : n.midi_pitch;
-    const outOfKey = key ? !isInKey(pitch, key) : false;
-    return { raw: n, onset_s: q.onset_s, offset_s: q.offset_s, pitch, ...flags, outOfKey };
-  });
+  effectiveCache ??= interpret(workingNotes, currentFrame(), { flagThreshold, snapKey, key: currentKey() });
   return effectiveCache;
-}
-
-/** The effective notes reshaped for the synth (stem seconds + pitch). */
-function playbackNotes() {
-  return effectiveNotes().map((e) => ({
-    onset_s: e.onset_s,
-    offset_s: e.offset_s,
-    midi_pitch: e.pitch,
-    confidence: e.raw.confidence,
-  }));
 }
 
 /** MIDI pitch extent of the notes, for centring the default window. */
@@ -1295,9 +1175,7 @@ el.canvas.addEventListener("mousedown", (e: MouseEvent) => {
       note: hit.note,
       startX: x,
       startY: y,
-      origOnset: hit.note.onset_s,
-      origOffset: hit.note.offset_s,
-      origPitch: hit.note.midi_pitch,
+      orig: { onset_s: hit.note.onset_s, offset_s: hit.note.offset_s, midi_pitch: hit.note.midi_pitch },
       moved: false,
     };
     redraw();
@@ -1356,17 +1234,8 @@ window.addEventListener("mousemove", (e: MouseEvent) => {
   }
 
   const n = d.note;
-  if (d.mode === "move") {
-    n.onset_s = Math.max(0, d.origOnset + dt);
-    n.offset_s = n.onset_s + (d.origOffset - d.origOnset);
-    const dRows = scale.yToPitch(y) - scale.yToPitch(d.startY);
-    n.midi_pitch = clampPitch(d.origPitch + dRows);
-    n.manual = true;
-  } else {
-    // resize: keep at least a hair of length; the grid snap rounds it to a cell.
-    n.offset_s = Math.max(n.onset_s + spacing() / 2, d.origOffset + dt);
-    n.manual = true;
-  }
+  if (d.mode === "move") Object.assign(n, movedNote(d.orig, dt, scale.yToPitch(y) - scale.yToPitch(d.startY)));
+  else Object.assign(n, resizedNote(n.onset_s, d.orig, dt, currentFrame()));
   invalidateEffective(); // the note's quantized position changed
   markDirty();
   redraw();
@@ -1462,16 +1331,7 @@ el.canvas.addEventListener("dblclick", (e: MouseEvent) => {
       }
     }
   }
-  const s = spacing();
-  const onset = Math.max(0, snapTime(scale.xToTime(x), s, gridAnchor));
-  const note: WorkingNote = {
-    onset_s: onset,
-    offset_s: onset + s,
-    midi_pitch: clampPitch(scale.yToPitch(y)),
-    confidence: 1,
-    sub_scores: { pitch_stability: 1, voicing: 1, onset_clarity: 1, offset_clarity: 1 },
-    manual: true,
-  };
+  const note = newNote(scale.xToTime(x), scale.yToPitch(y), currentFrame());
   workingNotes.push(note);
   selectedNote = note;
   invalidateEffective();
@@ -1701,27 +1561,22 @@ function download(data: BlobPart, filename: string, mime: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** The review settings a saved session restores on load. */
-interface SessionState {
-  bpm: number;
-  division: number;
-  gridAnchor: number;
-  /** A downbeat the user chose, in stem seconds; absent or null = the first grid line (ADR-0029). */
-  barOne: number | null;
-  flagThreshold: number;
-  snapKey: boolean;
+function currentSettings(): SessionState {
+  return { bpm, division, gridAnchor, barOne, flagThreshold, snapKey };
 }
 
-/**
- * The full editing session: the annotation (f0 contour, energy, per-note
- * confidence — all preserved) with `notes` replaced by the current working set
- * (raw seconds + `manual` flags), the producer's original notes kept as
- * `baseline` (so correction cost survives a reload), and the review settings
- * appended.
- */
+/** Make `s` the review settings, and show them in the toolbar and the settings. */
+function applySettings(s: SessionState): void {
+  ({ bpm, division, gridAnchor, barOne, flagThreshold, snapKey } = s);
+  el.bpm.value = String(bpm);
+  el.division.value = String(division);
+  el.flag.value = String(flagThreshold);
+  el.flagVal.textContent = flagThreshold.toFixed(2);
+  el.snapKey.checked = snapKey;
+}
+
 function buildSessionFile(): Annotation & { baseline: Note[]; session: SessionState } {
-  const session: SessionState = { bpm, division, gridAnchor, barOne, flagThreshold, snapKey };
-  return { ...annotation!, notes: workingNotes, baseline: baselineNotes, session };
+  return sessionFile(annotation!, workingNotes, baselineNotes, currentSettings());
 }
 
 /**
@@ -1754,7 +1609,7 @@ interface DocState {
 const contourShare = new SharedSnapshot<F0Frame>();
 
 function captureDoc(): DocState {
-  const doc = JSON.stringify({ notes: workingNotes, bpm, division, gridAnchor, barOne, flagThreshold, snapKey });
+  const doc = docText(workingNotes, currentSettings());
   return { doc, contour: annotation ? contourShare.capture(annotation.f0_contour) : null };
 }
 
@@ -1762,20 +1617,10 @@ function restoreDoc(s: DocState): void {
   // The bar holds on to the note it shows while it has focus; that note is about to be replaced.
   if (exprBarHasFocus()) (document.activeElement as HTMLElement).blur();
   noteShownInExprBar = null;
-  const d = JSON.parse(s.doc);
+  const d = parseDoc(s.doc);
   workingNotes = d.notes;
-  bpm = d.bpm;
-  division = d.division;
-  gridAnchor = d.gridAnchor;
-  barOne = d.barOne ?? null;
+  applySettings(d.settings);
   syncBarOne();
-  flagThreshold = d.flagThreshold;
-  snapKey = d.snapKey;
-  el.bpm.value = String(bpm);
-  el.division.value = String(division);
-  el.flag.value = String(flagThreshold);
-  el.flagVal.textContent = flagThreshold.toFixed(2);
-  el.snapKey.checked = snapKey;
   if (annotation && s.contour) annotation.f0_contour = contourShare.restore(s.contour);
   selectedNote = null;
   closeLyricEditor();
@@ -1885,30 +1730,6 @@ window.addEventListener("beforeunload", () => {
   if (dirty) autosave();
 });
 
-/** Restore review settings from a saved session's `session` block. */
-function restoreSession(s: any): void {
-  if (Number(s.bpm) > 0) bpm = Number(s.bpm);
-  el.bpm.value = String(bpm);
-  const div = Number(s.division);
-  if ([4, 8, 16, 32].includes(div)) {
-    division = div;
-    el.division.value = String(div);
-  }
-  gridAnchor = Number.isFinite(Number(s.gridAnchor))
-    ? Number(s.gridAnchor)
-    : workingNotes.length
-      ? Math.min(...workingNotes.map((n) => n.onset_s))
-      : 0;
-  barOne = typeof s.barOne === "number" && Number.isFinite(s.barOne) ? s.barOne : null;
-  if (Number.isFinite(Number(s.flagThreshold))) {
-    flagThreshold = Math.min(1, Math.max(0, Number(s.flagThreshold)));
-    el.flag.value = String(flagThreshold);
-    el.flagVal.textContent = flagThreshold.toFixed(2);
-  }
-  snapKey = s.snapKey === true;
-  el.snapKey.checked = snapKey;
-}
-
 el.save.addEventListener("click", saveSession);
 
 /**
@@ -1924,15 +1745,11 @@ function exportMidi(): void {
 }
 
 function notesInTimeOrder(): WorkingNote[] {
-  return [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s).map((e) => e.raw);
-}
-
-function lyricNotes() {
-  return effectiveNotes().map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, midi_pitch: e.pitch, lyric: e.raw.lyric, expr: e.raw.expr }));
+  return inTimeOrder(effectiveNotes());
 }
 
 function sequenceForExport(): Sequence {
-  return exportSequence(lyricNotes(), currentFrame());
+  return exportSequence(exportNotes(effectiveNotes()), currentFrame());
 }
 
 /** Where tick 0 (bar 1 in OpenUtau) is in the stem, for lining the stem up with the export. */
@@ -2083,23 +1900,13 @@ el.lyricsClear.addEventListener("click", () => {
   setStatus("Lyrics cleared");
 });
 
-function renderNotes(from: EffectiveNote[]): RenderNote[] {
-  return from.map((e) => ({ onset_s: e.onset_s, offset_s: e.offset_s, tone: Math.round(e.pitch), expr: e.raw.expr }));
-}
-
 let hoveredHandle: Handle | null = null;
 let lastMouse: { x: number; y: number } | null = null;
 const HANDLE_RADIUS = 5;
 const HANDLE_GRAB_PX = 9;
 
 function selectedSpan(): NoteSpan | null {
-  if (!selectedNote) return null;
-  const effs = [...effectiveNotes()].sort((a, b) => a.onset_s - b.onset_s);
-  const i = effs.findIndex((e) => e.raw === selectedNote);
-  if (i < 0) return null;
-  const e = effs[i];
-  const prev = i > 0 && Math.abs(effs[i - 1].offset_s - e.onset_s) < 1e-6 ? Math.round(effs[i - 1].pitch) : null;
-  return { onset_s: e.onset_s, offset_s: e.offset_s, tone: Math.round(e.pitch), touchingPrevTone: prev };
+  return selectedNote ? noteSpan(effectiveNotes(), selectedNote) : null;
 }
 
 function handleScreen(t: number, pitch: number): { x: number; y: number } {
@@ -2401,7 +2208,7 @@ document.addEventListener("pointerdown", (e) => {
 
 function deleteSelectedNote(): void {
   if (!selectedNote) return;
-  workingNotes = workingNotes.filter((n) => n !== selectedNote);
+  workingNotes = withoutNote(workingNotes, selectedNote);
   selectedNote = null;
   el.tooltip.style.display = "none";
   invalidateEffective();
@@ -2719,7 +2526,7 @@ function startPlayback(): void {
   synthGain.gain.value = el.muteSynth.checked ? 0 : 1;
   synthGain.connect(ac.destination);
   const voices: OscillatorNode[] = [];
-  for (const voice of buildSchedule(playbackNotes())) {
+  for (const voice of buildSchedule(playbackNotes(effectiveNotes()))) {
     const osc = scheduleVoice(ac, synthGain, voice, startedAt, from);
     if (osc) voices.push(osc);
   }

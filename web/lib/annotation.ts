@@ -114,7 +114,7 @@ export interface BarOneEstimate {
 /**
  * A note in the UI's editable working set: the raw annotation note plus a
  * `manual` flag marking notes the user placed/edited (which never escape the
- * grid — see `main.ts`).
+ * grid — see `interpret.ts`).
  */
 export interface WorkingNote extends Note {
   manual?: boolean;
