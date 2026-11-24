@@ -202,9 +202,20 @@ fn grid_mode_with_refinements_off_still_decodes_the_melody() {
 fn grid_refinements_without_grid_are_a_usage_error() {
     let wav = tmp("salience_no_grid.wav");
     write_wav(&wav, &two_note_stem());
-    let out = sona().args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--salience"]).output().expect("run sona");
+    let out = sona().args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--no-salience"]).output().expect("run sona");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--grid"));
+}
+
+#[test]
+fn the_retired_opt_in_flags_are_unknown_options() {
+    let wav = tmp("retired_flags.wav");
+    write_wav(&wav, &two_note_stem());
+    for flag in ["--salience", "--spectral-cue"] {
+        let out = sona().args(["transcribe", wav.to_str().unwrap(), "--bpm", "100", "--grid", "16", flag]).output().expect("run sona");
+        assert!(!out.status.success(), "{flag}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains(&format!("unknown option '{flag}'")), "{flag}");
+    }
 }
 
 #[test]

@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 import {
   gridSpacingSeconds,
   snapTime,
-  gridLines,
   quantizeNote,
   resolveOverlaps,
   noteFlags,
@@ -29,22 +28,6 @@ test("snapTime rounds to the nearest grid line relative to the anchor", () => {
   assert.ok(Math.abs(snapTime(0.17, 0.1, 0.05) - 0.15) < 1e-12);
   assert.ok(Math.abs(snapTime(0.21, 0.1, 0.05) - 0.25) < 1e-12);
   assert.ok(Math.abs(snapTime(0.05, 0.1, 0.05) - 0.05) < 1e-12);
-});
-
-test("gridLines covers [0, duration] stepping from the anchor", () => {
-  const lines = gridLines(0.05, 0.1, 0.32);
-  // Lines at .05,.15,.25 land inside; the anchor itself is included.
-  assert.deepEqual(
-    lines.map((t) => Number(t.toFixed(3))),
-    [0.05, 0.15, 0.25],
-  );
-});
-
-test("gridLines includes lines before the anchor when the anchor is > 0", () => {
-  const lines = gridLines(0.25, 0.1, 0.4).map((t) => Number(t.toFixed(3)));
-  // From anchor .25 back to 0: .05,.15 also appear.
-  assert.ok(lines.includes(0.05));
-  assert.ok(lines.includes(0.35));
 });
 
 test("quantizeNote hard-snaps onset and offset to the grid", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderPitch, type RenderNote } from "./expression";
-import { hzToCents, samplePitd, sungPitchCurve, type F0Frame } from "./sungPitch";
+import { hzToCents, sungPitchCurve, type F0Frame, type PitdCurve } from "./sungPitch";
 
 const centsToHz = (c: number) => 440 * 2 ** ((c - 6900) / 1200);
 const notes: RenderNote[] = [
@@ -16,6 +16,21 @@ const frames = (from: number, to: number, f = sung, voicing = 0.9): F0Frame[] =>
 };
 const opts = { shiftS: 0.25, ticksPerSecond: 1000 };
 const tickToS = (x: number) => x / opts.ticksPerSecond + opts.shiftS;
+
+/** The curve's value at tick `x`, as OpenUtau samples it: linear between points, 0 outside. */
+function samplePitd(curve: PitdCurve, x: number): number {
+  const { xs, ys } = curve;
+  if (!xs.length || x < xs[0] || x > xs[xs.length - 1]) return 0;
+  let lo = 0;
+  let hi = xs.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) lo = mid;
+    else hi = mid;
+  }
+  if (xs[lo] === x || hi === lo) return ys[lo];
+  return ys[lo] + ((ys[hi] - ys[lo]) * (x - xs[lo])) / (xs[hi] - xs[lo]);
+}
 
 describe("sungPitchCurve", () => {
   it("makes the notes plus the curve sing the tracked pitch", () => {

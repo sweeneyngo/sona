@@ -5,7 +5,6 @@ import {
   midiToNoteName,
   confidenceColor,
   weakestSubScore,
-  pitchRange,
   makeScale,
   zoomToShowSeconds,
   defaultPitchTop,
@@ -45,22 +44,6 @@ test("weakestSubScore picks the lowest dimension and labels it", () => {
   assert.equal(weakest.key, "offset_clarity");
   assert.equal(weakest.value, 0.4);
   assert.match(weakest.label, /offset/i);
-});
-
-test("pitchRange pads the observed span and stays within MIDI bounds", () => {
-  const { min, max } = pitchRange([
-    { midi_pitch: 60 },
-    { midi_pitch: 64 },
-  ]);
-  assert.ok(min < 60, "pads below the lowest note");
-  assert.ok(max > 64, "pads above the highest note");
-  assert.ok(min >= 0 && max <= 127);
-});
-
-test("pitchRange falls back to a sensible window when there are no notes", () => {
-  const { min, max } = pitchRange([]);
-  assert.ok(max > min);
-  assert.ok(min >= 0 && max <= 127);
 });
 
 test("makeScale maps time to x and pitch to y within the plot rect", () => {

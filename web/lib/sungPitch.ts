@@ -144,18 +144,3 @@ export function sungPitchCurve(contour: F0Frame[], notes: RenderNote[], opts: Cu
   }
   return { xs, ys };
 }
-
-/** The curve's value at tick `x`, as OpenUtau samples it: linear between points, 0 outside. */
-export function samplePitd(curve: PitdCurve, x: number): number {
-  const { xs, ys } = curve;
-  if (!xs.length || x < xs[0] || x > xs[xs.length - 1]) return 0;
-  let lo = 0;
-  let hi = xs.length - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (xs[mid] <= x) lo = mid;
-    else hi = mid;
-  }
-  if (xs[lo] === x || hi === lo) return ys[lo];
-  return ys[lo] + ((ys[hi] - ys[lo]) * (x - xs[lo])) / (xs[hi] - xs[lo]);
-}

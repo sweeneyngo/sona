@@ -42,7 +42,7 @@ import { DEFAULT_VIBRATO, NEUTRAL_EXPRESSION, isExpression, renderPitch, type Ex
 import { fitExpressions } from "./lib/fitexpr";
 import { addPoint, dragHandle, handlesFor, removePoint, type Handle, type NoteSpan } from "./lib/pitchHandles";
 import { PHASE_LABEL, cancelJob, defaultJob, estimateTempo, fetchCapabilities, fetchJobOrCancel, fetchResults, isFinal, submitJob, type Capabilities, type Engine, type JobStatus, type Separation } from "./lib/serveClient";
-import { hintBpm, parseBpm, phaseProgress, startStep, type StartEvent, type StartState } from "./lib/startFlow";
+import { hintBpm, parseBpm, phaseProgress, startStep, usableBpm, type StartEvent, type StartState } from "./lib/startFlow";
 import { SharedSnapshot, Undo } from "./lib/undo";
 import { correctionCost, correctionChanges } from "./lib/correction";
 import type { NoteLike, Change, ChangeKind } from "./lib/correction";
@@ -689,7 +689,7 @@ function setTempoPop(open: boolean): void {
 
 function scaleBpm(k: number): void {
   const v = Math.round(bpm * k * 10) / 10;
-  if (!(v >= 20 && v <= 400)) return;
+  if (!usableBpm(v)) return;
   el.bpm.value = String(v);
   setBpm(v);
 }

@@ -1,5 +1,7 @@
 # Onset detector comparison: energy-rise vs spectral-flux (ADR-0013 gate)
 
+Spectral-flux onsets and this binary were removed in audit A07 (2026-11-24); this report is the record. Restore them from the parent of the A07 change to re-run.
+
 Run: `cargo run --release -p sona-eval --features spectral --bin sona-eval-onset-compare -- --corpus`
 Corpus: Vocadito, 40 stems + 4 golden fixtures. Onset P/R/F1 at the metric's ±50 ms. Spectral-flux `threshold_delta` is swept because its novelty scale/baseline differs from energy's (the shared peak-picker's threshold cannot be inherited).
 

@@ -1,5 +1,7 @@
 # Note-offset Release sweep (ADR-0012 gate)
 
+The Release sub-state and this sweep's binary were removed in audit A07 (2026-11-24); this report is the record. Restore them from the parent of the A07 change to re-run.
+
 Run: `cargo run --release -p sona-eval --bin sona-eval-release-sweep -- --corpus`
 Corpus: Vocadito, 40 stems (Zenodo 5578807). A/B on the identical pipeline — the only variable is whether the decay path (`Stable → Release`) is enabled.
 

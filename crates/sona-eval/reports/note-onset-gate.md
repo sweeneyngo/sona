@@ -1,5 +1,7 @@
 # Note-level onset gate (ADR-0013 / ticket 04)
 
+Spectral-flux onsets and this binary were removed in audit A07 (2026-11-24); this report is the record. Restore them from the parent of the A07 change to re-run.
+
 Run: `cargo run --release -p sona-eval --features spectral --bin sona-eval-note-onset-gate -- --corpus`
 Corpus: Vocadito, 40 stems + staccato fixture. Full pipeline (pYIN → onsets → note-HMM → confidence) with each onset source; scores **note COnP / COnPOff** — the metric that decides promotion (onset-F1 was only a proxy).
 
