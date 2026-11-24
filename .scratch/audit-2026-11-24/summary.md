@@ -46,3 +46,4 @@ so separation is inflated); job dir 134 MB, never deleted.
 - 2026-11-24: **A13 resolved** (merged via PR #1, CI green including the new `e2e` job): the 10 editor browser drivers run in CI through `scripts/ci/e2e.sh`.
 - 2026-11-24: **A12 resolved** (merged): the start screen and `sona serve` say what's missing (ffmpeg, venvs) and what downloads on first use (demucs weights, UVR model); tempo errors show the server's reason. GAME/cell-model greying still unexplained (left).
 - 2026-11-24: **A07 resolved** (merged): release sub-state, spectral-flux onsets, `crepe`, `--salience`/`--spectral-cue` (now unknown options), `from_reference`, test-only web exports removed (~1,250 lines); grid path byte-identical; Vocadito COnP 0.6463 → 0.6466. New ticket 14 (dev cache not bit-exact).
+- 2026-11-24: **A09 resolved** (merged): 55 doc fixes; code-side leftovers → ticket 15. A09 also caught that the learned stage's dev numbers are in-sample (corrected in utau 01 and the map).

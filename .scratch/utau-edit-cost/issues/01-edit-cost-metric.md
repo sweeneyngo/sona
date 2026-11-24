@@ -157,3 +157,9 @@ as one output note have every cell right.
 | Joined detector, relation: drop "covers" (`2·s > len(r)`) | 3 failed: `each_class_alone_costs_exactly_its_weight`, `chopping_costs_per_extra_piece_and_joining_per_hidden_note`, `a_note_joined_with_half_of_the_next_which_is_then_chopped_is_one_of_each` |
 | Joined detector, count: `deg − 1` → 0 | the same 3 failed |
 
+
+- 2026-11-24 (correction, from audit A09): the learned cell stage (cellstage-D) was trained on all 28 dev +
+  spent-holdout songs, so its dev numbers above (**180.2 cost/min, 23.8% clean measures, 92.7% cells**) are
+  **in-sample** and flatter it. The out-of-sample reference on dev is **GAME lead + octave: 188.7 cost/min,
+  16.2% clean measures**. The class shares (joined 53%, chopped 19%) were computed on the in-sample stack;
+  ticket 03 recomputes them on GAME.
