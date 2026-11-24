@@ -606,6 +606,13 @@ pub fn snap_to_grid(notes: &[GameNote], spacing_s: f64) -> Vec<NoteSegment> {
     grid_segments(&out)
 }
 
+/// The cell stage's notes (onset, offset, MIDI) as note segments; a note whose pitch is not a MIDI number
+/// is dropped.
+pub fn stage_segments(notes: &[(f64, f64, i32)]) -> Vec<NoteSegment> {
+    let midi: Vec<(f64, f64, u8)> = notes.iter().filter_map(|&(a, b, p)| u8::try_from(p).ok().filter(|p| *p <= 127).map(|p| (a, b, p))).collect();
+    grid_segments(&midi)
+}
+
 /// Grid notes (onset, offset, MIDI) as note segments, each offset marked as the next onset, an energy
 /// decay or the stem's end.
 pub fn grid_segments(out: &[(f64, f64, u8)]) -> Vec<NoteSegment> {
