@@ -405,7 +405,15 @@ function exportTickZero(): number {
 
 function syncBarOne(): void {
   const estimate = annotation?.bar_one ?? null;
-  el.barOneReadout.textContent = barOneLabel(currentFrame(), estimate);
+  const parts = barOneLabel(currentFrame(), estimate).split(" · ");
+  el.barOneReadout.replaceChildren(
+    ...parts.flatMap((part, i) => {
+      const seg = document.createElement("span");
+      seg.className = "seg";
+      seg.textContent = part;
+      return i === 0 ? [seg] : [" · ", seg];
+    }),
+  );
   el.barOneReadout.classList.toggle("disagree", estimate !== null && barOne === estimate.time_s && barOneDisagrees(estimate));
   el.barOneAuto.disabled = barOne === (estimate?.time_s ?? null);
   el.barOneAuto.title = estimate ? "Bar 1 where sona estimated it from the music" : "Bar 1 on the first grid line, as before";

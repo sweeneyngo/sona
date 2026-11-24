@@ -35,6 +35,11 @@ Written 2026-11-24, before holdout4 exists. Nothing here has been read on it; th
   - **A (today):** tick 0 = the first grid line at or after 0 s, from `grid_phase(vocals, cell)`.
   - **B (this ticket):** bar 1 = `sona_core::bar_one::estimate` exactly as committed here
     (`MIN_CONFIDENCE` 0.5, beat fallback). No change to it between now and the read.
+  - **C (Beat This, added 2026-11-24 by utau-edit-cost 16, ADR-0036, before any holdout4 read):** bar 1 =
+    `sona_core::bar_one::tracked_bar` on B's beat, from the downbeats of `scripts/sona-beat-this.py`
+    (Beat This! 1.1.0, `final0`, no DBN, CPU) run on the song's mix, exactly as committed with ticket 16.
+    Scored by `sona-eval-frame --estimate-bar-one --beat-this PROGRAM` in the same run as A and B. No
+    confidence threshold. No change to it between now and the read.
 - **Metric.** Music-anchored frame pass = bar offset 0 whole beats against the ear-labelled bar line
   (`sona_eval::frame::music_bar_offset`, `beats == 0`).
 - **Read.** Once, logged in the ledger, with a reason naming this rule; holdout4 must hold at least 20
@@ -46,8 +51,20 @@ Written 2026-11-24, before holdout4 exists. Nothing here has been read on it; th
   3. B's beat is on the music's beat (|residual| < ⅛ beat) on at least as many songs as A's.
 - **Otherwise** B stays opt-in. If B passes on fewer songs than A, record the negative result with its
   numbers and remove the option unless a per-song look shows a named, fixable cause.
-- **Reported beside it, not deciding:** B's pass rate split by confidence (≥ 0.75 vs below), the beat-only
-  rule, and every song's B − A.
+- **C is judged the same way, with the same thresholds:** C qualifies only if criteria 1–3 hold with C in
+  place of B (C passes on at least 3 more songs than A; the lower bound of the bootstrap interval of C − A
+  is at least +1; C's beat, which is B's, is on the music's beat on at least as many songs as A's). If C
+  passes on fewer songs than A, its negative result is recorded the same way.
+- **Which becomes the default** (added with C, before any holdout4 read):
+  - Only B qualifies: B, as above.
+  - Only C qualifies: C becomes the app's default bar 1 where Beat This is installed; where it isn't, the
+    default stays A.
+  - Both qualify: the one that passes on more songs. On a tie, B, which needs no install and costs about
+    8 s instead of a CPU minute and a half.
+  - C − B is reported with its bootstrap interval but decides nothing beyond that tie-break.
+- **Reported beside it, not deciding:** B's pass rate split by confidence (≥ 0.75 vs below), C's split by
+  vote share (≥ 0.75 vs below), the beat-only rule, every song's B − A and C − A, and the songs where B and
+  C disagree.
 
 ## Answer
 
