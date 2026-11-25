@@ -198,6 +198,7 @@ a dev artefact. This confirms nothing; a default still needs holdout4.
 # the default run is byte-identical.
 ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo run --release -p sona-eval --features game --bin sona-eval-cellstage -- \
     --model ~/.cache/sona/cellstage-D --edit-cost --merge-unheard-pieces --fit-phrase-lyrics > rust-merge.out
+# (flag deleted 2026-11-25, utau-edit-cost 17)
 # Prototype
 export S11_DUMP=…/dump-dev            # `sona-eval-cellstage --dump` of dev (UST content: keep it out of the repo)
 cd crates/sona-eval/scripts/pitch-wobble
@@ -211,5 +212,6 @@ python3 learned.py 2   # logistic model, LOSO (pieces <= 2 cells; `1` for 1 cell
 python3 named.py       # the ticket's rules, alone and with 07's fit, per song
 python3 fit07.py       # 07's fit reproduced on these notes
 S11_WORK=… python3 proto_counts.py rust-merge.out   # the port against the prototype, per song
+# (script deleted 2026-11-25, utau-edit-cost 17, with the flag it checked)
 S11_DUMP=…/dump-holdout python3 spent.py   # diagnosis only, logged
 ```

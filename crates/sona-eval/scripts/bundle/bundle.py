@@ -1,12 +1,13 @@
 """utau-edit-cost 20: the holdout4 bundle measured together on dev, the stage scored out of sample.
 
 Reads two `sona-eval-cellstage --edit-cost --dump` runs of dev, one per stage (19's fold models, `--fold-models`),
-each made with `--settle-near-ties --merge-unheard-pieces` so the dump holds the stage with those applied
-(`stage_settled`, `stage_merged`, `stage_settled_merged`). The lyric arm runs here, on those notes: 14's fit on
+each made with `--settle-near-ties` so the dump holds the stage with near ties settled (`stage_settled`).
+The lyric arm runs here, on those notes: 14's fit on
 the aligned lines and spaces (`tail`) and 17's S1 start moves on top (`file-m3+adaptmora+abst3.0:split+start1`),
 through `scripts/mora-split/split.py`.
 
-Arms: T (near ties settled), M (unheard pieces merged), L (14's fit + S1). Prints every subset on the candidate
+Arms: T (near ties settled), L (14's fit + S1). M (unheard pieces merged) was measured here and deleted after
+the holdout4 reads (utau-edit-cost 17, 20; `reports/bundle-on-dev.md`). Prints every subset on the candidate
 stage, the comparator stage's plain row, the ticket's backward elimination (rule in issue 20), the taxonomy by
 class, and per-song rows. `--check RUST_REPORT` compares the Python rows with the Rust report's per-song counts,
 L too when the report has S1's row (`--lyric-onsets`; utau-edit-cost 21). L's onsets are
@@ -26,8 +27,8 @@ import split as S  # noqa: E402
 L, O, ec = S.L, S.O, S.ec
 S1 = "file-m3+adaptmora+abst3.0:split+start1"
 LYRIC = {"": None, "L14": "tail", "L": S1}
-STAGE_KEY = {"": "stage", "T": "stage_settled", "M": "stage_merged", "TM": "stage_settled_merged"}
-ARMS = ("T", "M", "L")
+STAGE_KEY = {"": "stage", "T": "stage_settled"}
+ARMS = ("T", "L")
 
 
 def arg(k, d=None):
@@ -66,7 +67,7 @@ def name(arms):
 
 
 def config_rows(songs, data):
-    """{(stage arms 'T'/'M'/'TM'/'', lyric ''/'L14'/'L'): [per-song edit-cost row]}."""
+    """{(stage arm 'T'/'', lyric ''/'L14'/'L'): [per-song edit-cost row]}."""
     rows = {}
     for tm, lyric in itertools.product(STAGE_KEY, LYRIC):
         rows[(tm, lyric)] = [S.score(s, notes_for(s, data, STAGE_KEY[tm], lyric))[0] for s in songs]
@@ -74,7 +75,7 @@ def config_rows(songs, data):
 
 
 def subset_rows(rows, arms):
-    tm = "".join(a for a in "TM" if a in arms)
+    tm = "T" if "T" in arms else ""
     return rows[(tm, "L" if "L" in arms else "")]
 
 
@@ -150,8 +151,6 @@ def check(rows, songs, path, dump_rows):
     pairs = [
         ("learned cell stage, onset phase (ships)", ("", "")),
         ("learned cell stage, near ties settled (opt-in)", ("T", "")),
-        ("learned cell stage, unheard pieces merged (opt-in)", ("M", "")),
-        ("learned cell stage, near ties settled, unheard pieces merged (opt-in)", ("TM", "")),
         ("learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras", ("", "L14")),
     ]
     s1 = "learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras, split and started at the moras' onsets (S1)"
@@ -201,12 +200,12 @@ def main():
     print(f"  {'B (today, fold models)':34} {fmt(base_rows)}")
     print(f"  {'C (fold models)':34} {fmt(c, base_rows)}   (vs B)")
     print("\n  each arm alone on C, vs C:")
-    for arms in [{"T"}, {"M"}, {"L"}]:
+    for arms in [{"T"}, {"L"}]:
         print(f"  {'C+' + name(arms):34} {fmt(subset_rows(rows, arms), c)}")
     print(f"  {'C+L14 (14 fit only; diagnostic)':34} {fmt(rows[('', 'L14')], c)}")
     print(f"  {'C+L14 vs C+L (S1 on top of 14)':34} {fmt(rows[('', 'L')], rows[('', 'L14')])}")
     print("\n  every subset, vs C and vs B:")
-    for k in range(4):
+    for k in range(len(ARMS) + 1):
         for arms in itertools.combinations(ARMS, k):
             r = subset_rows(rows, set(arms))
             print(f"  {'C+' + name(set(arms)):34} {fmt(r, c)}")
@@ -219,20 +218,20 @@ def main():
     print("\ntaxonomy by class (weighted units, share of cost):")
     taxonomy("B", base_rows)
     taxonomy("C", c)
-    for arms in [{"T"}, {"M"}, {"L"}, {"T", "M"}, set(ARMS), final]:
+    for arms in [{"T"}, {"L"}, set(ARMS), final]:
         taxonomy("C+" + name(arms), subset_rows(rows, arms))
     taxonomy("C+L14", rows[("", "L14")])
     pc, pl = S.pool_e(c)["counts"], S.pool_e(subset_rows(rows, final))["counts"]
     print("\n  counts C -> bundle: " + " · ".join(f"{k} {pc.get(k, 0)}→{pl.get(k, 0)}" for k in ec.CLASSES))
-    for arms in [{"L"}, {"T", "M", "L"}]:
+    for arms in [{"L"}, {"T", "L"}]:
         pa = S.pool_e(subset_rows(rows, arms))["counts"]
         pb = S.pool_e(subset_rows(rows, arms - {"L"}))["counts"]
         print(f"  joined removed by L on top of C+{name(arms - {'L'})}: {pb['joined']} → {pa['joined']} ({100 * (pb['joined'] - pa['joined']) / pb['joined']:.1f}%); chopped {pb['chopped']} → {pa['chopped']}; missing {pb['missing']} → {pa['missing']}")
 
     if "--per-song" in sys.argv:
         b = subset_rows(rows, final)
-        print("\nper song: B · C · C+T · C+M · C+L · bundle (cost/min, clean %)")
-        cols = [base_rows, c, subset_rows(rows, {"T"}), subset_rows(rows, {"M"}), subset_rows(rows, {"L"}), b]
+        print("\nper song: B · C · C+T · C+L · bundle (cost/min, clean %)")
+        cols = [base_rows, c, subset_rows(rows, {"T"}), subset_rows(rows, {"L"}), b]
         for i, s in enumerate(songs):
             print(f"  {s['id']:28} " + "  ".join(f"{cpm(S.pool_e([r[i]])):6.1f} {clean(S.pool_e([r[i]])):5.1f}%" for r in cols))
     if arg("--dump-rows"):

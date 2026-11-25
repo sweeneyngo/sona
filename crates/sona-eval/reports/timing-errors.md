@@ -213,6 +213,7 @@ Combinations (Rust report, paired bootstrap from its per-song counts):
 ORT_DYLIB_PATH=… SONA_GAME_DIR=… SONA_DEV_CACHE=… cargo run --release -p sona-eval --features game \
     --bin sona-eval-cellstage -- --model ~/.cache/sona/cellstage-D --edit-cost --settle-near-ties \
     [--trim-releases --merge-unheard-pieces] [--dump DIR]
+# (flag deleted 2026-11-25, utau-edit-cost 17)
 # Prototype, on a --dump of dev (UST content: keep it, and the lead-stem energy, out of the repo)
 export S18_DUMP=… S18_LEAD_RMS=…
 cd crates/sona-eval/scripts/timing-errors
