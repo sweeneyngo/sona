@@ -28,3 +28,29 @@ Retrain the stage (`~/.cache/sona/cellstage-D/build_cells.py`, `train_cells.py`;
 - A winning model stays opt-in (`--model` dir) until the holdout4 read; weights stay local.
 
 ## Comments
+
+### Selection rule (committed before any CV run; lead agent, 2026-11-24)
+
+Data: every spent split's songs that `sona-eval-cellstage` scores (dev 9, holdout 9, holdout2 10, holdout3 10 =
+38), read through `--split NAME --reread --reason …` (logged in `corpus/holdout-reads.jsonl` as diagnosis).
+holdout4 is never read. Training rows are the Rust feature builder's own (`--dump-cells`), so a trained model
+reads exactly what sona gives it.
+
+- **Exploration CV** (fold assignment E: 4 folds by song, permutation seed 2): free to compare recipes and pick
+  one. Its numbers are exploration only.
+- **Final CV** (fold assignment F: K folds by song, permutation seed 1, K stated below before the run), run
+  once for:
+  - **B**, the current recipe retrained under F: the prototype's 1046 features, CE on the first candidate
+    with the UST's pitch, the UST's true phase, HID 96, 15 epochs, seed 0, masked argmax;
+  - **C**, the one candidate recipe, named below before the run.
+- Each fold's model scores only its held-out songs, through the Rust scorer
+  (`sona-eval-cellstage --edit-cost --fold-models DIR`, the stage on the onset phase, which ships).
+- **C is kept (opt-in model dir) only if**, pooled over the 38 songs:
+  1. the paired song-bootstrap (10 000 resamples) 95% upper bound of Δ cost/min (C − B) is below 0;
+  2. the missing count does not rise, or the upper bound stays below 0 with missing re-weighted to 4;
+  3. clean measures do not fall (point Δ ≥ 0);
+  4. any decoding parameter C has is chosen cross-fitted (for each fold, by the other folds' out-of-sample
+     cost), never on the fold it scores.
+- Noise floor: B retrained with seed 1 under F, against B, reported beside the result.
+- Cell accuracy is reported, not a criterion. The shipped default stays the current model either way; a C
+  that passes stays opt-in until holdout4.
