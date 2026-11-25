@@ -176,6 +176,7 @@ note (4) into a note and a missing one (2) where a rest splits it (atamaro −30
 # Rust (dev): adds "GAME lead + octave rule, releases trimmed (opt-in)" and the stage's row.
 ORT_DYLIB_PATH=… SONA_GAME_DIR=… cargo run --release -p sona-eval --features game --bin sona-eval-cellstage -- \
     --model ~/.cache/sona/cellstage-D --edit-cost --trim-releases
+# (flag deleted 2026-11-25, utau-edit-cost 17)
 # Prototype, on a --dump of dev (UST content: keep it out of the repo)
 export S12_DUMP=…
 cd crates/sona-eval/scripts/single-note-errors
@@ -184,4 +185,5 @@ python3 -I release.py; python3 -I release_auc.py; python3 -I release_energy.py s
 python3 -I release_learn.py; python3 -I causes.py; python3 -I bias_sweep.py; python3 -I phase_check.py
 python3 -I boundary_check.py; python3 -I pitch_check.py; python3 -I octave_check.py
 python3 -I check_release_port.py RUST_OUTPUT
+# (script deleted 2026-11-25, utau-edit-cost 17, with the flag it checked)
 ```

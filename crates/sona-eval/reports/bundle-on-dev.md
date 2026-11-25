@@ -294,6 +294,7 @@ F=<19's worktree>/target/stage19-cv/F; SP=<session scratchpad>   # l01/lines, l1
 cargo build --release -p sona-eval --features game --bin sona-eval-cellstage
 ARMS="--merge-unheard-pieces --settle-near-ties --lyric-placement --lyric-lines $SP/l01/lines \
   --lyric-line-times $SP/l14/times/lyrics-lead-energy"
+# (flag deleted 2026-11-25, utau-edit-cost 17): --merge-unheard-pieces
 for m in C B; do
   target/release/sona-eval-cellstage --model $F/$m/models/fold0 --fold-models $F/$m/models --edit-cost $ARMS \
     --dump $SP/t20/dump-$m > $SP/t20/new-$m-arms.txt

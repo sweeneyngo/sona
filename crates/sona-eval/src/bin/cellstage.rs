@@ -21,16 +21,9 @@
 //! would get it: a phrase is a run of touching notes, and its moras are the lead UST's notes sung inside
 //! its span (by midpoint). The default run is unchanged.
 //!
-//! `--merge-unheard-pieces` (opt-in, utau-edit-cost 11) adds the edit cost of GAME's lead notes and of
-//! the stage after `sona_core::unheard_pieces::merge_unheard_pieces`, with GAME's run on the full
-//! vocals as the second listen; with `--fit-phrase-lyrics` too, also merged and then fitted.
-//! `--trim-releases` (opt-in, utau-edit-cost 12) adds the edit cost of GAME's lead notes and of the stage
-//! after `sona_core::release::trim_releases` on the vocals' energy envelope (the stage's row shows why it
-//! is not applied there). The default run is unchanged.
 //! `--settle-near-ties` (opt-in, utau-edit-cost 18) adds the edit cost of GAME's lead notes and of the
 //! stage after `sona_core::near_ties::settle_near_ties`, with GAME's run on the full vocals as the second
-//! listen; with `--trim-releases` too, GAME's lead notes settled and then trimmed, and with
-//! `--merge-unheard-pieces` too, the stage settled and then merged.
+//! listen. The default run is unchanged.
 //!
 //! `--lyric-placement` (with `--edit-cost`; lyrics-first 01) adds the lyric placement
 //! (`sona_eval::correction::lyric_placement`) and the edit cost of GAME's lead notes and of the stage when
@@ -60,16 +53,14 @@
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
 //! vocals' pitch track. The dump holds UST content: keep it out of the repository. With
-//! `--settle-near-ties` and/or `--merge-unheard-pieces` too, the outputs also hold the stage with those
-//! applied in the app's order (`stage_settled`, `stage_merged`, `stage_settled_merged`; utau-edit-cost 20).
+//! `--settle-near-ties` too, the outputs also hold the stage with near ties settled (`stage_settled`;
+//! utau-edit-cost 20).
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features_with, cells_to_notes, decode_classes, snap_notes, EncoderChunk, FeatureSet, StageInputs, StageNote};
 use sona_core::lyric_fit::{consensus_onsets, fit_lines, fit_lines_with_onsets, fit_phrase, fit_phrase_moras, fit_span_moras, lattice_prior, mora_of, CellNote, LineSpan, Mora, OnsetConsensus, OnsetRule};
 use sona_core::near_ties::{settle_near_ties, NearTieRule};
-use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
-use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
 use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
@@ -253,13 +244,6 @@ fn ust_phrase_starts(sung: &[Lyric], spacing: f64, offset: f64) -> Vec<usize> {
         prev_end = Some(cell(b));
     }
     starts
-}
-
-/// `notes` (on the grid at `anchor`) with their one-cell pieces merged where `edges` has no cut.
-fn merge_unheard(notes: &Notes, edges: &[i64], spacing: f64, anchor: f64) -> Notes {
-    let cell = |t: f64| ((t - anchor) / spacing).round() as i64;
-    let cells: Vec<CellNote> = notes.iter().map(|&(a, b, p)| CellNote { start: cell(a), end: cell(b), pitch: p }).collect();
-    merge_unheard_pieces(&cells, edges).iter().map(|n| (anchor + n.start as f64 * spacing, anchor + n.end as f64 * spacing, n.pitch)).collect()
 }
 
 fn cells(reference: &Notes, est: &Notes, spacing: f64, anchor: f64) -> (usize, usize) {
@@ -446,9 +430,7 @@ fn run() -> Result<(), String> {
     let mut tot = [(0usize, 0usize); 6];
     let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
     let with_fit = args.iter().any(|a| a == "--fit-phrase-lyrics");
-    let with_merge = args.iter().any(|a| a == "--merge-unheard-pieces");
-    let mut costs: [Vec<(String, EditCost)>; 15] = Default::default();
-    let with_trim = args.iter().any(|a| a == "--trim-releases");
+    let mut costs: [Vec<(String, EditCost)>; 7] = Default::default();
     let with_ties = args.iter().any(|a| a == "--settle-near-ties");
     let with_placement = args.iter().any(|a| a == "--lyric-placement");
     let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
@@ -593,36 +575,10 @@ fn run() -> Result<(), String> {
                         }
                     }
                 }
-                if with_merge {
-                    let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
-                    for (k, ns) in [(5, &lead_only), (6, &stage)] {
-                        let merged = merge_unheard(ns, &edges, spacing, anchor);
-                        costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&merged), &grid)));
-                        if with_fit {
-                            let fitted = fit_to_sung_phrases(&merged, &sung, spacing, anchor);
-                            costs[k + 2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&fitted), &grid)));
-                        }
-                    }
-                }
-                if with_trim {
-                    for (k, ns) in [(9, &lead_only), (10, &stage)] {
-                        let trimmed = trim_releases(ns, &rms, spacing, ReleaseRule::default());
-                        costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&trimmed), &grid)));
-                    }
-                }
                 if with_ties {
                     let settle = |ns: &Notes| settle_near_ties(ns, &runs.lead_notes, &runs.vocals_notes, spacing, anchor, NearTieRule::default());
-                    for (k, ns) in [(11, &lead_only), (12, &stage)] {
+                    for (k, ns) in [(5, &lead_only), (6, &stage)] {
                         costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&settle(ns)), &grid)));
-                    }
-                    if with_trim {
-                        let both = trim_releases(&settle(&lead_only), &rms, spacing, ReleaseRule::default());
-                        costs[13].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&both), &grid)));
-                    }
-                    if with_merge {
-                        let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
-                        let both = merge_unheard(&settle(&stage), &edges, spacing, anchor);
-                        costs[14].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&both), &grid)));
                     }
                 }
             }
@@ -633,9 +589,7 @@ fn run() -> Result<(), String> {
             }
             if let (Some(dir), 1) = (&dump, j) {
                 let settle = |ns: &Notes| settle_near_ties(ns, &runs.lead_notes, &runs.vocals_notes, spacing, anchor, NearTieRule::default());
-                let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
-                let merge = |ns: &Notes| merge_unheard(ns, &edges, spacing, anchor);
-                let arms = stage_arms(&stage, with_ties.then_some(&settle as &dyn Fn(&Notes) -> Notes), with_merge.then_some(&merge as &dyn Fn(&Notes) -> Notes));
+                let arms = stage_arms(&stage, with_ties.then_some(&settle as &dyn Fn(&Notes) -> Notes));
                 let mut outputs = vec![("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
                 outputs.extend(arms.iter().map(|(name, ns)| (*name, ns)));
                 let costs: Vec<_> = outputs.iter().map(|(name, ns)| (*name, edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid))).collect();
@@ -667,16 +621,8 @@ fn run() -> Result<(), String> {
             "learned cell stage, onset phase (ships)",
             "GAME lead + octave rule, each phrase's lyric fitted (opt-in)",
             "learned cell stage, each phrase's lyric fitted (opt-in)",
-            "GAME lead + octave rule, unheard pieces merged (opt-in)",
-            "learned cell stage, unheard pieces merged (opt-in)",
-            "GAME lead + octave rule, unheard pieces merged, each phrase's lyric fitted (opt-in)",
-            "learned cell stage, unheard pieces merged, each phrase's lyric fitted (opt-in)",
-            "GAME lead + octave rule, releases trimmed (opt-in)",
-            "learned cell stage, releases trimmed (opt-in; not applied: raises its cost)",
             "GAME lead + octave rule, near ties settled (opt-in)",
             "learned cell stage, near ties settled (opt-in)",
-            "GAME lead + octave rule, near ties settled, releases trimmed (opt-in)",
-            "learned cell stage, near ties settled, unheard pieces merged (opt-in)",
         ];
         for (title, rows) in titles.iter().zip(&costs).filter(|(_, rows)| !rows.is_empty()) {
             print!("{}", edit_cost::report(title, rows));
@@ -689,20 +635,10 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-/// The stage's notes with the opt-in arms that are switched on, in the app's order (near ties settled, then
-/// unheard pieces merged), named as `--dump` writes them; empty when neither is on, so the dump is unchanged.
-fn stage_arms(stage: &Notes, settle: Option<&dyn Fn(&Notes) -> Notes>, merge: Option<&dyn Fn(&Notes) -> Notes>) -> Vec<(&'static str, Notes)> {
-    let mut arms = Vec::new();
-    if let Some(settle) = settle {
-        arms.push(("stage_settled", settle(stage)));
-    }
-    if let Some(merge) = merge {
-        arms.push(("stage_merged", merge(stage)));
-    }
-    if let (Some(settle), Some(merge)) = (settle, merge) {
-        arms.push(("stage_settled_merged", merge(&settle(stage))));
-    }
-    arms
+/// The stage's notes with the opt-in arm switched on (near ties settled), named as `--dump` writes them;
+/// empty when it is off, so the dump is unchanged.
+fn stage_arms(stage: &Notes, settle: Option<&dyn Fn(&Notes) -> Notes>) -> Vec<(&'static str, Notes)> {
+    settle.map(|settle| ("stage_settled", settle(stage))).into_iter().collect()
 }
 
 /// `--fold-models DIR` (utau-edit-cost 19): every subfolder of `DIR` that holds a cell model, each with
@@ -823,17 +759,11 @@ mod tests {
     }
 
     #[test]
-    fn the_dump_adds_the_stage_with_each_switched_on_arm_settling_before_merging() {
+    fn the_dump_adds_the_settled_stage_only_when_settling_is_on() {
         let stage: Notes = vec![(0.0, 1.0, 60), (1.0, 2.0, 60)];
         let settle = |ns: &Notes| ns.iter().map(|&(a, b, p)| (a, b, p + 1)).collect::<Notes>();
-        let merge = |ns: &Notes| vec![(ns[0].0, ns[ns.len() - 1].1, ns[0].2 * 2)];
-        let names = |arms: &[(&'static str, Notes)]| arms.iter().map(|(n, _)| *n).collect::<Vec<_>>();
-        assert!(stage_arms(&stage, None, None).is_empty(), "no arm switched on: the dump is unchanged");
-        assert_eq!(stage_arms(&stage, Some(&settle), None), vec![("stage_settled", vec![(0.0, 1.0, 61), (1.0, 2.0, 61)])]);
-        assert_eq!(stage_arms(&stage, None, Some(&merge)), vec![("stage_merged", vec![(0.0, 2.0, 120)])]);
-        let both = stage_arms(&stage, Some(&settle), Some(&merge));
-        assert_eq!(names(&both), ["stage_settled", "stage_merged", "stage_settled_merged"]);
-        assert_eq!(both[2].1, vec![(0.0, 2.0, 122)], "settled first, then merged");
+        assert!(stage_arms(&stage, None).is_empty(), "no arm switched on: the dump is unchanged");
+        assert_eq!(stage_arms(&stage, Some(&settle)), vec![("stage_settled", vec![(0.0, 1.0, 61), (1.0, 2.0, 61)])]);
     }
 
     #[test]
