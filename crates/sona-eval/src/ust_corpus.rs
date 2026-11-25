@@ -28,6 +28,15 @@ pub fn stems_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("data/pifuyuu-stems")
 }
 
+/// The corpus songs' full mixes (`<id>.wav`): `$SONA_UST_AUDIO_DIR` (as the fetch and separation
+/// scripts read it), else `data/pifuyuu-audio` beside the manifest's folder.
+pub fn audio_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("SONA_UST_AUDIO_DIR") {
+        return PathBuf::from(p);
+    }
+    manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default()
+}
+
 /// The committed manifest's default location.
 pub fn manifest_path() -> PathBuf {
     if let Some(p) = std::env::var_os("SONA_UST_MANIFEST") {

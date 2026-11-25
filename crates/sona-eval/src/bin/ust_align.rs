@@ -20,13 +20,18 @@
 //! with sona entirely (the detector never runs), for a split that must stay
 //! unread: the offset is the same, and the status is `unverified (…)`, which no
 //! tool scores as aligned.
+//!
+//! Verifying an `unverified` song is the first step of that split's read (utau-edit-cost 17):
+//! it needs `--split NAME --reason "…"` and goes through the holdout ledger
+//! (`sona_eval::holdout`; `--reread` as usual). Without `--split`, the check skips such songs.
 
 use std::process::ExitCode;
 
 use sona_core::onset::OnsetDetector;
+use sona_eval::holdout::authorize;
 use sona_eval::metrics::matching::maximum_matching;
 use sona_eval::ust_align::{coarse_offset, drum_novelty, fine_offset, log_rms, zscore, COARSE_HOP_S, MIN_DRUM_PEAK_RATIO};
-use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest, SongUsts};
+use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest, Song, SongUsts};
 use sona_eval::{ust, wav, EvalError};
 
 /// Pairs further apart than this are not matched (seconds).
@@ -42,16 +47,26 @@ struct Options {
     write: bool,
     verify: bool,
     split: Option<String>,
+    reason: Option<String>,
+    reread: bool,
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut opts = Options { write: false, verify: true, split: None };
+    let mut opts = Options { write: false, verify: true, split: None, reason: None, reread: false };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--write" => opts.write = true,
             "--no-verify" => opts.verify = false,
+            "--reread" => opts.reread = true,
+            "--reason" => match it.next() {
+                Some(s) => opts.reason = Some(s.clone()),
+                None => {
+                    eprintln!("sona-eval-ust-align: --reason needs a text");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--split" => match it.next() {
                 Some(s) => opts.split = Some(s.clone()),
                 None => {
@@ -60,10 +75,14 @@ fn main() -> ExitCode {
                 }
             },
             other => {
-                eprintln!("sona-eval-ust-align: unknown argument {other:?} (--write, --no-verify, --split NAME)");
+                eprintln!("sona-eval-ust-align: unknown argument {other:?} (--write, --no-verify, --split NAME, --reason TEXT, --reread)");
                 return ExitCode::FAILURE;
             }
         }
+    }
+    if let Err(e) = authorize_check(&opts) {
+        eprintln!("sona-eval-ust-align: {e}");
+        return ExitCode::FAILURE;
     }
     match run(&opts) {
         Ok(()) => ExitCode::SUCCESS,
@@ -72,6 +91,20 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn unverified(song: &Song) -> bool {
+    song.alignment_status.as_deref().is_some_and(|a| a.starts_with("unverified"))
+}
+
+/// Checking a split whose songs are still `unverified` is the first step of its read: log it in the ledger.
+fn authorize_check(opts: &Options) -> Result<(), String> {
+    let Some(split) = opts.split.as_deref().filter(|_| opts.verify) else { return Ok(()) };
+    let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
+    if manifest.songs.iter().any(|s| s.split.as_deref() == Some(split) && unverified(s)) {
+        authorize(&manifest, split, "sona-eval-ust-align", opts.reason.as_deref(), opts.reread)?;
+    }
+    Ok(())
 }
 
 struct Verify {
@@ -101,6 +134,10 @@ fn run(opts: &Options) -> Result<(), EvalError> {
 
     for song in &mut manifest.songs {
         if opts.split.as_ref().is_some_and(|s| song.split.as_ref() != Some(s)) {
+            continue;
+        }
+        if detector.is_some() && opts.split.is_none() && unverified(song) {
+            println!("{:<32} (unverified split: check it with --split {} --reason …, through the ledger)", song.id, song.split.as_deref().unwrap_or("?"));
             continue;
         }
         let dir = stems.join(&song.id);
