@@ -57,3 +57,10 @@ reads exactly what sona gives it.
 - **K = 10** (timing: one epoch on 20 songs takes 12 s on 8 threads, so a 15-epoch model on ~34 songs takes
   about 5 min; leave-one-song-out would need 38 models per recipe, ≈ 3.5 h each, and B + C + B's seed check
   ≈ 10 h. Ten folds take ≈ 50 min per recipe.)
+- **C, named after the exploration CV and before the final CV run**: the same network trained on the onset
+  phase (what ships) with GAME lead's 8 residual features (1054 per cell), loss = cross-entropy with cells
+  next to a UST note edge weighted 3, plus 0.5 × a pairwise term (−log of the chance two neighbouring cells
+  of one UST note agree on pitch); decoded with `decode_classes` at a switch cost chosen cross-fitted from
+  {0, 0.25, 0.5, 1, 1.5, 2, 3, 4} (export: `switch_cost`, `lead_residuals`). Exploration (4 folds, seed 2,
+  38 songs, vs B under the same folds; 6 recipes × decodings looked at, so its numbers carry selection):
+  −18.0 [−23.7, −12.7] cost/min at switch 1.0, clean +1.6, missing +18.
