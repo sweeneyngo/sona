@@ -1,6 +1,6 @@
 # 20 — Measure the holdout4 bundle together on dev
 
-Status: ready-for-agent
+Status: in progress
 Type: prototype
 Blocked by: 19
 
