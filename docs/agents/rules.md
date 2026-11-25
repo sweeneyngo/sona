@@ -16,7 +16,7 @@ failure it prevents.
 | `web/lib/grid.ts` and its Rust port `crates/sona-eval/src/quantize.rs` agree. | shared `crates/sona-eval/fixtures/quantize/*.json`, asserted by both test suites |
 | The editor does what a person expects: handles, the pen, lyrics, bar 1, undo/redo, exports, autosave, motion, the Help, the grid menus and the doubtful-note flags behave as `web/e2e/README.md` lists, with no console errors. | `scripts/ci/e2e.sh` (job `e2e`): the twelve editor drivers in Chromium against a Vite dev server, on the synthetic fixture. The four that need `sona serve` still run locally only. |
 | No clippy warnings. | `cargo clippy --workspace --all-targets -- -D warnings` |
-| A holdout read is deliberate and logged; a re-read of the same songs is refused without `--reread`. | `crates/sona-eval/src/holdout.rs`, ledger `crates/sona-eval/corpus/holdout-reads.jsonl` |
+| A holdout read is deliberate and logged; a re-read of the same songs is refused without `--reread`. The holdout4 read runs once; a resume after a crash and the later frame read are logged re-reads. | `crates/sona-eval/src/holdout.rs`, ledger `crates/sona-eval/corpus/holdout-reads.jsonl`, `crates/sona-eval/tests/holdout_read_tools.rs`, `crates/sona-eval/scripts/holdout4-read/test_read.py` (job `holdout-read-policy`) |
 
 ## Judgment (not checkable; each has bitten before)
 

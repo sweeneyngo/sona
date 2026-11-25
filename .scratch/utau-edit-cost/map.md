@@ -13,6 +13,16 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, **17 round 2 (option B in the read; rule 4 split off; lyric texts).**
+  - The edit-cost read builds L's inputs inside the read from D's dump. On dev it reproduces 01's and 14's
+    inputs, and C+L 255.7 (−13.8 [−43.0, +10.7]) equals 21.
+  - `--resume` is logged and tested (CI job `holdout-read-policy`). Crash then resume gives the full run's rows.
+  - `--frame-only` reads rule 4 later, reusing step 1. On dev it gives 9/9 for B and C.
+  - **Lyric texts: 11 of 24** from the Vocaloid Lyrics Wiki, all medium confidence. VocaDB's robots.txt bars
+    Claude agents, so it was not used.
+  - Rule 2 would read at most 11 songs, so the rules' final commit waits on the lead's choice (a/b/c in
+    [17](issues/17-holdout4-read-harness.md)).
+
 - 2026-11-25, lead, on 17: verified and merged (my mutant on the unverified gate caught; suite green). User: run
   the edit-cost read now and label later. So rules 1–3 (C vs D, L on C, T on C) read first; rule 4 (bar 1) is
   pre-registered now and read separately once the user has labelled, on the songs step 1 kept. L's holdout4
