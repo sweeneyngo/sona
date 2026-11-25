@@ -1,6 +1,6 @@
 # 16 — Split and time notes at the aligner's mora times
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 14
 
