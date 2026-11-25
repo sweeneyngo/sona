@@ -1,6 +1,6 @@
 # 21 — Bring the lyric arm (14's fit + 17's S1) into one Rust command, with S1's offsets frozen from dev
 
-Status: ready-for-agent
+Status: in progress
 Type: task
 Blocked by: 20
 
