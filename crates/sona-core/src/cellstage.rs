@@ -71,17 +71,23 @@ fn song_tune(notes: &[StageNote]) -> f64 {
 
 /// GAME notes on sona's grid phase, tuned, monophonic: the prototype's `snap_notes`.
 pub fn snap_notes(notes: &[StageNote], spacing: f64, anchor: f64) -> Vec<Snapped> {
+    snap_notes_indexed(notes, spacing, anchor).into_iter().map(|(on, off, pitch, _)| (on, off, pitch)).collect()
+}
+
+/// [`snap_notes`], each note with the index in `notes` of the raw note it came from.
+pub fn snap_notes_indexed(notes: &[StageNote], spacing: f64, anchor: f64) -> Vec<(f64, f64, i32, usize)> {
     let tune = song_tune(notes);
-    let mut out: Vec<Snapped> = notes
+    let mut out: Vec<(f64, f64, i32, usize)> = notes
         .iter()
-        .filter(|n| n.voiced)
-        .map(|n| {
+        .enumerate()
+        .filter(|(_, n)| n.voiced)
+        .map(|(i, n)| {
             let on = anchor + pyround((n.onset_s - anchor) / spacing) * spacing;
             let mut off = anchor + pyround((n.offset_s - anchor) / spacing) * spacing;
             if off <= on + 1e-9 {
                 off = on + spacing;
             }
-            (on, off, pyround(f64::from(n.midi) + tune) as i32)
+            (on, off, pyround(f64::from(n.midi) + tune) as i32, i)
         })
         .collect();
     out.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));

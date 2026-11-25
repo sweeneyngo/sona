@@ -174,6 +174,22 @@ a line below.
   - Ceilings: any GAME presence threshold −2.9 (GAME lead); a perfect per-run split-or-extend choice −4.4 (stage).
   - The missing notes are quiet moras (ん 25–34%) next to a sung note. The stage knows they are sung (AUC
     0.90–0.96), but no source gives their pitch or boundary, which makes them 07's problem.
+- 2026-11-24, **18 resolved, opt-in** (`reports/timing-errors.md`; revised weights; rule committed first, a52bd1f;
+  Rust = prototype on 18/18 song rows, default run byte-identical, 5 mutants caught).
+  - Timing is 45.7% / 40.2% of the cost (GAME lead / stage), almost all of it one-cell jitter at legato
+    boundaries: one-cell oracle −93.4 / −93.3, every edge −134.2 / −105.1. GAME's release adds −38.1 on GAME lead.
+  - No audio source says which way the jitter goes; GAME's own rounding residual does a little.
+  - **`sona_core::near_ties` / `--settle-near-ties`**: an edge whose raw GAME-lead time leans ≥ 0.35 cell moves
+    a cell that way where GAME on the vocals has an edge. GAME lead 303.0 → 297.8 (−5.2 [−8.4, −2.3]), clean
+    +0.4, missing +2; leave-one-song-out 0.35 on 9/9 folds. It adds the same on top of 12's trim. Nothing on the
+    stage (−0.6, in-sample).
+  - 12's trim retuned **fails** (leave-one-song-out −9.5 [−18.7, +2.3], missing +39: it cuts devoiced moras). 12's
+    own setting no longer meets its bar under these weights (−8.6 [−19.7, +4.3], missing +55); keeping it is the
+    user's call.
+  - Latency correction and averaging the two GAME listens fail too.
+  - Next lever: a stage retrain charging boundary errors at edit cost, with the residual as a feature (choice
+    ceiling −41.7). It needs non-dev data and holdout4. The residual is also a timing doubt mark for 14: 10.8%
+    of boundaries flagged, 49% of the wrong ones caught.
 
 ## Fog
 

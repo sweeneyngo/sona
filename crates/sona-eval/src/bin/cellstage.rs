@@ -27,6 +27,10 @@
 //! `--trim-releases` (opt-in, utau-edit-cost 12) adds the edit cost of GAME's lead notes and of the stage
 //! after `sona_core::release::trim_releases` on the vocals' energy envelope (the stage's row shows why it
 //! is not applied there). The default run is unchanged.
+//! `--settle-near-ties` (opt-in, utau-edit-cost 18) adds the edit cost of GAME's lead notes and of the
+//! stage after `sona_core::near_ties::settle_near_ties`, with GAME's run on the full vocals as the second
+//! listen; with `--trim-releases` too, GAME's lead notes settled and then trimmed, and with
+//! `--merge-unheard-pieces` too, the stage settled and then merged.
 //!
 //! `--lyric-placement` (with `--edit-cost`; lyrics-first 01) adds the lyric placement
 //! (`sona_eval::correction::lyric_placement`) and the edit cost of GAME's lead notes and of the stage when
@@ -48,6 +52,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::lyric_fit::{fit_lines, fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, LineSpan, Mora};
+use sona_core::near_ties::{settle_near_ties, NearTieRule};
 use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
 use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
@@ -389,8 +394,9 @@ fn run() -> Result<(), String> {
     let with_edit_cost = args.iter().any(|a| a == "--edit-cost");
     let with_fit = args.iter().any(|a| a == "--fit-phrase-lyrics");
     let with_merge = args.iter().any(|a| a == "--merge-unheard-pieces");
-    let mut costs: [Vec<(String, EditCost)>; 11] = Default::default();
+    let mut costs: [Vec<(String, EditCost)>; 15] = Default::default();
     let with_trim = args.iter().any(|a| a == "--trim-releases");
+    let with_ties = args.iter().any(|a| a == "--settle-near-ties");
     let with_placement = args.iter().any(|a| a == "--lyric-placement");
     let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
     let line_times = flag("--lyric-line-times").map(PathBuf::from);
@@ -539,6 +545,21 @@ fn run() -> Result<(), String> {
                         costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&trimmed), &grid)));
                     }
                 }
+                if with_ties {
+                    let settle = |ns: &Notes| settle_near_ties(ns, &runs.lead_notes, &runs.vocals_notes, spacing, anchor, NearTieRule::default());
+                    for (k, ns) in [(11, &lead_only), (12, &stage)] {
+                        costs[k].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&settle(ns)), &grid)));
+                    }
+                    if with_trim {
+                        let both = trim_releases(&settle(&lead_only), &rms, spacing, ReleaseRule::default());
+                        costs[13].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&both), &grid)));
+                    }
+                    if with_merge {
+                        let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
+                        let both = merge_unheard(&settle(&stage), &edges, spacing, anchor);
+                        costs[14].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&both), &grid)));
+                    }
+                }
             }
             if let (Some(dir), 1) = (&dump, j) {
                 let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
@@ -577,6 +598,10 @@ fn run() -> Result<(), String> {
             "learned cell stage, unheard pieces merged, each phrase's lyric fitted (opt-in)",
             "GAME lead + octave rule, releases trimmed (opt-in)",
             "learned cell stage, releases trimmed (opt-in; not applied: raises its cost)",
+            "GAME lead + octave rule, near ties settled (opt-in)",
+            "learned cell stage, near ties settled (opt-in)",
+            "GAME lead + octave rule, near ties settled, releases trimmed (opt-in)",
+            "learned cell stage, near ties settled, unheard pieces merged (opt-in)",
         ];
         for (title, rows) in titles.iter().zip(&costs).filter(|(_, rows)| !rows.is_empty()) {
             print!("{}", edit_cost::report(title, rows));
