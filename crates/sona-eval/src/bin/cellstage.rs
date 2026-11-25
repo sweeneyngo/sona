@@ -37,27 +37,20 @@
 //! `DIR/<id>.json` holds `line_starts` and `space_starts`, the indices of the UST notes that begin one
 //! (`scripts/lyric-placement/align_lines.py`; lyric-derived, keep it out of the repo).
 //!
-//! `--lean-sung` (with `--edit-cost`; utau-edit-cost 06) sweeps the stage leaning toward a note where it is
-//! unsure: a rest bias on the masked argmax (`sona_core::cellstage::choose_class_leaning`), and cells no
-//! source proposes a pitch for that the model still believes sung, drawn at the touching note's pitch
-//! (`fill_unproposed`). It prints each setting's cost, clean measures and cells against the unmodified
-//! stage, with paired song-bootstrap intervals; with `--lyric-placement --lyric-lines DIR` too, each setting
-//! with the lyric's lines and spaces placed, rests holding moras.
-//!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
 //! vocals' pitch track. The dump holds UST content: keep it out of the repository.
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, choose_class_leaning, fill_unproposed, snap_notes, EncoderChunk, FillTouching, StageInputs, StageNote};
+use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
 use sona_core::lyric_fit::{fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, Mora};
 use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
 use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
 use sona_core::game::{cell_stage_notes, cells_covering, phase_of, stage_annotation_notes, CellModel, GameModel, GameParams, StageNotes, StageRuns};
 use sona_core::{Annotation, GridMode, PYin, Producer, Transcriber};
-use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost, ErrorClass, BOOTSTRAP_ITERS};
+use sona_eval::correction::edit_cost::{self, edit_cost, CellGrid, EditCost};
 use sona_eval::correction::lyric_placement::{self, lyric_placement, LyricPlacement};
 use sona_eval::correction::EditNote;
 use sona_eval::holdout::authorize;
@@ -94,122 +87,6 @@ fn fit_to_sung_phrases(notes: &Notes, sung: &[(f64, f64, Mora)], spacing: f64, a
         i = j;
     }
     fitted.iter().map(|n| (anchor + n.start as f64 * spacing, anchor + n.end as f64 * spacing, n.pitch)).collect()
-}
-
-/// One lean-toward-sung setting (utau-edit-cost 06): the rest bias, and the unproposed-cell fill.
-#[derive(Clone, Copy)]
-struct Lean {
-    rest_bias: f32,
-    fill: Option<(f32, FillTouching)>,
-}
-
-const LEANS: [Lean; 12] = {
-    const fn fill(below: f32, t: FillTouching) -> Lean {
-        Lean { rest_bias: 0.0, fill: Some((below, t)) }
-    }
-    const fn bias(b: f32) -> Lean {
-        Lean { rest_bias: b, fill: None }
-    }
-    use FillTouching::{Extend, OwnNote};
-    [bias(0.0), bias(0.5), bias(1.0), bias(2.0), fill(0.1, OwnNote), fill(0.2, OwnNote), fill(0.3, OwnNote), fill(0.5, OwnNote), fill(0.1, Extend), fill(0.2, Extend), fill(0.3, Extend), fill(0.5, Extend)]
-};
-
-impl Lean {
-    fn title(self) -> String {
-        match self.fill {
-            None if self.rest_bias == 0.0 => "stage (unmodified)".into(),
-            None => format!("rest bias {}", self.rest_bias),
-            Some((below, FillTouching::OwnNote)) => format!("fill P(rest) < {below}, own note"),
-            Some((below, FillTouching::Extend)) => format!("fill P(rest) < {below}, extend"),
-        }
-    }
-}
-
-/// Per lean setting: each song's edit cost, cells right, and with the lyric placed (lines and spaces, rests
-/// hold moras) its edit cost and placement.
-#[derive(Default)]
-struct LeanRow {
-    costs: Vec<(String, EditCost)>,
-    cells: (usize, usize),
-    lyric: Vec<(String, EditCost)>,
-    placed: Vec<(String, LyricPlacement)>,
-}
-
-/// A paired song-bootstrap 95% interval of `stat(new) - stat(base)`, pooled over songs.
-fn paired<T: Default + Copy>(base: &[(String, T)], new: &[(String, T)], add: impl Fn(&mut T, &T), stat: impl Fn(&T) -> f64) -> (f64, f64) {
-    let pairs: Vec<(T, T)> = base.iter().zip(new).map(|(a, b)| (a.1, b.1)).collect();
-    edit_cost::bootstrap_pooled(
-        &pairs,
-        BOOTSTRAP_ITERS,
-        |p, q| {
-            add(&mut p.0, &q.0);
-            add(&mut p.1, &q.1);
-        },
-        |p| stat(&p.1) - stat(&p.0),
-    )
-}
-
-fn pool<T: Default>(rows: &[(String, T)], add: impl Fn(&mut T, &T)) -> T {
-    let mut p = T::default();
-    for (_, r) in rows {
-        add(&mut p, r);
-    }
-    p
-}
-
-fn lean_report(rows: &[LeanRow]) -> String {
-    use std::fmt::Write;
-    let mut s = String::from("\nlean toward sung (utau-edit-cost 06), learned cell stage, onset phase; Δ against the unmodified stage, paired song-bootstrap 95%\n");
-    let _ = writeln!(s, "  {:34} {:>8} {:>20} {:>7} {:>7} {:>7} {:>5} {:>5} {:>5} {:>5}", "setting", "cost/min", "Δ [95%]", "clean", "Δclean", "cells", "miss", "extra", "join", "chop");
-    let base = &rows[0];
-    for (lean, r) in LEANS.iter().zip(rows) {
-        let p = pool(&r.costs, EditCost::add);
-        let b = pool(&base.costs, EditCost::add);
-        let (lo, hi) = paired(&base.costs, &r.costs, EditCost::add, EditCost::per_minute);
-        let n = |c: ErrorClass| p.count(c);
-        let _ = writeln!(
-            s,
-            "  {:34} {:>8.1} {:>+6.1} [{:+5.1}, {:+5.1}] {:>6.1}% {:>+6.1} {:>6.2}% {:>5} {:>5} {:>5} {:>5}",
-            lean.title(),
-            p.per_minute(),
-            p.per_minute() - b.per_minute(),
-            lo,
-            hi,
-            100.0 * p.clean_share(),
-            100.0 * (p.clean_share() - b.clean_share()),
-            100.0 * r.cells.0 as f64 / r.cells.1.max(1) as f64,
-            n(ErrorClass::Missing),
-            n(ErrorClass::Extra),
-            n(ErrorClass::Joined),
-            n(ErrorClass::Chopped)
-        );
-    }
-    if base.lyric.is_empty() {
-        return s;
-    }
-    let _ = writeln!(s, "  with the lyric placed (lines and spaces, rests hold moras):");
-    let _ = writeln!(s, "  {:34} {:>8} {:>20} {:>7} {:>9} {:>20}", "setting", "cost/min", "Δ [95%]", "clean", "wrong/min", "Δwrong [95%]");
-    for (lean, r) in LEANS.iter().zip(rows) {
-        let (p, b) = (pool(&r.lyric, EditCost::add), pool(&base.lyric, EditCost::add));
-        let (pp, bp) = (pool(&r.placed, LyricPlacement::add), pool(&base.placed, LyricPlacement::add));
-        let (lo, hi) = paired(&base.lyric, &r.lyric, EditCost::add, EditCost::per_minute);
-        let (wlo, whi) = paired(&base.placed, &r.placed, LyricPlacement::add, LyricPlacement::wrong_per_minute);
-        let _ = writeln!(
-            s,
-            "  {:34} {:>8.1} {:>+6.1} [{:+5.1}, {:+5.1}] {:>6.1}% {:>9.1} {:>+6.1} [{:+5.1}, {:+5.1}]",
-            lean.title(),
-            p.per_minute(),
-            p.per_minute() - b.per_minute(),
-            lo,
-            hi,
-            100.0 * p.clean_share(),
-            pp.wrong_per_minute(),
-            pp.wrong_per_minute() - bp.wrong_per_minute(),
-            wlo,
-            whi
-        );
-    }
-    s
 }
 
 /// The lead UST's sung notes in time order: onset, offset, MIDI pitch, lyric.
@@ -493,8 +370,6 @@ fn run() -> Result<(), String> {
     let with_placement = args.iter().any(|a| a == "--lyric-placement");
     let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
     let mut placements: LandingRows = Vec::new();
-    let with_lean = args.iter().any(|a| a == "--lean-sung");
-    let mut lean_rows: Vec<LeanRow> = LEANS.iter().map(|_| LeanRow::default()).collect();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -538,33 +413,6 @@ fn run() -> Result<(), String> {
             let stage = scored.notes.clone();
             row[2 * j] = cells(&reference, &lead_only, spacing, offset);
             row[2 * j + 1] = cells(&reference, &stage, spacing, offset);
-            let lean_notes: Vec<Notes> = if with_lean && with_edit_cost && j == 1 {
-                let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
-                let (k0, n) = cells_covering(duration, spacing, anchor);
-                let (x, cands, sources) = cell_features(&inputs, k0, n);
-                let logits = model.logits(&x, n).map_err(|e| e.to_string())?;
-                let leaned: Vec<Notes> = LEANS
-                    .iter()
-                    .map(|l| {
-                        let ns = cells_to_notes(&choose_class_leaning(&logits, &cands, l.rest_bias), &cands, &sources, k0, spacing, anchor);
-                        match l.fill {
-                            Some((below, touching)) => fill_unproposed(&ns, &logits, &cands, k0, spacing, anchor, below, touching),
-                            None => ns,
-                        }
-                    })
-                    .collect();
-                if leaned[0] != stage {
-                    return Err(format!("{}: the unmodified lean setting differs from cell_stage_notes", song.id));
-                }
-                for (r, ns) in lean_rows.iter_mut().zip(&leaned) {
-                    r.costs.push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid)));
-                    let (ok, n) = cells(&reference, ns, spacing, offset);
-                    r.cells = (r.cells.0 + ok, r.cells.1 + n);
-                }
-                leaned
-            } else {
-                Vec::new()
-            };
             if with_edit_cost && j == 1 {
                 costs[1].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&lead_only), &grid)));
                 costs[2].push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&stage), &grid)));
@@ -616,15 +464,6 @@ fn run() -> Result<(), String> {
                             ("fitted per lyric line and space, rests hold moras", Landing::Groups { starts: space_starts, rests: true }),
                             ("fitted per lyric line cut at UST phrases, rests hold moras", Landing::Groups { starts: &both, rests: true }),
                         ]);
-                    }
-                    if let Some((_, space_starts)) = &lines {
-                        for (r, ns) in lean_rows.iter_mut().zip(&lean_notes) {
-                            let landed = land_lyric(ns, &lyrics, Landing::Groups { starts: space_starts, rests: true }, spacing, anchor);
-                            let notes: Notes = landed.iter().map(|&(a, b, p, _)| (a, b, p)).collect();
-                            let sung_notes: Vec<(EditNote, Option<&str>)> = landed.iter().map(|&(a, b, p, m)| (EditNote { onset_s: a, offset_s: b, midi_pitch: f64::from(p) }, m.map(|m| lyrics[m].3.as_str()))).collect();
-                            r.lyric.push((song.id.clone(), edit_cost(&edit_notes(&reference), &edit_notes(&notes), &grid)));
-                            r.placed.push((song.id.clone(), lyric_placement(&truth, &sung_notes, &grid)));
-                        }
                     }
                     for (out, ns) in [("GAME lead + octave rule", &lead_only), ("learned cell stage", &stage)] {
                         for (how, landing) in &landings {
@@ -706,9 +545,6 @@ fn run() -> Result<(), String> {
         for (title, costs, placed) in &placements {
             print!("{}", edit_cost::report(title, costs));
             print!("{}", lyric_placement::report(title, placed));
-        }
-        if with_lean {
-            print!("{}", lean_report(&lean_rows));
         }
     }
     Ok(())

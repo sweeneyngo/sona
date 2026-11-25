@@ -158,6 +158,15 @@ a line below.
     27–39: median 88 s CPU and 133 s wall per 4-minute song.
   - Ticket 05's holdout4 rule gains it as arm C, thresholds unchanged, with a tie-break to the harmony. The
     holdout read still needs `--estimate-bar-one` to get a `--split` path.
+- 2026-11-24, **06 resolved, negative** (`reports/lean-toward-sung.md`; rule committed first, 499821a; Rust =
+  prototype on 11 settings, default run byte-identical, 2 mutants caught; knob deleted after 43d9b8d). Leaning
+  toward sung never pays on dev. A rest bias on the stage costs +1.2 [+0.2, +2.4] at b = 0.5. Drawing cells the
+  stage believes sung but no source pitches costs +0.9 [−3.3, +4.1] at best: own notes chop, extensions join.
+  Stacked with lyric lines and spaces, the best is +0.1 [−3.6, +2.8], and fills place slightly *more* moras, so
+  the lyric-shift Fog does not bite here.
+  - Ceilings: any GAME presence threshold −2.9 (GAME lead); a perfect per-run split-or-extend choice −4.4 (stage).
+  - The missing notes are quiet moras (ん 25–34%) next to a sung note. The stage knows they are sung (AUC
+    0.90–0.96), but no source gives their pitch or boundary, which makes them 07's problem.
 
 ## Fog
 

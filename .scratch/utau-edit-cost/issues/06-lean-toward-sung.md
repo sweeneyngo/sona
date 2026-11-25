@@ -1,6 +1,6 @@
 # 06 — Lean toward a note when unsure
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: 01, 03, 07
 
@@ -34,3 +34,22 @@ It is exploration; the Rust sweep below is the measurement the rule reads.
   **and** stacked with lyric placement (lines and spaces, rests hold moras), its cost/min Δ point estimate ≤ 0
   and wrong moras/min not up (the lyric-shift Fog). Choice among passing settings: lowest pooled cost/min.
 - Otherwise: record the numbers and delete the knob.
+
+## Answer
+
+**Negative; the rule fails and the knob is deleted** (it lived at 43d9b8d). Report:
+`crates/sona-eval/reports/lean-toward-sung.md`. Dev only, the stage in-sample.
+
+- Rest bias on the stage's masked argmax: +1.2 [+0.2, +2.4] cost/min at b = 0.5, rising with b. It lengthens
+  notes into the UST's rests. The unbiased stage is the minimum.
+- Cells the model believes sung but no source pitches (P(rest) < τ), drawn at the touching note's pitch: up to
+  100 of 213 missing notes go, but chops (own note) or joins (extend) come back. Best +0.9 [−3.3, +4.1].
+  A perfect per-run choice made with the UST is worth only −3.9 to −4.4.
+- GAME's presence is where the notes are dropped (86% lie under an unvoiced GAME note), but that note's pitch is
+  right 18% of the time. Any presence threshold is worth at most −2.9 on GAME lead (oracle), so GAME was not
+  re-run.
+- With lyric lines and spaces placed (rests hold moras; stage 167.4): best +0.1 [−3.6, +2.8]. Fills place
+  slightly more moras (−1 to −3 wrong/min), so extras do not steal moras here, but cost does not fall.
+- Missing notes are quiet moras next to a sung note (ん 25–34% vs 1% of matched notes; pitch track unvoiced). The
+  model knows they are sung (1 − P(rest) AUC 0.90–0.96), but nothing gives their pitch or their boundary with the
+  neighbour. That is the joined-notes problem (07), not a threshold.

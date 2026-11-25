@@ -230,89 +230,15 @@ pub fn cell_features(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec
 /// The candidate each cell takes (0 = rest) from the model's logits, choosing only among the candidates
 /// that exist: the prototype's masked argmax.
 pub fn choose_class(logits: &[f32], cands: &[Candidates]) -> Vec<usize> {
-    choose_class_leaning(logits, cands, 0.0)
-}
-
-/// [`choose_class`] leaning toward a note (utau-edit-cost 06, opt-in): `rest_bias` comes off rest's logit
-/// before the masked argmax, so a cell whose candidate the model nearly prefers sings it. `0.0` is
-/// [`choose_class`].
-pub fn choose_class_leaning(logits: &[f32], cands: &[Candidates], rest_bias: f32) -> Vec<usize> {
     let nc = cands.first().map_or(6, |c| c.len());
     cands
         .iter()
         .enumerate()
         .map(|(i, cp)| {
             let row = &logits[i * nc..(i + 1) * nc];
-            let score = |j: usize| if j == 0 { row[0] - rest_bias } else { row[j] };
-            (0..nc).filter(|&j| j == 0 || cp[j] >= 0).max_by(|&a, &b| score(a).total_cmp(&score(b)).then(b.cmp(&a))).unwrap_or(0)
+            (0..nc).filter(|&j| j == 0 || cp[j] >= 0).max_by(|&a, &b| row[a].total_cmp(&row[b]).then(b.cmp(&a))).unwrap_or(0)
         })
         .collect()
-}
-
-/// How a run of [`fill_unproposed`] cells that touches a note joins it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FillTouching {
-    /// The run is a note of its own, at the touching note's pitch.
-    OwnNote,
-    /// The touching note (the one before, else the one after) grows over the run.
-    Extend,
-}
-
-/// `notes` (the stage's, from [`cells_to_notes`] on cells `k0..`) leaning toward sung where no source
-/// proposes a pitch (utau-edit-cost 06, opt-in): every run of cells at rest in `notes` that has no
-/// candidate and whose rest probability (softmax of the model's `logits`, cells × 6) is below `below`
-/// becomes sung. A run touching a note takes its pitch (the note before first) and joins it as
-/// `touching` says; any other run becomes a note at the pitch of the nearest note. Sorted by onset.
-#[allow(clippy::too_many_arguments)]
-pub fn fill_unproposed(notes: &[(f64, f64, i32)], logits: &[f32], cands: &[Candidates], k0: i64, spacing: f64, anchor: f64, below: f32, touching: FillTouching) -> Vec<(f64, f64, i32)> {
-    let cell = |t: f64| ((t - anchor) / spacing).round() as i64 - k0;
-    let time = |c: i64| anchor + (k0 + c) as f64 * spacing;
-    let mut cells: Vec<(i64, i64, i32)> = notes.iter().map(|&(a, b, p)| (cell(a), cell(b), p)).collect();
-    let mut sung = vec![false; cands.len()];
-    for &(a, b, _) in &cells {
-        for c in a.max(0)..b.min(cands.len() as i64) {
-            sung[c as usize] = true;
-        }
-    }
-    let rest_prob = |c: usize| {
-        let row = &logits[c * 6..c * 6 + 6];
-        let top = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let z: f32 = row.iter().map(|v| (v - top).exp()).sum();
-        (row[0] - top).exp() / z
-    };
-    let wanted: Vec<bool> = (0..cands.len()).map(|c| !sung[c] && cands[c][1..].iter().all(|&p| p < 0) && rest_prob(c) < below).collect();
-    let mut runs: Vec<(i64, i64)> = Vec::new();
-    for (c, _) in wanted.iter().enumerate().filter(|(_, w)| **w) {
-        let c = c as i64;
-        match runs.last_mut() {
-            Some(r) if r.1 == c => r.1 = c + 1,
-            _ => runs.push((c, c + 1)),
-        }
-    }
-    let mut out: Vec<(f64, f64, i32)> = notes.to_vec();
-    for (a, b) in runs {
-        let before = cells.iter().position(|n| n.1 == a);
-        let after = cells.iter().position(|n| n.0 == b);
-        match (before.or(after), touching) {
-            (Some(i), FillTouching::Extend) => {
-                if before.is_some() {
-                    cells[i].1 = b;
-                    out[i].1 = time(b);
-                } else {
-                    cells[i].0 = a;
-                    out[i].0 = time(a);
-                }
-            }
-            (Some(i), FillTouching::OwnNote) => out.push((time(a), time(b), cells[i].2)),
-            (None, _) => {
-                if let Some(n) = notes.iter().min_by_key(|n| (cell(n.1) - a).abs().min((cell(n.0) - b).abs())) {
-                    out.push((time(a), time(b), n.2));
-                }
-            }
-        }
-    }
-    out.sort_by(|x, y| x.0.total_cmp(&y.0));
-    out
 }
 
 /// Notes from the cells' choices: a note runs while the pitch holds, and splits where the pitch changes,
@@ -470,35 +396,6 @@ mod tests {
         let cands = [[-1, 60, -1, 62, 72, 48], [-1, -1, -1, -1, -1, -1]];
         let logits = [0.0, 1.0, 9.0, 2.0, 0.5, 0.1, 0.0, 5.0, 5.0, 5.0, 5.0, 5.0];
         assert_eq!(choose_class(&logits, &cands), vec![3, 0]);
-    }
-
-    #[test]
-    fn leaning_sings_a_candidate_the_model_nearly_prefers_and_never_a_missing_one() {
-        let cands = [[-1, 60, -1, -1, 72, 48], [-1, -1, -1, -1, -1, -1]];
-        let logits = [1.0, 0.6, 9.0, 0.0, 0.0, 0.0, 1.0, 9.0, 9.0, 9.0, 9.0, 9.0];
-        assert_eq!(choose_class_leaning(&logits, &cands, 0.0), choose_class(&logits, &cands));
-        assert_eq!(choose_class_leaning(&logits, &cands, 0.0), vec![0, 0], "unbiased, rest wins");
-        assert_eq!(choose_class_leaning(&logits, &cands, 0.5), vec![1, 0], "biased, the lead's 60 wins; no candidate stays rest");
-    }
-
-    #[test]
-    fn unproposed_sung_cells_become_a_note_at_the_touching_pitch() {
-        let none = [-1; 6];
-        let lead = [-1, 62, -1, -1, 74, 50];
-        // Cells 0..2 hold a 60; 2..4 have no candidate and the model believes them sung; 4 has a candidate
-        // (left to the argmax); 5 has none but the model believes it rest; 6..8 are sung, touching nothing.
-        let cands = [lead, lead, none, none, lead, none, none, none, none, [-1, 67, -1, -1, 79, 55]];
-        let sung = [-9.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-        let rest = [9.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-        let logits: Vec<f32> = [sung, sung, sung, sung, sung, rest, rest, sung, sung, sung].concat();
-        let (sp, anchor, k0) = (0.5, 0.25, 4);
-        let t = |c: i64| anchor + (k0 + c) as f64 * sp;
-        let notes = [(t(0), t(2), 60), (t(9), t(10), 67)];
-        let own = fill_unproposed(&notes, &logits, &cands, k0, sp, anchor, 0.2, FillTouching::OwnNote);
-        assert_eq!(own, vec![(t(0), t(2), 60), (t(2), t(4), 60), (t(7), t(9), 67), (t(9), t(10), 67)]);
-        let ext = fill_unproposed(&notes, &logits, &cands, k0, sp, anchor, 0.2, FillTouching::Extend);
-        assert_eq!(ext, vec![(t(0), t(4), 60), (t(7), t(10), 67)], "the run 7..9 touches the 67 after it");
-        assert_eq!(fill_unproposed(&notes, &logits, &cands, k0, sp, anchor, 1e-6, FillTouching::OwnNote), notes.to_vec(), "a strict threshold fills nothing");
     }
 
     #[test]
