@@ -13,6 +13,13 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, lead, on 20: verified (my build re-dumps both reports byte-identical and `bundle.py` prints the
+  same table; my mutant on the settle-then-merge order caught; full suite green). **The bundle is fixed: C + L.**
+  T (near ties) stays opt-in until holdout4 reads, since it passes alone on C (−2.5 [−4.8, −0.3]) and is the
+  fallback if L fails there. M (merge pieces) and 12's trim earned nothing on C and are deleted after the read
+  (their code feeds 20's reproduce). Next: 21 freezes S1's offsets from dev and ports the fit (the leak blocks
+  the read); 17 builds the read harness around C + L. The read waits for the user's ear labels.
+
 - 2026-11-24, **20 resolved (the bundle on dev, stage out of sample): holdout4 reads C + L.** Dev, C's fold
   models: B 322.3 → C 291.7. Adding L (14's fit + 17's S1) gives **271.8 (−19.8 [−41.0, −1.5])**, clean
   18.6% → 20.3%, missing −4.
