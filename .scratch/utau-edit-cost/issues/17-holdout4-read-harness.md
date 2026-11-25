@@ -365,6 +365,21 @@ The user chose option c: the lyric step comes later. `read.py` now has three rea
 
 ## Answer
 
+### The edit-cost read (rules 1 and 3): done, 2026-11-25 (lead)
+
+Run once from c750f78, rules at 6fc69dd; 3 ledger entries (the read, then stage D and stage C as same-sitting
+re-reads). No lyric of any kind ran. Step 1 kept **23 of 24** songs; i-think-i-think-too-much is flagged (drift
++41 ms). Python rows equal the Rust reports on all 23. Log and verdicts: `~/.cache/sona/holdout4/read-edit/` (local).
+
+| rule | D or C | new | Δ cost/min [95%] | at missing 4 (upper) | missing | clean | verdict |
+|---|---|---|---|---|---|---|---|
+| 1: C vs D | 186.8 | 176.8 | **−9.9 [−19.5, −1.0]** | −3.4 | 465 → 390 | 22.0% → 24.5% | **PASS: C becomes the default stage** |
+| 3: T on C | 176.8 | 178.3 | +1.4 [−1.3, +4.0] | +4.1 | 390 → 390 | 24.5% → 24.0% | fail (applied after the lyric read) |
+
+- Without the song that moved most (ai, −61.5): rule 1 −7.6 [−15.8, +0.5] (reported, decides nothing).
+- C is better on 16 of 23 songs; worst for C: i-sekai +38.6, akusera +20.8, out-of-eden +14.3, kibouno-light +10.4.
+- T fails on C here, so T cannot ship whatever the lyric read says (it ships only if rule 2 fails and T passes).
+
 **Status stays in progress until the reads.** The harness is built and rehearsed on dev (rounds 2 and 3 above).
 Holdout4 is unread: there is no ledger entry, and no holdout4 UST note, onset or lyric was opened.
 

@@ -1413,7 +1413,7 @@
       "bpm_from_ust": 90.0,
       "grid_division": 16,
       "alignment_offset_s": -10.664,
-      "alignment_status": "unverified (set without sona; drum peak 5.87)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1446,7 +1446,7 @@
       "bpm_from_ust": 170.0,
       "grid_division": 16,
       "alignment_offset_s": -5.651,
-      "alignment_status": "unverified (set without sona; drum peak 3.07)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1478,7 +1478,7 @@
       "bpm_from_ust": 109.0,
       "grid_division": 16,
       "alignment_offset_s": -8.855,
-      "alignment_status": "unverified (set without sona; drum peak 5.01)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1511,7 +1511,7 @@
       "bpm_from_ust": 150.0,
       "grid_division": 16,
       "alignment_offset_s": -6.475,
-      "alignment_status": "unverified (set without sona; drum peak 2.36)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1542,7 +1542,7 @@
       "bpm_from_ust": 145.0,
       "grid_division": 16,
       "alignment_offset_s": -6.679,
-      "alignment_status": "unverified (set without sona; drum peak 2.41)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1573,7 +1573,7 @@
       "bpm_from_ust": 175.0,
       "grid_division": 16,
       "alignment_offset_s": -5.55,
-      "alignment_status": "unverified (set without sona; drum peak 2.75)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1604,7 +1604,7 @@
       "bpm_from_ust": 150.0,
       "grid_division": 16,
       "alignment_offset_s": -6.399,
-      "alignment_status": "unverified (set without sona; drum peak 3.60)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1635,7 +1635,7 @@
       "bpm_from_ust": 145.0,
       "grid_division": 16,
       "alignment_offset_s": -6.623,
-      "alignment_status": "unverified (set without sona; drum peak 4.41)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1668,7 +1668,7 @@
       "bpm_from_ust": 108.0,
       "grid_division": 16,
       "alignment_offset_s": -8.965,
-      "alignment_status": "unverified (set without sona; drum peak 3.81)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1697,7 +1697,7 @@
       "bpm_from_ust": 141.0,
       "grid_division": 16,
       "alignment_offset_s": -6.783,
-      "alignment_status": "unverified (set without sona; drum peak 2.91)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1729,7 +1729,7 @@
       "bpm_from_ust": 170.0,
       "grid_division": 16,
       "alignment_offset_s": -5.7,
-      "alignment_status": "unverified (set without sona; drum peak 4.39)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1760,7 +1760,7 @@
       "bpm_from_ust": 160.0,
       "grid_division": 16,
       "alignment_offset_s": -6.073,
-      "alignment_status": "unverified (set without sona; drum peak 4.02)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1795,7 +1795,7 @@
       "bpm_from_ust": 136.0,
       "grid_division": 16,
       "alignment_offset_s": -7.109,
-      "alignment_status": "unverified (set without sona; drum peak 3.20)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1827,7 +1827,7 @@
       "bpm_from_ust": 139.0,
       "grid_division": 16,
       "alignment_offset_s": -6.982,
-      "alignment_status": "unverified (set without sona; drum peak 3.72)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1860,7 +1860,7 @@
       "bpm_from_ust": 135.0,
       "grid_division": 16,
       "alignment_offset_s": -7.143,
-      "alignment_status": "unverified (set without sona; drum peak 4.73)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1892,7 +1892,7 @@
       "bpm_from_ust": 171.0,
       "grid_division": 16,
       "alignment_offset_s": -5.677,
-      "alignment_status": "unverified (set without sona; drum peak 3.52)",
+      "alignment_status": "flagged: drift +41 ms over the song",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1923,7 +1923,7 @@
       "bpm_from_ust": 200.0,
       "grid_division": 16,
       "alignment_offset_s": -4.716,
-      "alignment_status": "unverified (set without sona; drum peak 3.09)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1954,7 +1954,7 @@
       "bpm_from_ust": 200.0,
       "grid_division": 16,
       "alignment_offset_s": -4.778,
-      "alignment_status": "unverified (set without sona; drum peak 2.58)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -1986,7 +1986,7 @@
       "bpm_from_ust": 210.0,
       "grid_division": 16,
       "alignment_offset_s": -4.626,
-      "alignment_status": "unverified (set without sona; drum peak 2.14)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -2020,7 +2020,7 @@
       "bpm_from_ust": 128.0,
       "grid_division": 16,
       "alignment_offset_s": -7.634,
-      "alignment_status": "unverified (set without sona; drum peak 3.97)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -2052,7 +2052,7 @@
       "bpm_from_ust": 210.0,
       "grid_division": 16,
       "alignment_offset_s": -4.54,
-      "alignment_status": "unverified (set without sona; drum peak 2.90)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -2084,7 +2084,7 @@
       "bpm_from_ust": 190.0,
       "grid_division": 16,
       "alignment_offset_s": -4.984,
-      "alignment_status": "unverified (set without sona; drum peak 2.80)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -2117,7 +2117,7 @@
       "bpm_from_ust": 157.0,
       "grid_division": 16,
       "alignment_offset_s": -6.187,
-      "alignment_status": "unverified (set without sona; drum peak 3.65)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",
@@ -2148,7 +2148,7 @@
       "bpm_from_ust": 135.0,
       "grid_division": 16,
       "alignment_offset_s": -7.161,
-      "alignment_status": "unverified (set without sona; drum peak 3.60)",
+      "alignment_status": "aligned",
       "stem": {
         "model": "htdemucs",
         "version": "demucs 4.0.1 (torch 2.5.1, cpu)",

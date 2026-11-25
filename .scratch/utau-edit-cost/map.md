@@ -13,6 +13,12 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, lead, **the holdout4 edit-cost read (17, rules 1 and 3).** 23 of 24 songs aligned. **Rule 1 passes:
+  C (`cellstage-19C`) against D is 186.8 → 176.8 cost/min, −9.9 [−19.5, −1.0], missing 465 → 390, so C becomes
+  the default stage.** Rule 3 fails (T on C +1.4 [−1.3, +4.0]), so T stays opt-in. M and trim are deleted (20).
+  The lyric read (rule 2) waits for 13 texts; the frame read (rule 4) for the labels. Holdout4's pooled cost
+  under C (176.8) is below the "usable" 190; the frame half of "usable" is rule 4.
+
 - 2026-11-25, **17 round 3 (the user's option c: the lyric step later). Three reads, each once.**
   - **The edit-cost read** (rules 1 and 3, no lyric at all) can run as soon as the lead commits the rules.
   - **The lyric read** (rule 2, `--lyric-only`) runs when every aligned song has a text, from the user or a later

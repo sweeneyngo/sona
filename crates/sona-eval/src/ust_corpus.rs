@@ -288,12 +288,13 @@ mod tests {
         );
         assert_eq!(count("holdout2", true), 10, "holdout2 scores 10 aligned songs");
         assert_eq!(count("holdout3", true), 10, "holdout3 scores 10 aligned songs");
-        // holdout4 is unread: its offsets were set without sona and never checked with sona's
-        // onsets, so none of its songs may read as aligned until that check is made at read time.
+        // holdout4's offsets were checked against sona's onsets by the first step of its one read
+        // (utau-edit-cost 17, 2026-11-25): 23 aligned, 1 flagged. The later reads reuse that result.
         assert_eq!((count("holdout4", false), count("holdout4-tempo", false)), (24, 0));
+        assert_eq!(count("holdout4", true), 23, "holdout4 scores 23 aligned songs");
         for s in m.songs.iter().filter(|s| s.split.as_deref().is_some_and(|x| x.starts_with("holdout4"))) {
             assert!(s.alignment_offset_s.is_some(), "{}: no offset", s.id);
-            assert!(s.alignment_status.as_deref().is_some_and(|a| a.starts_with("unverified")), "{}: {:?}", s.id, s.alignment_status);
+            assert!(!s.alignment_status.as_deref().is_some_and(|a| a.starts_with("unverified")), "{}: {:?}", s.id, s.alignment_status);
         }
         assert!(
             m.songs.iter().all(|s| matches!(
