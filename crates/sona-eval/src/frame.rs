@@ -146,6 +146,29 @@ impl MusicFrame {
     }
 }
 
+/// The ear labels of a holdout's music frames (utau-edit-cost 17): a local file the user fills while
+/// listening to click overlays, never committed. `{"songs": {"<id>": {"meter": "4/4", "beat_shift_cells": 2,
+/// "bar_shift_cells": 10, "confirmed": true}}}`; `meter` is `null` until the song is labelled, and a song
+/// that is not in 4/4 (or that the labeller can't place) gets another word, e.g. `"other"`.
+///
+/// Returns the songs labelled `4/4`, as ear-checked frames. Songs not labelled yet or not in 4/4 are left
+/// out (they are excluded before the read). A `4/4` song without both shifts is an error.
+pub fn ear_labels(json: &str) -> Result<std::collections::BTreeMap<String, MusicFrame>, String> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("labels: {e}"))?;
+    let songs = v.get("songs").and_then(serde_json::Value::as_object).ok_or("labels: no \"songs\" object")?;
+    let mut out = std::collections::BTreeMap::new();
+    for (id, label) in songs {
+        if label.get("meter").and_then(serde_json::Value::as_str) != Some("4/4") {
+            continue;
+        }
+        let shift = |k: &str| {
+            label.get(k).and_then(serde_json::Value::as_u64).and_then(|x| u32::try_from(x).ok()).ok_or(format!("labels: {id} is in 4/4 but has no whole {k}"))
+        };
+        out.insert(id.clone(), MusicFrame { beat_shift_cells: shift("beat_shift_cells")?, bar_shift_cells: shift("bar_shift_cells")?, ear_checked: true });
+    }
+    Ok(out)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame {
     pub true_bpm: f64,

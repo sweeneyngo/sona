@@ -1,7 +1,7 @@
 //! Frame metrics on click tracks with a known tempo and a known bar 1.
 
 use sona_eval::frame::{
-    bar_offset, cells_after, click_times, drift_beats, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, song_bootstrap, sona_tick0_from_audio,
+    bar_offset, cells_after, click_times, drift_beats, ear_labels, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, song_bootstrap, sona_tick0_from_audio,
     sona_tick0_s, tempo_multiple, MusicFrame, TempoMultiple, CLICK_S,
 };
 use sona_eval::quantize::grid_spacing_seconds;
@@ -276,4 +276,19 @@ fn a_song_bootstrap_brackets_the_count_and_is_degenerate_when_every_song_agrees(
     assert_eq!(song_bootstrap(&[0.0; 9]), (0.0, 0.0));
     let (lo, hi) = song_bootstrap(&[1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
     assert!((1.0..5.0).contains(&lo) && hi > 5.0 && hi <= 8.0, "[{lo}, {hi}]");
+}
+
+#[test]
+fn ear_labels_give_ear_checked_frames_for_the_songs_labelled_in_four_four_only() {
+    let labels = r#"{"format": "x", "songs": {
+        "a": {"meter": "4/4", "beat_shift_cells": 2, "bar_shift_cells": 10, "confirmed": true},
+        "b": {"meter": "other", "beat_shift_cells": null, "bar_shift_cells": null},
+        "c": {"meter": null}
+    }}"#;
+    let frames = ear_labels(labels).unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames["a"], MusicFrame { beat_shift_cells: 2, bar_shift_cells: 10, ear_checked: true });
+    assert!(ear_labels(r#"{"songs": {"a": {"meter": "4/4", "beat_shift_cells": 2}}}"#).is_err(), "a 4/4 label needs both shifts");
+    assert!(ear_labels(r#"{"songs": {"a": {"meter": "4/4", "beat_shift_cells": -1, "bar_shift_cells": 3}}}"#).is_err());
+    assert!(ear_labels(r#"{"labels": {}}"#).is_err());
 }

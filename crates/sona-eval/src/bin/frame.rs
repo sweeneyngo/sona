@@ -1,5 +1,6 @@
 //! Frame metrics against the UST corpus (`sona_eval::frame`): tempo multiple and BPM drift from the
-//! full mix, bar offset from the vocals stem at the UST's exact tempo. The `dev` songs only.
+//! full mix, bar offset from the vocals stem at the UST's exact tempo. The `dev` songs only. The mixes are
+//! read from `$SONA_UST_AUDIO_DIR`, else `data/pifuyuu-audio`.
 //!
 //! ```sh
 //! cargo run --release -p sona-eval --bin sona-eval-frame
@@ -34,6 +35,12 @@
 //! wall seconds with the load average when it started. `--beat-this-out` keeps the tool's JSON in
 //! `DIR/beat_this/<song>.json`, `score.py`'s layout (default: a temporary folder, removed after).
 //!
+//! `--estimate-bar-one --split NAME --reason "…" [--reread]` scores a held-out split instead of dev, through
+//! the holdout ledger (`sona_eval::holdout`; utau-edit-cost 17). `--music-frames FILE` takes the music's
+//! frames from a local ear-label file (`sona_eval::frame::ear_labels`) instead of the manifest: songs not
+//! labelled in 4/4 are left out. `--rows FILE` also writes every song's row as JSON (for the holdout4 read's
+//! verdicts). Without these flags the run and its output are unchanged.
+//!
 //! `--bar-one` prints the bar-one study's table instead (`reports/bar-one.md`): where sona's tick 0
 //! lands under today's rule and under "nearest grid line to 0 s", against the UST's bar line nearest
 //! 0 s, and the beat phase `grid_phase` finds at one-beat spacing on the drums stem and on the mix,
@@ -41,11 +48,12 @@
 use std::process::ExitCode;
 use sona_core::tempo::grid_phase;
 use sona_eval::frame::{
-    cells_after, drift_beats, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, sona_tick0_from_audio, sona_tick0_s, song_bootstrap, BarOffset, Frame,
+    cells_after, drift_beats, ear_labels, measure, music_bar_offset, nearest_tick0_s, overlay_clicks, sona_tick0_from_audio, sona_tick0_s, song_bootstrap, BarOffset, Frame,
     TempoMultiple, BEATS_PER_BAR, BOOTSTRAP_ITERS, DRIFT_PASS_BEATS,
 };
+use sona_eval::holdout::authorize;
 use sona_eval::quantize::grid_spacing_seconds;
-use sona_eval::ust_corpus::{manifest_path, stems_dir, Manifest};
+use sona_eval::ust_corpus::{audio_dir, manifest_path, stems_dir, Manifest};
 use sona_eval::wav;
 
 fn main() -> ExitCode {
@@ -86,7 +94,7 @@ fn run() -> Result<(), String> {
         return clicks(&args);
     }
     let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
-    let audio = manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default();
+    let audio = audio_dir();
     let stems = stems_dir();
     println!(
         "{:28} {:>4} {:>7} {:>7} {:>5} {:>6} {:>9}   {:>4} {:>8} {:>5}   {:>4} {:>8} {:>5} {:>4}",
@@ -174,7 +182,7 @@ fn clicks(args: &[String]) -> Result<(), String> {
     if shift >= cells_per_bar {
         return Err(format!("--bar-shift {shift}: a bar is {cells_per_bar} cells"));
     }
-    let audio = manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default();
+    let audio = audio_dir();
     let (mix, sr) = wav::read_mono(&audio.join(format!("{id}.wav"))).map_err(|e| format!("{id}: {e}"))?;
     let bar_line = offset + f64::from(shift) * cell;
     let with_clicks = overlay_clicks(&mix, sr, bar_line, beat);
@@ -205,7 +213,7 @@ fn clicks(args: &[String]) -> Result<(), String> {
 /// The bar-one table: every time in ms of audio, every shift in cells.
 fn bar_one() -> Result<(), String> {
     let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
-    let audio = manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default();
+    let audio = audio_dir();
     let stems = stems_dir();
     println!(
         "{:28} {:>6} {:>8} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7}",
@@ -334,8 +342,24 @@ fn beat_cell_vote(beats: &[f64], ust_tick0_s: f64, cell: f64, cells_per_beat: i6
 /// The bar-1 estimator against the music frame: one row per dev song, bar offsets in beats.
 fn estimate_bar_one(args: &[String]) -> Result<(), String> {
     let beat_this = BeatThisArgs::parse(args)?;
+    let flag = |k: &str| args.iter().position(|a| a == k).map(|i| args.get(i + 1).cloned().ok_or(format!("{k} expects a value"))).transpose();
+    let split = flag("--split")?.unwrap_or_else(|| "dev".into());
+    let labels = match flag("--music-frames")? {
+        Some(path) => Some(ear_labels(&std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?).map_err(|e| format!("{path}: {e}"))?),
+        None => None,
+    };
+    let rows_out = flag("--rows")?;
     let manifest = Manifest::load(&manifest_path()).map_err(|e| e.to_string())?;
-    let audio = manifest_path().parent().map(|p| p.join("../data/pifuyuu-audio")).unwrap_or_default();
+    for (id, music) in labels.iter().flatten() {
+        let song = manifest.songs.iter().find(|s| &s.id == id && s.split.as_deref() == Some(split.as_str())).ok_or(format!("labels: {id} is not a {split} song"))?;
+        if !music.is_consistent(song.grid_division.unwrap_or(16) / 4) {
+            return Err(format!("labels: {id}: the bar line ({} cells) is not on the beat ({} cells)", music.bar_shift_cells, music.beat_shift_cells));
+        }
+    }
+    if split != "dev" {
+        authorize(&manifest, &split, "sona-eval-frame --estimate-bar-one", flag("--reason")?.as_deref(), args.iter().any(|a| a == "--reread"))?;
+    }
+    let audio = audio_dir();
     let stems = stems_dir();
     const RULES: [&str; 6] = ["today", "beat@>=0", "beat@<=0", "est beat", "est harm", "shipped"];
     println!(
@@ -346,8 +370,13 @@ fn estimate_bar_one(args: &[String]) -> Result<(), String> {
     let mut rows: Vec<[bool; 6]> = Vec::new();
     let mut tracked_rows: Vec<String> = Vec::new();
     let mut tracked_pass: Vec<bool> = Vec::new();
-    for song in manifest.songs.iter().filter(|s| s.split.as_deref() == Some("dev")) {
-        let (Some(offset), Some(bpm), Some(music)) = (song.alignment_offset_s, song.bpm_from_ust, song.music_frame()) else { continue };
+    let mut json_rows: Vec<serde_json::Value> = Vec::new();
+    for song in manifest.songs.iter().filter(|s| s.split.as_deref() == Some(split.as_str())) {
+        let music = match &labels {
+            Some(labels) => labels.get(&song.id).copied(),
+            None => song.music_frame(),
+        };
+        let (Some(offset), Some(bpm), Some(music)) = (song.alignment_offset_s, song.bpm_from_ust, music) else { continue };
         if !song.alignment_status.as_deref().is_some_and(|a| a.starts_with("aligned")) {
             continue;
         }
@@ -392,6 +421,18 @@ fn estimate_bar_one(args: &[String]) -> Result<(), String> {
             *p = b.beats == 0;
         }
         rows.push(pass);
+        let offset_json = |b: &BarOffset| serde_json::json!({ "beats": b.beats, "residual_beats": b.residual_beats });
+        let mut row = serde_json::json!({
+            "song": song.id,
+            "ref_bar_cells": music.bar_shift_cells,
+            "ref_beat_cells": music.beat_shift_cells,
+            "ear_checked": music.ear_checked,
+            "est_bar_cells": est_bar,
+            "beat_delta_cells": beat_cells,
+            "confidence": est.confidence,
+            "from": if est.from_harmony() { "harm" } else { "beat" },
+            "rules": RULES.iter().zip(&offsets).map(|(r, b)| ((*r).to_string(), offset_json(b))).collect::<serde_json::Map<_, _>>(),
+        });
         if let Some(bt) = &beat_this {
             let run = bt.run(&song.id, &audio.join(format!("{}.wav", song.id)))?;
             let tracked = sona_core::bar_one::tracked_bar(est.beat_s, bpm, &run.downbeats);
@@ -415,7 +456,13 @@ fn estimate_bar_one(args: &[String]) -> Result<(), String> {
                 run.load,
             ));
             tracked_pass.push(off.beats == 0);
+            row["beat_this"] = serde_json::json!({ "offset": offset_json(&off), "share": tracked.share, "cpu_s": run.cpu_s, "wall_s": run.wall_s });
         }
+        json_rows.push(row);
+    }
+    if let Some(path) = &rows_out {
+        let doc = serde_json::json!({ "split": split, "labels": labels.is_some(), "beat_this": beat_this.is_some(), "songs": json_rows });
+        std::fs::write(path, serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
     }
     let n = rows.len();
     println!("\n{n} songs, typed (UST) BPM: frame pass = bar offset 0 against the music's bar line ({BOOTSTRAP_ITERS} song resamples, 95%)");
