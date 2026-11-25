@@ -13,16 +13,21 @@ and `sofa-vowel` (sofa_align.py). Derived:
   members' median distance from their median, at least 0.2 cell.
 - `…+abstK`: no onset where the members span more than K cells.
 
-Only the per-class offsets read the UST, and they are leave-one-song-out. The sigma 0.5, the scale 2 and the
-thresholds were looked at on dev (in sample). Writes $L17_WORK/onsets/<name>/<id>.json.
+Only the per-class offsets read the UST. The sigma 0.5, the scale 2 and the thresholds were looked at on dev
+(in sample). Writes $L17_WORK/onsets/<name>/<id>.json. The offsets come from one of two places (utau-edit-cost 21):
+- `--offsets FILE`: frozen from dev by `s1_onsets.py freeze` (what any later run uses). Builds S1's sources
+  only: the three debiased CTCs, `m3+adaptmora` and `m3+adaptmora+abst3.0`; the offsets read no UST of theirs.
+- `--loso`: 17's exploration, every source, the offsets fitted leave-one-song-out on the songs themselves.
+  Refused unless every song is dev.
 
-Usage: L01_DUMP=… L01_WORK=… L14_WORK=… L17_WORK=… python3 sources.py
+Usage: L01_DUMP=… L01_WORK=… L14_WORK=… L17_WORK=… python3 sources.py (--offsets FILE | --loso)
 """
 import bisect, collections, json, math, os, statistics, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import precision as P  # noqa: E402
+import s1_onsets as F  # noqa: E402
 
 L, O = P.L, P.O
 W14, W17 = os.environ["L14_WORK"], os.environ["L17_WORK"]
@@ -55,7 +60,15 @@ def raw_ctc():
             write("ctc-" + a, s["id"], [x[0] for x in al["moras"]])
 
 
+def debias_frozen(name, offsets):
+    """`deb-<name>` with the frozen per-class offsets of the aligner (`s1_onsets.debiased`)."""
+    for s in SONGS:
+        kana = [m["kana"] for m in TEXT[s["id"]]["moras"]]
+        write("deb-" + name, s["id"], F.debiased(src(name, s["id"]), kana, offsets["offsets_s"][name[len("ctc-"):]]))
+
+
 def debias(name):
+    """Leave one song out: reads the songs' own UST onsets (`--loso`, dev only)."""
     errs = {s["id"]: collections.defaultdict(list) for s in SONGS}
     for s in SONGS:
         for m, t in zip(TEXT[s["id"]]["moras"], src(name, s["id"])):
@@ -145,6 +158,21 @@ def audio_snap(name, kind, win=0.6):
 
 
 def main():
+    if "--offsets" in sys.argv:
+        offsets = F.load_offsets(sys.argv[sys.argv.index("--offsets") + 1])
+        for s in SONGS:
+            for a in CTC[:3]:
+                al = json.load(open(os.path.join(W14, "align", a, s["id"] + ".json")))
+                write("ctc-" + a, s["id"], [x[0] for x in al["moras"]])
+        for n in M3:
+            debias_frozen(n[len("deb-"):], offsets)
+        adaptive(M3, "m3+adaptmora")
+        abstain("m3+adaptmora", M3, "m3+adaptmora+abst3.0", 3.0)
+        return
+    if "--loso" not in sys.argv:
+        sys.exit(__doc__)
+    if not {s["id"] for s in SONGS} <= F.dev_ids():
+        sys.exit("--loso fits the offsets on the songs it writes: dev only")
     raw_ctc()
     for n in ["ctc-" + a for a in CTC[:4]] + ["mms-vowel", "sofa-vowel"]:
         debias(n)

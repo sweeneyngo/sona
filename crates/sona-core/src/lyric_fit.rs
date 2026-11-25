@@ -153,7 +153,7 @@ pub fn fit_phrase_moras(notes: &[CellNote], moras: &[Mora]) -> Vec<(CellNote, Op
         return notes.iter().map(|n| (*n, None)).collect();
     }
     let lens: Vec<i64> = notes.iter().map(|n| n.end - n.start).collect();
-    place_blocks(notes, &mora_blocks(&lens, moras))
+    place_blocks(notes, &mora_blocks(&lens, moras), None)
 }
 
 /// [`fit_phrase_moras`] for a phrase that spans the cells `span.0..span.1` (a pasted line): a rest in
@@ -162,6 +162,10 @@ pub fn fit_phrase_moras(notes: &[CellNote], moras: &[Mora]) -> Vec<(CellNote, Op
 /// a mora sung where the transcription has a gap is forced into a neighbour, and the split costs more
 /// than it saves (lyrics-first 01).
 pub fn fit_span_moras(notes: &[CellNote], moras: &[Mora], span: (i64, i64)) -> Vec<(CellNote, Option<usize>)> {
+    fit_span_with(notes, moras, span, None)
+}
+
+fn fit_span_with(notes: &[CellNote], moras: &[Mora], span: (i64, i64), onsets: Option<(&[Option<i64>], OnsetRule)>) -> Vec<(CellNote, Option<usize>)> {
     if moras.is_empty() {
         return notes.iter().map(|n| (*n, None)).collect();
     }
@@ -178,18 +182,26 @@ pub fn fit_span_moras(notes: &[CellNote], moras: &[Mora], span: (i64, i64)) -> V
         stretches.push(Stretch { len: span.1 - end, note: false });
     }
     let blocks: Vec<(usize, usize)> = stretches.iter().zip(stretch_blocks(&stretches, moras)).filter(|(s, _)| s.note).map(|(_, b)| b).collect();
-    place_blocks(notes, &blocks)
+    let Some((on, rule)) = onsets else {
+        return place_blocks(notes, &blocks, None);
+    };
+    let mut out = place_blocks(notes, &blocks, rule.split.then_some(on));
+    move_starts(&mut out, on, rule);
+    out
 }
 
-fn place_blocks(notes: &[CellNote], blocks: &[(usize, usize)]) -> Vec<(CellNote, Option<usize>)> {
+/// `cut_at`: per mora, its onset cell; a note holding several moras is cut at its later moras' onsets when
+/// [`onset_cuts`] allows, and by [`cuts`] otherwise.
+fn place_blocks(notes: &[CellNote], blocks: &[(usize, usize)], cut_at: Option<&[Option<i64>]>) -> Vec<(CellNote, Option<usize>)> {
     let mut out: Vec<(CellNote, Option<usize>)> = Vec::with_capacity(notes.len());
     for (i, (note, &(first, k))) in notes.iter().zip(blocks).enumerate() {
         let continues = i > 0 && notes[i - 1].end == note.start && notes[i - 1].pitch == note.pitch;
         match out.last_mut() {
             Some((last, _)) if k == 0 && continues && last.end == note.start => last.end = note.end,
             _ if k > 1 => {
+                let at = cut_at.and_then(|on| onset_cuts(note, first, k, on)).unwrap_or_else(|| cuts(note, k));
                 let (mut start, mut mora) = (note.start, first);
-                for c in cuts(note, k).into_iter().filter(|&c| note.start < c && c < note.end).chain([note.end]) {
+                for c in at.into_iter().filter(|&c| note.start < c && c < note.end).chain([note.end]) {
                     if c > start {
                         out.push((CellNote { start, end: c, pitch: note.pitch }, Some(mora)));
                         start = c;
@@ -201,6 +213,34 @@ fn place_blocks(notes: &[CellNote], blocks: &[(usize, usize)]) -> Vec<(CellNote,
         }
     }
     out
+}
+
+/// The onset cells of `moras[first + 1..first + k]`, if every one is known, lies strictly inside `note`, and
+/// they increase.
+fn onset_cuts(note: &CellNote, first: usize, k: usize, on: &[Option<i64>]) -> Option<Vec<i64>> {
+    let cs: Vec<i64> = (1..k).map(|j| on.get(first + j).copied().flatten()).collect::<Option<_>>()?;
+    (cs.iter().all(|&c| note.start < c && c < note.end) && cs.windows(2).all(|w| w[0] < w[1])).then_some(cs)
+}
+
+/// [`OnsetRule::start_tolerance`] and [`OnsetRule::legato`] on one line's fitted notes, in order.
+fn move_starts(out: &mut [(CellNote, Option<usize>)], on: &[Option<i64>], rule: OnsetRule) {
+    for i in 0..out.len() {
+        let (note, mora) = out[i];
+        let Some(c) = mora.and_then(|m| on.get(m).copied().flatten()) else { continue };
+        let gap = (c - note.start).abs();
+        if gap < rule.min_gap || gap > rule.start_tolerance || c >= note.end {
+            continue;
+        }
+        if let Some(prev) = i.checked_sub(1).map(|p| out[p].0) {
+            if prev.end > c || (rule.legato && prev.end == note.start) {
+                if c <= prev.start {
+                    continue;
+                }
+                out[i - 1].0.end = c;
+            }
+        }
+        out[i].0.start = c;
+    }
 }
 
 /// A pasted line, or a space-separated piece of one, placed in time (lyrics-first 14): it sings
@@ -219,6 +259,45 @@ pub struct LineSpan {
 /// moras on no note, and the lines after it are unaffected. Returns the notes, sorted, with the index
 /// into `moras` each one sings.
 pub fn fit_lines(notes: &[CellNote], moras: &[Mora], lines: &[LineSpan]) -> Vec<(CellNote, Option<usize>)> {
+    fit_lines_by(notes, moras, lines, None)
+}
+
+/// How per-mora onsets reshape a line's fit (lyrics-first 17's S1; utau-edit-cost 21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OnsetRule {
+    /// A note singing several moras is cut at its later moras' onset cells when every one is known, lies
+    /// strictly inside the note, and they increase; otherwise each extra mora takes [`TAIL_CELLS`].
+    pub split: bool,
+    /// A note's start moves to its mora's onset cell when that is `min_gap..=start_tolerance` cells away
+    /// and the note keeps at least one cell.
+    pub start_tolerance: i64,
+    pub min_gap: i64,
+    /// A note touching the one before keeps touching it: that note's end follows the moved start. A start
+    /// moved into the note before always cuts it; a move that would leave it empty is not made.
+    pub legato: bool,
+}
+
+impl OnsetRule {
+    /// 17's S1: cut at onsets, move a start up to one cell, legato.
+    pub const S1: OnsetRule = OnsetRule { split: true, start_tolerance: 1, min_gap: 1, legato: true };
+}
+
+/// [`fit_lines`], with each line's fit reshaped by `onsets` (per mora of `moras`, its onset cell or `None`)
+/// as `rule` says. A start moved into a note outside its line cuts that note, which is dropped if
+/// nothing is left of it: the result is sorted and never overlaps.
+pub fn fit_lines_with_onsets(notes: &[CellNote], moras: &[Mora], lines: &[LineSpan], onsets: &[Option<i64>], rule: OnsetRule) -> Vec<(CellNote, Option<usize>)> {
+    let mut placed = fit_lines_by(notes, moras, lines, Some((onsets, rule)));
+    for i in 1..placed.len() {
+        let next = placed[i].0.start;
+        if placed[i - 1].0.end > next {
+            placed[i - 1].0.end = next;
+        }
+    }
+    placed.retain(|(n, _)| n.end > n.start);
+    placed
+}
+
+fn fit_lines_by(notes: &[CellNote], moras: &[Mora], lines: &[LineSpan], onsets: Option<(&[Option<i64>], OnsetRule)>) -> Vec<(CellNote, Option<usize>)> {
     let mut by_first: Vec<LineSpan> = lines.iter().copied().filter(|l| l.first < moras.len()).collect();
     by_first.sort_by_key(|l| l.first);
     by_first.dedup_by_key(|l| l.first);
@@ -237,8 +316,78 @@ pub fn fit_lines(notes: &[CellNote], moras: &[Mora], lines: &[LineSpan]) -> Vec<
     }
     for ((line, a, b), ns) in by_start.iter().zip(&members) {
         let span = (line.start.round() as i64, line.end.round() as i64);
-        placed.extend(fit_span_moras(ns, &moras[*a..*b], span).into_iter().map(|(n, m)| (n, m.map(|m| a + m))));
+        let line_onsets: Option<Vec<Option<i64>>> = onsets.map(|(on, _)| (*a..*b).map(|i| on.get(i).copied().flatten()).collect());
+        let fitted = fit_span_with(ns, &moras[*a..*b], span, line_onsets.as_deref().zip(onsets.map(|(_, rule)| rule)));
+        placed.extend(fitted.into_iter().map(|(n, m)| (n, m.map(|m| a + m))));
     }
     placed.sort_by_key(|(n, _)| (n.start, n.end));
     placed
+}
+
+/// How several aligners' onsets for one mora agree on one cell (lyrics-first 17's `m3+adaptmora+abst3.0`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OnsetConsensus {
+    /// The Gaussian's sigma, in cells: this times the members' median distance from their median...
+    pub sigma_scale: f64,
+    /// ...and at least this.
+    pub sigma_floor: f64,
+    /// No onset where the members span more than this many cells.
+    pub max_spread: f64,
+}
+
+impl OnsetConsensus {
+    /// 17's S1.
+    pub const S1: OnsetConsensus = OnsetConsensus { sigma_scale: 2.0, sigma_floor: 0.2, max_spread: 3.0 };
+}
+
+/// How likely a note starts at each cell of the beat: the add-one smoothed share of `starts` (cells) at
+/// each position, `cells_per_beat` long.
+pub fn lattice_prior(starts: &[i64], cells_per_beat: usize) -> Vec<f64> {
+    let per = i64::try_from(cells_per_beat.max(1)).unwrap_or(1);
+    let mut count = vec![0usize; per as usize];
+    for s in starts {
+        count[s.rem_euclid(per) as usize] += 1;
+    }
+    count.iter().map(|&c| (c + 1) as f64 / (starts.len() + per as usize) as f64).collect()
+}
+
+/// One onset cell per mora from `members` (one list per aligner, each mora's onset in seconds or `None`) on
+/// the grid `anchor + cell × spacing`: the members' median, snapped to the cell within two that maximises a
+/// Gaussian around it times `prior` at the cell's beat position ([`lattice_prior`]). `None` where no member
+/// has an onset or the members spread over more than [`OnsetConsensus::max_spread`] cells.
+pub fn consensus_onsets(members: &[Vec<Option<f64>>], anchor: f64, spacing: f64, prior: &[f64], rule: OnsetConsensus) -> Vec<Option<i64>> {
+    let moras = members.iter().map(Vec::len).max().unwrap_or(0);
+    (0..moras)
+        .map(|i| {
+            let v: Vec<f64> = members.iter().filter_map(|m| m.get(i).copied().flatten()).collect();
+            let t = median(&v)?;
+            let (lo, hi) = v.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| (lo.min(x), hi.max(x)));
+            if (hi - lo) / spacing > rule.max_spread {
+                return None;
+            }
+            let spread: Vec<f64> = v.iter().map(|x| (x - t).abs() / spacing).collect();
+            let sigma = rule.sigma_floor.max(rule.sigma_scale * median(&spread).unwrap_or(0.0));
+            let x = (t - anchor) / spacing;
+            let base = x.floor() as i64;
+            let score = |c: i64| -((x - c as f64) / sigma).powi(2) / 2.0 + prior.get(c.rem_euclid(prior.len().max(1) as i64) as usize).map_or(0.0, |p| p.ln());
+            let mut best = base - 1;
+            for c in base..=base + 2 {
+                if score(c) > score(best) {
+                    best = c;
+                }
+            }
+            Some(best)
+        })
+        .collect()
+}
+
+fn median(v: &[f64]) -> Option<f64> {
+    let mut s = v.to_vec();
+    s.sort_by(f64::total_cmp);
+    let n = s.len();
+    match n {
+        0 => None,
+        _ if n % 2 == 1 => Some(s[n / 2]),
+        _ => Some((s[n / 2 - 1] + s[n / 2]) / 2.0),
+    }
 }

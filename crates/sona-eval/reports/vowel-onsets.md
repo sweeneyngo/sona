@@ -231,7 +231,7 @@ D=crates/sona-eval/scripts/vowel-onsets
 SOFA_DIR=~/.cache/sona/vowel-onsets/dl-sofa/SOFA-main SOFA_CKPT=~/.cache/sona/vowel-onsets/dl-sofa-jpn/step.100000.ckpt \
   OMP_NUM_THREADS=4 ~/.cache/sona/vowel-onsets/venv/bin/python -I $D/sofa_align.py
 # derived sources and the precision table
-python3 $D/sources.py
+python3 $D/sources.py --loso   # 17 as run; later runs: --offsets ~/.cache/sona/lyric-onsets/offsets.json (utau-edit-cost 21)
 python3 $D/precision.py ctc-lyrics-lead ctc-hira-lead ctc-jg-lead ctc-mms-lead mms-vowel sofa-vowel sofa-first \
   ctc-whisper-large-v3-lead deb-ctc-lyrics-lead deb-ctc-hira-lead deb-ctc-jg-lead deb-ctc-mms-lead deb-sofa-vowel \
   ens3 ens5 ens3+gamesnap ens3+sonasnap ens3+voicesnap ens3+outsnap ens3+prior ens5+prior m3+adaptmora m5+adaptmora \
