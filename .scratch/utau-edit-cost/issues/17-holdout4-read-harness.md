@@ -25,7 +25,7 @@ holdout4 until the user has labelled and the rules are final.
 
 ### Pre-registered rules (approved by the lead 2026-11-25; agent, 2026-11-25)
 
-Status: **approved, final once the lead commits them.** The commit that makes them final is every read's
+Status: **final (lead, 2026-11-25).** This commit makes them final; it is every read's
 `--rules-commit`, and `read.py` refuses to run on holdout4 from a commit that does not descend from it.
 
 The lead's edits of 2026-11-25:
