@@ -13,6 +13,13 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, lead, after 18: **`--trim-releases` (12) is out of the holdout4 bundle.** Under the revised
+  weights it is −8.6 [−19.7, +4.3] on GAME lead and leaves 55 more notes missing, so it fails its own bar;
+  delete the knob once the bundle is fixed, unless holdout4 asks for it. `--settle-near-ties` (18) goes in
+  for GAME notes only (the stage gains −0.6 [−3.1, +1.5]). Since the app ships the stage, the bundle's
+  product-facing members are `--merge-unheard-pieces` (stage 272.2 → 267.2) and lyrics-first 17's S1 on 14's
+  fit. The largest lever left is the stage itself: a retrain whose loss charges boundaries at edit cost,
+  with GAME's rounding residual as a feature, on non-dev songs (ceiling −41.7, in sample).
 - 2026-11-24, **weights revised (user)**: off-time start or end 4, near-miss pitch 3, octave 1, missing
   kept at 2 (`spec.md`). Rescored on dev (cost/min): pYIN 518.0, GAME lead 303.0, stage 272.2 (scratch ≈
   380). Timing (length + shift + moved) is 45% of GAME lead's cost and 40% of the stage's; joined 32–35%.
