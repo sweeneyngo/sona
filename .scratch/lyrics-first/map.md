@@ -31,6 +31,14 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   with the job (`lyric=`, kept as `job.lyric`), the notes take it in order until 04, and sessions and
   re-transcription keep it. [ADR-0035](../../docs/adr/0035-lyrics-are-required.md),
   [03](issues/03-lyric-on-start-screen.md)
+- 2026-11-24 (14): a local CTC forced aligner places the pasted lines. `mrfakename/w2v-bert-2.0-music-lyrics-ctc`
+  (MIT), forced through the song's moras on the lead stem, starts 92.7% of lines within one note. Line ends come
+  from the lead's energy. The lyric then lands as with the UST's own line times: GAME lead 175.2 cost/min (ceiling
+  175.2, today 188.7), 51.7% placed (ceiling 56.7%, today 4.9%). The aligner's score flags 93% of the misplaced
+  lines in its lowest 20%. A speech model (Apache-2.0) also passes and is the declared tie-break's pick, by 3
+  lines; it lands worse (+8.9 cost/min). Which to port is the user's call. `fit_lines` and `--lyric-line-times`
+  landed (opt-in). [14](issues/14-align-lines-to-the-vocal.md),
+  `crates/sona-eval/reports/line-alignment.md`; port plan on 04.
 
 ## Fog
 
