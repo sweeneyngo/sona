@@ -1,6 +1,6 @@
 # 17 — Vowel onsets precise enough to time the notes
 
-Status: ready-for-agent
+Status: claimed
 Type: research
 Blocked by: 16
 
