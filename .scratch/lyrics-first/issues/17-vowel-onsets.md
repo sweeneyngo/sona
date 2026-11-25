@@ -25,3 +25,34 @@ a consonant-to-vowel offset per consonant class. Measure cell precision first, a
 - Local only; licences recorded for code and weights.
 
 ## Comments
+
+### 2026-11-24 — precision first, then the selection rule (committed before any onset source is scored by `split.py`)
+
+Precision on dev (cell exact against the UST note start, on sona's grid phase; `scripts/vowel-onsets/precision.py`).
+No source reaches 85% on every mora: the best full-coverage sources are the 5-member median with the lattice
+prior (83.3%) and the adaptive-sigma version (82.9%). 14's line failures (amaten's drift) put ~10% of moras two or
+more cells off for every aligner, which caps any full-coverage source near 89%. Sources that abstain where their
+members disagree do pass 85% on the moras they cover:
+
+| source | exact | coverage | weights |
+|---|---|---|---|
+| S1 `m3+adaptmora+abst3.0` (lyrics, hira, jg CTCs) | 90.5% | 78.4% | MIT, Apache-2.0, Apache-2.0 |
+| S2 `m3+adaptmora+abst1.5` | 92.8% | 70.8% | same |
+| S3 `m5+adaptmora+abst3.0` (+ MMS, SOFA JPN) | 95.1% | 65.9% | + CC-BY-NC, "commercial use not approved" |
+| S4 `m5+adaptmora+abst1.5` | 96.7% | 56.4% | same |
+
+**Gate:** a source goes to `split.py` when its exact-cell precision on the moras it gives an onset for is ≥ 85% and
+it covers ≥ 50% of moras. S1–S4 pass; nothing else is scored.
+
+**Declared grid** (16 candidates): each of S1–S4 with `split`, `start1`, `split+start1`, `split+start2`
+(`file-<source>:<rules>`). Baselines in the same run: none, tail (today), `ust:split+start1` (oracle).
+
+**Selection rule** (16's, unchanged). A candidate ships opt-in when, on dev:
+1. GAME lead: the paired song-bootstrap 95% upper bound of Δ cost/min against no lyric (303.0) is < 0;
+2. the stage is no worse: Δ against no lyric (272.2) ≤ 0;
+3. missing notes are not up: lead ≤ 318, stage ≤ 217 (1.02 × no lyric);
+4. placement is kept: wrong moras/min ≤ 98.1.
+
+Also required: the GAME lead point estimate beats today's aligned fit (304.2). **Tie-break:** the lowest GAME lead
+cost/min; a licence-clean source (S1, S2) is preferred over S3/S4 when its paired difference to the best one has a
+95% interval containing 0. Anything else (other gates, thresholds, tolerances) is reported as added later.
