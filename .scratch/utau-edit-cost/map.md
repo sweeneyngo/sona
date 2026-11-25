@@ -13,6 +13,12 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, lead, on 21: verified (offsets re-frozen byte-identical; leak check passes; my onset files and
+  fold-model report byte-identical, C+L 271.7; default report unchanged; my mutant on the abstain threshold
+  caught; full suite green). The consensus runs inside the scorer, so the read is one scored run. Caution for
+  the read: with 19C in sample on dev, L is −13.8 [−43.0, +10.7] and 14's fit underneath it is weak (my-axiom
+  +47.7). The fold-model row is the forecast (19C is out of sample on holdout4), but L's pass is not safe.
+
 - 2026-11-24, **21 resolved (S1 frozen and in Rust): the holdout4 bundle is one Python step, then one scorer
   command.**
   - S1's per-class offsets are frozen from the 9 dev songs (`~/.cache/sona/lyric-onsets/offsets.json`, local).
