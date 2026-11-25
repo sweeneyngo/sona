@@ -125,11 +125,15 @@ def song_data(s):
 
 
 def onsets(text, al, source, rng=None, errs=None, bias_s=0.0):
-    """Onset seconds per mora: 'ust', 'jitter' (UST + an error drawn from the aligner's pooled errors), 'aligned'."""
+    """Onset seconds per mora: 'ust', 'jitter' (UST + an error drawn from the aligner's pooled errors), 'aligned',
+    or 'file-<name>' ($L17_WORK/onsets/<name>/<id>.json)."""
     if source == "ust":
         return [m["on"] for m in text["moras"]]
     if source == "jitter":
         return [m["on"] + errs[rng.randrange(len(errs))] for m in text["moras"]]
+    if source.startswith("file-"):
+        # Lyrics-first 17: a per-mora onset file ({"on": [seconds or null]}); null: no onset, no move.
+        return json.load(open(os.path.join(os.environ["L17_WORK"], "onsets", source[5:], text["id"] + ".json")))["on"]
     return [x[0] + bias_s for x in al["moras"]]
 
 
@@ -201,7 +205,8 @@ VARIANTS = {
 
 
 def parse_variant(name):
-    """A name from VARIANTS, or `<src>:<rules>` with rules from split, start<N>, nolegato joined by '+'."""
+    """A name from VARIANTS, or `<src>:<rules>` with rules from split, start<N>, nolegato joined by '+'. `src` may
+    be `file-<name>` (17's onset sources)."""
     if name in VARIANTS:
         return VARIANTS[name]
     src, rules = name.split(":")
@@ -251,7 +256,7 @@ def run(songs, data, names, bias_s=0.0, jitter_seed=7):
                     text, al, times = data[s["id"]]
                     b = cfg.get("bias_ms", 1000 * bias_s) / 1000
                     on_s = onsets(text, al, src, rng, errs, b if src == "aligned" else 0.0)
-                    on_c = [O.g_of(s, t) for t in on_s]
+                    on_c = [None if t is None else O.g_of(s, t) for t in on_s]
                     if "exact" in cfg:
                         # Precision oracle: the UST's onset cell with probability exact%, else off by a cell error
                         # drawn from the aligner's wrong-cell errors.
