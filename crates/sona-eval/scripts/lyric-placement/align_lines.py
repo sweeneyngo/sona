@@ -9,7 +9,7 @@ Lyric-derived: the output stays in the scratchpad. Run with a Python that has fu
 import json, os, re, sys, unicodedata
 import fugashi, unidic_lite
 
-LY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "pifuyuu-lyrics")
+LY = os.environ.get("SONA_LYRICS_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "pifuyuu-lyrics")
 DUMP, WORK = os.environ["L01_DUMP"], os.environ["L01_WORK"]
 SMALL = set("ぁぃぅぇぉゃゅょゎゕゖ")
 tag = fugashi.Tagger("-r /dev/null -d " + unidic_lite.DICDIR)
