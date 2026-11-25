@@ -1,6 +1,6 @@
 # 18 — Off-time starts and ends under the revised weights
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: —
 
