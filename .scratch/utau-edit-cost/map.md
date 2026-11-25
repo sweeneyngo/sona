@@ -13,6 +13,13 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, lead, on 17: verified and merged (my mutant on the unverified gate caught; suite green). User: run
+  the edit-cost read now and label later. So rules 1–3 (C vs D, L on C, T on C) read first; rule 4 (bar 1) is
+  pre-registered now and read separately once the user has labelled, on the songs step 1 kept. L's holdout4
+  inputs are built inside the read, after the alignment check's ledger entry (option B), from lyric texts
+  fetched first. Clean measures are reported, not deciding. An honest-paste arm (the text's own moras) is the
+  follow-up.
+
 - 2026-11-25, **17 built, in progress until the read (the holdout4 read harness, rehearsed on dev).**
   - `read.py` runs the whole read once. Preflight with S1's onsets, then the alignment check (the ledger entry;
     fewer than 20 songs stop the read), bar 1 A/B/C on the ear labels, D, then C + T + L in one scored run, then
