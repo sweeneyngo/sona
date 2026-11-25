@@ -377,7 +377,7 @@ re-reads). No lyric of any kind ran. Step 1 kept **23 of 24** songs; i-think-i-t
 | 3: T on C | 176.8 | 178.3 | +1.4 [−1.3, +4.0] | +4.1 | 390 → 390 | 24.5% → 24.0% | fail (applied after the lyric read) |
 
 - Without the song that moved most (ai, −61.5): rule 1 −7.6 [−15.8, +0.5] (reported, decides nothing).
-- C is better on 16 of 23 songs; worst for C: i-sekai +38.6, akusera +20.8, out-of-eden +14.3, kibouno-light +10.4.
+- C is better on 15 of 23 songs; worst for C: i-sekai +38.6, akusera +20.8, out-of-eden +14.3, kibouno-light +10.4.
 - T fails on C here, so T cannot ship whatever the lyric read says (it ships only if rule 2 fails and T passes).
 
 **Status stays in progress until the reads.** The harness is built and rehearsed on dev (rounds 2 and 3 above).

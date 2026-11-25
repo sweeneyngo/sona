@@ -93,13 +93,16 @@ length errors are cheap there, while a wrong BPM or notes in the wrong measures 
 Spec, map and tickets: [`.scratch/utau-edit-cost/`](../.scratch/utau-edit-cost/spec.md). It reorders
 the list above: 2.3 (beat 1 of the measure) and chopped/joined notes come before more cell-accuracy work.
 Done so far: the metric (utau 01), frame metrics (02, 10), the BPM first (04, ADR-0028), bar 1 from the
-music, opt-in (05, ADR-0031), and from Beat This as an optional installed tool (16, ADR-0036). Next: the baseline taxonomy (03), chopped and joined notes (07; joined is half
-the cost), holdout4 (08).
+music, opt-in (05, ADR-0031), and from Beat This as an optional installed tool (16, ADR-0036), the baseline
+taxonomy (03), and holdout4 (08, 17). **Holdout4's edit-cost read (2026-11-25) confirmed the stage retrained
+for edit cost (19): 186.8 → 176.8 cost/min, −9.9 [−19.5, −1.0], now the recommended model (ADR-0037).**
+Next: holdout4's lyric read (rule 2, once all 23 aligned songs have a lyric text), its frame read (rule 4,
+after the user's ear labels), then length errors, now the largest class (32% of the cost after the lyric).
 
 ## Top three overall
 
 1. ~~1.1, port the learned stage~~: done (ADR-0026); the app runs the 78% stack where its weights exist.
 2. ~~6.1 + 6.2, seed GAME and log provenance~~: done (ADR-0023, ADR-0024).
-3. **1.2, holdout4**: nothing else in section 1 can be confirmed without it.
+3. ~~**1.2, holdout4**~~: built and read for the stage (ADR-0037); spent for stage decisions. The next confirmation needs a fresh holdout.
 
 After those: ~~4.1 (undo)~~ (done), then 2.1 (tempo octave) to remove the remaining manual step.

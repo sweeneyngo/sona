@@ -253,11 +253,13 @@ learned cell stage** is the best measured (`--cell-model DIR --vocals VOCALS.wav
 `sona serve --cell-model DIR`; [ADR-0026](docs/adr/0026-learned-cell-stage-in-rust.md)), but the stage
 is **not distributed**: it is trained on Pifuyuu's USTs, whose author forbids redistribution, so its
 weights exist only on the machine that trained them. A fresh install runs pYIN grid mode, or GAME if you
-add it. A stage retrained for OpenUtau edit cost (utau-edit-cost 19) is opt-in: its model folder's
-`cellstage.json` turns on GAME lead's rounding residuals as features (`lead_residuals`) and decoding with a
-cost per note edge (`switch_cost`). In a song-level cross-validation on the spent splits it cut the edit cost
-from 275.8 to 254.1 per minute (−21.7 [−31.7, −12.1]) and raised clean measures from 14.1% to 16.4%
-([report](crates/sona-eval/reports/stage-edit-cost.md)); it waits for holdout4 before it becomes the default.
+add it. **The stage to use is the one retrained for OpenUtau edit cost** (utau-edit-cost 19;
+[ADR-0037](docs/adr/0037-edit-cost-stage-is-the-default.md)). Its model folder's `cellstage.json` turns on
+GAME lead's rounding residuals as features (`lead_residuals`) and decoding with a cost per note edge
+(`switch_cost`). On holdout4 (23 songs never seen before, read once under pre-registered rules), it cut the
+edit cost from 186.8 to 176.8 per minute against ADR-0026's stage (−9.9 [−19.5, −1.0]). It also left fewer
+notes missing (390 against 465) and raised clean measures from 22.0% to 24.5%
+([report](crates/sona-eval/reports/stage-edit-cost.md)).
 
 The annotation JSON is the contract between the core and the app: raw notes in seconds, a confidence
 score with four sub-scores per note, the f0 contour and the energy envelope. Two optional fields are

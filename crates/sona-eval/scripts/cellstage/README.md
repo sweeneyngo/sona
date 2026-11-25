@@ -10,9 +10,10 @@ GAME-lead column and the stage, each on sona's estimated grid phase and on the U
 
 ## Retraining from sona's own features (utau-edit-cost 19)
 
-The shipped model was trained by the prototype's `build_cells.py` and `train_cells.py` (kept beside it in
+ADR-0026's model was trained by the prototype's `build_cells.py` and `train_cells.py` (kept beside it in
 `~/.cache/sona/cellstage-D/`; ADR-0026). These scripts train from rows the Rust feature builder writes, so a
-model reads exactly what sona gives it:
+model reads exactly what sona gives it. The model these build, `~/.cache/sona/cellstage-19C` (all 38 spent songs,
+`switch_cost` 1.5), passed holdout4 and is the one to use (ADR-0037):
 
 1. `sona-eval-cellstage --model DIR --edit-cost --dump-cells CELLS [--split NAME --reread --reason …]` writes
    each song's features on the onset phase (what ships) and on the UST's phase: the prototype's 1046 columns,

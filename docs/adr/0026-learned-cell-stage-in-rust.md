@@ -1,7 +1,8 @@
 # ADR-0026: The learned cell stage, ported to Rust
 
 Status: accepted (2026-11-23). The grid phase (decision 3) amended by [ADR-0027](0027-grid-phase-from-onsets.md):
-it comes from the vocals' onsets.
+it comes from the vocals' onsets. The recommended model folder amended by [ADR-0037](0037-edit-cost-stage-is-the-default.md):
+the stage retrained for edit cost (`cellstage-19C`) replaces `cellstage-D`.
 
 ## Context
 
