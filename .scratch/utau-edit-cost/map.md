@@ -18,6 +18,8 @@ a line below.
   the default stage.** Rule 3 fails (T on C +1.4 [−1.3, +4.0]), so T stays opt-in. M and trim are deleted (20).
   The lyric read (rule 2) waits for 13 texts; the frame read (rule 4) for the labels. Holdout4's pooled cost
   under C (176.8) is below the "usable" 190; the frame half of "usable" is rule 4.
+  ADR-0037 records C as the recommended model. M and trim are deleted (net −498 lines; dev report
+  byte-identical); the decisions below that name them are history.
 
 - 2026-11-25, **17 round 3 (the user's option c: the lyric step later). Three reads, each once.**
   - **The edit-cost read** (rules 1 and 3, no lyric at all) can run as soon as the lead commits the rules.

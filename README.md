@@ -351,13 +351,14 @@ The metric is the share of grid cells that match the UST.
   the user ([report](crates/sona-eval/reports/lyric-placement.md)).
 - **Chopped wobble and scoop pieces need a second listen** (opt-in, dev only): the pitch track can't tell
   a one-cell glide from a short note. Merging a one-cell piece where GAME's run on the full vocals has no
-  note edge (`sona_core::unheard_pieces`) cuts GAME lead's cost 188.7 → 186.8 per minute (−1.9 [−3.2,
-  −0.9]); the stage's 180.2 → 176.3. It's small, against a ceiling of −11.3, and not a default
-  ([report](crates/sona-eval/reports/pitch-wobble.md)).
-- **Single-note errors** (start, end, pitch; 22% of GAME lead's cost; opt-in, dev only). The largest cause is
+  note edge cut GAME lead's cost 188.7 → 186.8 per minute (−1.9 [−3.2,
+  −0.9]); the stage's 180.2 → 176.3. It was small, against a ceiling of −11.3, earned nothing on top of the
+  lyric (ticket 20), and was deleted ([report](crates/sona-eval/reports/pitch-wobble.md)).
+- **Single-note errors** (start, end, pitch; 22% of GAME lead's cost). The largest cause is
   GAME holding a note through the short rest before the next note. Ending notes where the vocals' energy falls
-  away (`sona_core::release`) cuts GAME lead 188.7 → 184.3 per minute (−4.4 [−6.5, −2.5]) and raises clean
-  measures 16.2% → 18.7%. The shipped stage has already learned this, and the trim does not help it. The
+  away cut GAME lead 188.7 → 184.3 per minute (−4.4 [−6.5, −2.5]) and raised clean
+  measures 16.2% → 18.7%. The learned stage had already learned this, and the trim did not help it, so it
+  was deleted. The
   remaining one-cell and semitone errors have no evidence saying which way to fix them
   ([report](crates/sona-eval/reports/single-note-errors.md)).
 
