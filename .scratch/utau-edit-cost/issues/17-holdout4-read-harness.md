@@ -133,9 +133,9 @@ Clean measures are reported with their interval but do not decide (lead, 2026-11
 
 - The beat overlays for every holdout4 song.
 - The empty labels file.
-- The lead RMS (for 14's energy line ends) is done. The three CTC emissions (lyrics, hira, jg) of every holdout4
-  `lead.wav` are computing (`audio_inputs.py`, about 10 min per song under load). The job is detached, and it
-  writes `~/.cache/sona/holdout4/l14/DONE` or `FAILED` when it ends; the log is `emissions.log` beside them.
+- The lead RMS (for 14's energy line ends) and the three CTC emissions (lyrics, hira, jg) of every holdout4
+  `lead.wav` are done (`audio_inputs.py`): 24 RMS files and 72 emission files, finished 2026-11-25 02:29
+  (`~/.cache/sona/holdout4/l14/DONE`).
 
   The emissions are the expensive, audio-only part of the forced alignment: `ctc_align.py` reuses them, and only
   the Viterbi through the moras depends on the text. Checked on a dev song, they reproduce 14's cached emissions:
@@ -294,7 +294,7 @@ Holdout4 is unread: there is no ledger entry, and no holdout4 UST note, onset or
 Left before the edit-cost read:
 
 1. The lead answers rule 2's question (round 2) and commits the rules as final. That commit is `--rules-commit`.
-2. The emissions job writes `~/.cache/sona/holdout4/l14/DONE`.
+2. (Done: the emissions job wrote `~/.cache/sona/holdout4/l14/DONE` at 02:29.)
 3. The read runs once from a clean checkout (command below), and then the ledger and the manifest are committed.
 
 The holdout4 commands. Run them from the repo checkout, with `ORT_DYLIB_PATH`, `SONA_GAME_DIR`, `SONA_DEV_CACHE`,
