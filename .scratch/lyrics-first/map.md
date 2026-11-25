@@ -48,6 +48,12 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   lines; it lands worse (+8.9 cost/min). Which to port is the user's call. `fit_lines` and `--lyric-line-times`
   landed (opt-in). [14](issues/14-align-lines-to-the-vocal.md),
   `crates/sona-eval/reports/line-alignment.md`; port plan on 04.
+- 2026-11-24 (16, negative): splitting and timing notes at the CTC aligner's mora onsets loses under the new
+  weights. Split at aligned onsets: GAME lead 313.2 cost/min, against today's aligned fit 304.2 and no lyric
+  303.0. The best start rule is 343.1; 47 candidates, none passes. The oracle with UST onsets gives 244.4 (stage
+  219.4), and nearly all of that is starts, not splits. It needs onsets on the right cell ~90% of the time;
+  the aligner manages 57.6%. A vowel-onset source at that precision is the next lever.
+  [16](issues/16-split-at-mora-times.md), `crates/sona-eval/reports/mora-split.md`.
 
 ## Fog
 

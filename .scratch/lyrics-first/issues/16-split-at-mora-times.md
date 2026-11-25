@@ -1,6 +1,6 @@
 # 16 — Split and time notes at the aligner's mora times
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: 14
 
@@ -55,3 +55,31 @@ song-bootstrap intervals against GAME lead and the stage without lyrics, and aga
   Among passers: the lowest GAME lead cost/min; within 1.0 cost/min of it, the one with fewer knobs. Nothing
   becomes a default (dev is in-sample for every knob here; confirmation belongs to holdout4 under the spec's
   rule). If none passes, the result is negative: numbers recorded, knobs deleted.
+
+## Answer
+
+**Negative: no candidate passes the rule, and none beats today's aligned fit.** The lyrics CTC's per-mora
+onsets put 57.6% of moras on their UST note's start cell, which is too coarse to time notes on this grid.
+`crates/sona-eval/reports/mora-split.md`.
+
+- **Oracle (UST onsets, aligned spans; GAME lead):**
+  - split + starts moved within one cell: **244.4** cost/min, against today's aligned fit 304.2 and no lyric
+    303.0 (Δ against no lyric −58.6 [−85.5, −34.9]);
+  - 19.6% clean measures, 88.7 wrong moras/min, 54.0% placed, 294 missing;
+  - stage 219.4 (no lyric 272.2).
+  - The splits alone are worth −13.7 against today. The starts are the lever.
+- **Precision needed:** with onsets exact on a share *p* of moras, otherwise off by the aligner's own errors,
+  split + starts breaks even at p ≈ 90% (305.4) and gains at 95% (265.7). The aligner's 57.6% gives 448.7.
+- **Candidates (aligned onsets):**
+  - split: 313.2 (+9.0 [+1.6, +21.3] against today);
+  - the best start rule (±1 cell, +20 ms, gated to the upper half of the aligner's scores): 343.1 (+38.8);
+  - ungated starts: 476.0.
+  - The added-later 2-cell-only moves cost +8.8 to +38.9.
+  - All 47 fail rules 1 and 2 (lead upper bound against no lyric < 0; stage no worse).
+- Where the aligner and the note disagree by one cell, the note is usually right: 600 moves would take a
+  correct start off its cell against 174 that would fix one (277 against 200 with +20 ms). The aligner fires
+  ~0.36 cell early, plausibly on the consonant; a UST note starts on the vowel.
+- No Rust was written (nothing earned a port); the default and every opt-in path are unchanged.
+- Next: a vowel-onset source at ~90% cell precision, inside each placed line. It could be a singing phoneme
+  aligner such as SOFA, or the aligner's onset used as a prior on sona's own onset candidates. Either needs the
+  same precision sweep before a port.

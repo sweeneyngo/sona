@@ -37,7 +37,7 @@ def onset_cuts(note, first, k, on):
     return None
 
 
-def fit_phrase(notes, lyrics, span, on, cfg):
+def fit_phrase(notes, lyrics, span, on, cfg, on_start=None):
     """lib01.fit_phrase_lyric with rests (span), then cfg's onset rules. `on[i]`: onset cell (int) of the
     phrase's mora i, or None. Returns [(start, end, pitch, mora index within phrase or None)]."""
     if not lyrics:
@@ -64,11 +64,11 @@ def fit_phrase(notes, lyrics, span, on, cfg):
         else:
             out.append((note[0], note[1], note[2], first if k == 1 else None))
     if cfg.get("start") is not None:
-        out = move_starts(out, on, cfg["start"], cfg.get("legato", True))
+        out = move_starts(out, on if on_start is None else on_start, cfg["start"], cfg.get("legato", True), cfg.get("min_gap", 1))
     return out
 
 
-def move_starts(out, on, tol, legato):
+def move_starts(out, on, tol, legato, min_gap=1):
     """Each note carrying a mora whose onset cell is within `tol` cells of its start starts there, if it stays
     at least a cell long. With `legato`, a note touching the one before keeps touching it (the previous note's
     end follows, if that note stays at least a cell long); a start that moves earlier into the previous note
@@ -79,7 +79,7 @@ def move_starts(out, on, tol, legato):
         if m is None or on[m] is None:
             continue
         c = on[m]
-        if c == x[0] or abs(c - x[0]) > tol or c >= x[1]:
+        if abs(c - x[0]) < min_gap or abs(c - x[0]) > tol or c >= x[1]:
             continue
         prev = out[i - 1] if i > 0 else None
         if prev is not None and (prev[1] > c or (legato and prev[1] == x[0])):
@@ -90,7 +90,7 @@ def move_starts(out, on, tol, legato):
     return [tuple(x) for x in out]
 
 
-def fit_timed(s, cells, groups, on_cells, cfg):
+def fit_timed(s, cells, groups, on_cells, cfg, start_cells=None):
     """14's fit_timed (score.py) with per-mora onsets: groups = [(first, last+1, start_s, end_s)]."""
     u = s["ust_l"]
     sp = sorted(groups, key=lambda g: g[2])
@@ -109,7 +109,7 @@ def fit_timed(s, cells, groups, on_cells, cfg):
         lyr = [u[i][3] for i in range(a, b)]
         span = (O.g_of(s, t0), O.g_of(s, t1))
         if notes:
-            fitted = fit_phrase(notes, lyr, span, on_cells[a:b], cfg)
+            fitted = fit_phrase(notes, lyr, span, on_cells[a:b], cfg, None if start_cells is None else start_cells[a:b])
             out += [(x, y, p, None if m is None else lyr[m]) for x, y, p, m in fitted]
     return sorted(out)
 
@@ -215,6 +215,14 @@ def parse_variant(name):
             cfg["split"] = True
         elif r.startswith("start"):
             cfg["start"] = int(r[5:])
+        elif r.startswith("exact"):
+            cfg["exact"] = float(r[5:])
+        elif r.startswith("min"):
+            cfg["min_gap"] = int(r[3:])
+        elif r.startswith("gate"):
+            cfg["gate"] = int(r[4:])
+        elif r.startswith("bias"):
+            cfg["bias_ms"] = float(r[4:])
         elif r == "nolegato":
             cfg["legato"] = False
         elif r != "tail":
@@ -223,10 +231,11 @@ def parse_variant(name):
 
 
 def run(songs, data, names, bias_s=0.0, jitter_seed=7):
-    errs = []
+    errs, wrong_cells = [], []
     for s in songs:
         text, al, _ = data[s["id"]]
         errs += [x[0] - m["on"] for m, x in zip(text["moras"], al["moras"])]
+        wrong_cells += [d for d in (O.g_of(s, x[0]) - O.g_of(s, m["on"]) for m, x in zip(text["moras"], al["moras"])) if d != 0]
     res = {}
     for name in names:
         v = parse_variant(name)
@@ -240,9 +249,20 @@ def run(songs, data, names, bias_s=0.0, jitter_seed=7):
                 else:
                     src, spans, cfg = v
                     text, al, times = data[s["id"]]
-                    on_s = onsets(text, al, src, rng, errs, bias_s if src == "aligned" else 0.0)
+                    b = cfg.get("bias_ms", 1000 * bias_s) / 1000
+                    on_s = onsets(text, al, src, rng, errs, b if src == "aligned" else 0.0)
                     on_c = [O.g_of(s, t) for t in on_s]
-                    notes = fit_timed(s, cells, groups_of(s, text, times, spans), on_c, cfg)
+                    if "exact" in cfg:
+                        # Precision oracle: the UST's onset cell with probability exact%, else off by a cell error
+                        # drawn from the aligner's wrong-cell errors.
+                        on_c = [c if rng.random() < cfg["exact"] / 100 else c + wrong_cells[rng.randrange(len(wrong_cells))] for c in on_c]
+                    start_c = None
+                    if "gate" in cfg:
+                        # Start moves only for moras the aligner scores at or above the song's gate-th percentile.
+                        sc = sorted(x[2] for x in al["moras"])
+                        cut = sc[min(len(sc) - 1, len(sc) * cfg["gate"] // 100)]
+                        start_c = [c if x[2] >= cut else None for c, x in zip(on_c, al["moras"])]
+                    notes = fit_timed(s, cells, groups_of(s, text, times, spans), on_c, cfg, start_c)
                 rows.append(score(s, notes))
             res[(out, name)] = rows
     return res
