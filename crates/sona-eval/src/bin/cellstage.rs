@@ -35,7 +35,10 @@
 //! from the UST's phrases, or from the whole song; "rests hold moras" uses `fit_span_moras`. With
 //! `--lyric-lines DIR` too, the phrases also come from a lyric text's lines (and lines and spaces):
 //! `DIR/<id>.json` holds `line_starts` and `space_starts`, the indices of the UST notes that begin one
-//! (`scripts/lyric-placement/align_lines.py`; lyric-derived, keep it out of the repo).
+//! (`scripts/lyric-placement/align_lines.py`; lyric-derived, keep it out of the repo). With
+//! `--lyric-line-times DIR` (lyrics-first 14), the lines and pieces are placed in time by an aligner instead
+//! of the UST: `DIR/<id>.json` holds `lines` and `pieces`, each `[first UST note, start s, end s, …]`, and
+//! each is fitted by `sona_core::lyric_fit::fit_lines` (`scripts/line-alignment/`; lyric-derived too).
 //!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
@@ -44,7 +47,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
-use sona_core::lyric_fit::{fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, Mora};
+use sona_core::lyric_fit::{fit_lines, fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, LineSpan, Mora};
 use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
 use sona_core::unheard_pieces::{edge_cells, merge_unheard_pieces};
@@ -92,6 +95,9 @@ fn fit_to_sung_phrases(notes: &Notes, sung: &[(f64, f64, Mora)], spacing: f64, a
 /// The lead UST's sung notes in time order: onset, offset, MIDI pitch, lyric.
 type Lyric = (f64, f64, f64, String);
 
+/// A line placed in time by an aligner: its first UST note, start and end in seconds.
+type TimedLine = (usize, f64, f64);
+
 /// Output notes with the index (into the UST's sung notes) of the mora each carries.
 type Placed = Vec<(f64, f64, i32, Option<usize>)>;
 
@@ -105,6 +111,8 @@ enum Landing<'a> {
     /// Groups of UST notes, each fitted onto the notes whose midpoint lies in its span; `rests`: the span's
     /// rests may hold moras.
     Groups { starts: &'a [usize], rests: bool },
+    /// Lines placed in time by an aligner: (first UST note, start s, end s), fitted by `fit_lines`.
+    Timed { lines: &'a [TimedLine] },
 }
 
 /// `notes` on the grid at `anchor` once `sung`'s moras land on them as `how` says.
@@ -163,8 +171,24 @@ fn land_lyric(notes: &Notes, sung: &[Lyric], how: Landing<'_>, spacing: f64, anc
             }
             placed.sort_by_key(|(n, _)| (n.start, n.end));
         }
+        Landing::Timed { lines } => {
+            let spans: Vec<LineSpan> = lines.iter().map(|&(first, a, b)| LineSpan { first, start: (a - anchor) / spacing, end: (b - anchor) / spacing }).collect();
+            placed = fit_lines(&cells, &kinds, &spans);
+        }
     }
     placed.into_iter().map(|(n, m)| (time(n.start), time(n.end), n.pitch, m)).collect()
+}
+
+/// `v[key]`: a list of `[first UST note, start s, end s, …]` (any further fields, such as the aligner's
+/// score, are ignored).
+fn timed_lines(v: &serde_json::Value, key: &str) -> Result<Vec<TimedLine>, String> {
+    let rows = v[key].as_array().ok_or(format!("no {key}"))?;
+    rows.iter()
+        .map(|r| match (r[0].as_u64(), r[1].as_f64(), r[2].as_f64()) {
+            (Some(first), Some(a), Some(b)) if a <= b => Ok((first as usize, a, b)),
+            _ => Err(format!("{key}: not [first, start, end] with start <= end: {r}")),
+        })
+        .collect()
 }
 
 /// The UST notes that begin a phrase: a run of notes touching on the UST's cells (anchor `offset`).
@@ -369,6 +393,7 @@ fn run() -> Result<(), String> {
     let with_trim = args.iter().any(|a| a == "--trim-releases");
     let with_placement = args.iter().any(|a| a == "--lyric-placement");
     let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
+    let line_times = flag("--lyric-line-times").map(PathBuf::from);
     let mut placements: LandingRows = Vec::new();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
@@ -445,6 +470,14 @@ fn run() -> Result<(), String> {
                         }
                         None => None,
                     };
+                    let timed: Option<(Vec<TimedLine>, Vec<TimedLine>)> = match &line_times {
+                        Some(dir) => {
+                            let path = dir.join(format!("{}.json", song.id));
+                            let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| format!("{}: {e}", path.display()))?;
+                            Some((timed_lines(&v, "lines").map_err(|e| format!("{}: {e}", path.display()))?, timed_lines(&v, "pieces").map_err(|e| format!("{}: {e}", path.display()))?))
+                        }
+                        None => None,
+                    };
                     let whole = [0usize];
                     let mut landings: Vec<(&str, Landing<'_>)> = vec![
                         ("pasted in order, no fit (today)", Landing::InOrder),
@@ -463,6 +496,12 @@ fn run() -> Result<(), String> {
                             ("fitted per lyric line and space", Landing::Groups { starts: space_starts, rests: false }),
                             ("fitted per lyric line and space, rests hold moras", Landing::Groups { starts: space_starts, rests: true }),
                             ("fitted per lyric line cut at UST phrases, rests hold moras", Landing::Groups { starts: &both, rests: true }),
+                        ]);
+                    }
+                    if let Some((lines, pieces)) = &timed {
+                        landings.extend([
+                            ("fitted per aligned lyric line, rests hold moras", Landing::Timed { lines }),
+                            ("fitted per aligned lyric line and space, rests hold moras", Landing::Timed { lines: pieces }),
                         ]);
                     }
                     for (out, ns) in [("GAME lead + octave rule", &lead_only), ("learned cell stage", &stage)] {
