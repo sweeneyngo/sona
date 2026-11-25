@@ -1,6 +1,6 @@
 # 20 — Measure the holdout4 bundle together on dev
 
-Status: in progress
+Status: resolved
 Type: prototype
 Blocked by: 19
 
@@ -87,3 +87,43 @@ seed 1 (`lib01.paired`). Missing counts and clean measures are reported beside e
 dev; M's rule on dev; S1's sigma, scale and abstention looked at on dev, its per-class offsets
 leave-one-song-out on dev). So these Δ carry selection; only holdout4 confirms. With 9 songs the noise floor is
 wide: 19's seed check on 38 songs was −0.9 [−6.2, +4.1].
+
+## Answer
+
+`crates/sona-eval/reports/bundle-on-dev.md`. Dev only (9 songs); C scored out of sample (fold models); holdout4
+and the spent splits not read. My build reproduces C's and B's dev reports byte for byte (291.7, 322.3). The
+Python composition equals the Rust rows per song and class.
+
+| row | cost/min | Δ [95%] | clean | missing (Δ) |
+|---|---|---|---|---|
+| B (today) | 322.3 | | 16.0% | 300 |
+| C | 291.7 | −30.6 [−57.1, −9.4] vs B | 18.6% | 362 |
+| C + T (near ties) | 289.2 | −2.5 [−4.8, −0.3] | 18.6% | +0 |
+| C + M (merge pieces) | 290.1 | −1.6 [−4.1, +0.1] | 18.8% | +4 |
+| **C + L** (14's fit + S1) | **271.8** | **−19.8 [−41.0, −1.5]** | 20.3% | −4 |
+| C + T + M + L | 270.6 | −21.1 [−43.1, −1.5] | 20.3% | +2 |
+| leave out T / M / L from all three | | −0.9 [−3.7, +1.6] / −0.1 [−1.9, +1.3] / −17.2 [−38.6, +1.2] | | +2 / +5 / −4 |
+
+1. **The rule gives C + L.**
+   - T fails on top of the rest and is dropped first (highest bound).
+   - M then fails on top of L (−0.4 [−2.0, +0.8]).
+   - L passes alone and against no lyric (17's rule).
+2. **The lyric pays on top of C.** Most of it is S1: 14's fit alone is −5.0 [−26.3, +10.1], and S1 on top adds
+   −14.9 [−24.7, −6.3].
+   - The bound leans on amaten (−96.5 there). Without it: −12.3 [−26.1, +2.7]. 7/9 songs improve.
+   - The lyric is the UST's own moras, so this is an upper estimate for a real paste.
+3. **Where C's cost sits after the bundle:** length 32%, joined 26%, chopped 12%, shift 10%, missing 10%, pitch 8%.
+   - L removes **28% of C's joined notes** (666 → 479).
+   - It adds 49 chopped, 44 near-miss pitch and 10 octave errors.
+   - Length is now the largest class.
+4. **The bundle holdout4 reads.**
+   - Rust: `sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost --lyric-placement --lyric-lines
+     LINES --lyric-line-times TIMES --dump DUMP`.
+   - Then Python: S1 (`split.py --variants none,tail,file-m3+adaptmora+abst3.0:split+start1`; the `stage` rows).
+   - **S1 is the only Python-only arm.** Port plan in the report: first `fit_lines_with_onsets` +
+     `--lyric-onsets DIR`; the three CTC aligners via ONNX or a sidecar.
+   - **Before the read, `sources.py`'s per-class offsets must be frozen from dev.** They are fitted
+     leave-one-song-out on the scored songs' own UST, which would leak on holdout4.
+
+Code: `--dump` writes the stage with T/M applied when those flags are on (default run and dump byte-identical;
+1 test, 2 mutants caught). `scripts/bundle/bundle.py`.

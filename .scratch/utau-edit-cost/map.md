@@ -13,6 +13,17 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, **20 resolved (the bundle on dev, stage out of sample): holdout4 reads C + L.** Dev, C's fold
+  models: B 322.3 → C 291.7. Adding L (14's fit + 17's S1) gives **271.8 (−19.8 [−41.0, −1.5])**, clean
+  18.6% → 20.3%, missing −4.
+  - All three arms together give 270.6, but on top of L, T (−1.1 [−3.6, +0.6]) and M (−0.4 [−2.0, +0.8]) earn
+    nothing. Backward elimination drops both.
+  - The lyric removes 28% of C's joined notes. Length is now the largest class (32%).
+  - Two caveats. The bound leans on amaten: without it, −12.3 [−26.1, +2.7]. The lyric is the UST's own moras.
+  - S1 is Python-only (port plan in the report). Before the read, its per-class offsets must be frozen from
+    dev.
+  - [20](issues/20-bundle-measured-together.md), `crates/sona-eval/reports/bundle-on-dev.md`.
+
 - 2026-11-24, **19 resolved (stage retrained for edit cost, opt-in)**: song-level 10-fold CV over the 38
   spent songs, the current recipe retrained under the same folds as baseline (275.8 cost/min out of sample;
   the shipped stage's dev 272.2 was in-sample, out of sample the recipe costs 322.3 there). C (onset-phase

@@ -53,7 +53,9 @@
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
-//! vocals' pitch track. The dump holds UST content: keep it out of the repository.
+//! vocals' pitch track. The dump holds UST content: keep it out of the repository. With
+//! `--settle-near-ties` and/or `--merge-unheard-pieces` too, the outputs also hold the stage with those
+//! applied in the app's order (`stage_settled`, `stage_merged`, `stage_settled_merged`; utau-edit-cost 20).
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features_with, cells_to_notes, decode_classes, snap_notes, EncoderChunk, FeatureSet, StageInputs, StageNote};
@@ -582,7 +584,12 @@ fn run() -> Result<(), String> {
                 dump_cells_of(dir, &song.id, phase, &inputs, cells_covering(duration, spacing, anchor), &reference, offset, division, &stage)?;
             }
             if let (Some(dir), 1) = (&dump, j) {
-                let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
+                let settle = |ns: &Notes| settle_near_ties(ns, &runs.lead_notes, &runs.vocals_notes, spacing, anchor, NearTieRule::default());
+                let edges = edge_cells(runs.vocals_notes.iter().filter(|n| n.voiced).map(|n| (n.onset_s, n.offset_s)), spacing, anchor);
+                let merge = |ns: &Notes| merge_unheard(ns, &edges, spacing, anchor);
+                let arms = stage_arms(&stage, with_ties.then_some(&settle as &dyn Fn(&Notes) -> Notes), with_merge.then_some(&merge as &dyn Fn(&Notes) -> Notes));
+                let mut outputs = vec![("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
+                outputs.extend(arms.iter().map(|(name, ns)| (*name, ns)));
                 let costs: Vec<_> = outputs.iter().map(|(name, ns)| (*name, edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid))).collect();
                 let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
                 let song_dump = dump_song(model, &inputs, cells_covering(duration, spacing, anchor), &scored, &lead, sr, &usts, offset)?;
@@ -632,6 +639,22 @@ fn run() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The stage's notes with the opt-in arms that are switched on, in the app's order (near ties settled, then
+/// unheard pieces merged), named as `--dump` writes them; empty when neither is on, so the dump is unchanged.
+fn stage_arms(stage: &Notes, settle: Option<&dyn Fn(&Notes) -> Notes>, merge: Option<&dyn Fn(&Notes) -> Notes>) -> Vec<(&'static str, Notes)> {
+    let mut arms = Vec::new();
+    if let Some(settle) = settle {
+        arms.push(("stage_settled", settle(stage)));
+    }
+    if let Some(merge) = merge {
+        arms.push(("stage_merged", merge(stage)));
+    }
+    if let (Some(settle), Some(merge)) = (settle, merge) {
+        arms.push(("stage_settled_merged", merge(&settle(stage))));
+    }
+    arms
 }
 
 /// `--fold-models DIR` (utau-edit-cost 19): every subfolder of `DIR` that holds a cell model, each with
@@ -749,6 +772,20 @@ mod tests {
         assert_eq!(held_out_model(&folds, "c"), Ok(&"fold2"));
         assert!(held_out_model(&folds[..2], "c").is_err(), "every model saw c: no out-of-sample score");
         assert!(held_out_model(&folds, "d").is_err(), "no model saw d: the folds don't partition the songs");
+    }
+
+    #[test]
+    fn the_dump_adds_the_stage_with_each_switched_on_arm_settling_before_merging() {
+        let stage: Notes = vec![(0.0, 1.0, 60), (1.0, 2.0, 60)];
+        let settle = |ns: &Notes| ns.iter().map(|&(a, b, p)| (a, b, p + 1)).collect::<Notes>();
+        let merge = |ns: &Notes| vec![(ns[0].0, ns[ns.len() - 1].1, ns[0].2 * 2)];
+        let names = |arms: &[(&'static str, Notes)]| arms.iter().map(|(n, _)| *n).collect::<Vec<_>>();
+        assert!(stage_arms(&stage, None, None).is_empty(), "no arm switched on: the dump is unchanged");
+        assert_eq!(stage_arms(&stage, Some(&settle), None), vec![("stage_settled", vec![(0.0, 1.0, 61), (1.0, 2.0, 61)])]);
+        assert_eq!(stage_arms(&stage, None, Some(&merge)), vec![("stage_merged", vec![(0.0, 2.0, 120)])]);
+        let both = stage_arms(&stage, Some(&settle), Some(&merge));
+        assert_eq!(names(&both), ["stage_settled", "stage_merged", "stage_settled_merged"]);
+        assert_eq!(both[2].1, vec![(0.0, 2.0, 122)], "settled first, then merged");
     }
 
     #[test]
