@@ -1,6 +1,6 @@
 # 19 — Train the cell stage on edit cost
 
-Status: ready-for-agent
+Status: resolved
 Type: prototype
 Blocked by: 18
 
@@ -28,3 +28,68 @@ Retrain the stage (`~/.cache/sona/cellstage-D/build_cells.py`, `train_cells.py`;
 - A winning model stays opt-in (`--model` dir) until the holdout4 read; weights stay local.
 
 ## Comments
+
+### Selection rule (committed before any CV run; lead agent, 2026-11-24)
+
+Data: every spent split's songs that `sona-eval-cellstage` scores (dev 9, holdout 9, holdout2 10, holdout3 10 =
+38), read through `--split NAME --reread --reason …` (logged in `corpus/holdout-reads.jsonl` as diagnosis).
+holdout4 is never read. Training rows are the Rust feature builder's own (`--dump-cells`), so a trained model
+reads exactly what sona gives it.
+
+- **Exploration CV** (fold assignment E: 4 folds by song, permutation seed 2): free to compare recipes and pick
+  one. Its numbers are exploration only.
+- **Final CV** (fold assignment F: K folds by song, permutation seed 1, K stated below before the run), run
+  once for:
+  - **B**, the current recipe retrained under F: the prototype's 1046 features, CE on the first candidate
+    with the UST's pitch, the UST's true phase, HID 96, 15 epochs, seed 0, masked argmax;
+  - **C**, the one candidate recipe, named below before the run.
+- Each fold's model scores only its held-out songs, through the Rust scorer
+  (`sona-eval-cellstage --edit-cost --fold-models DIR`, the stage on the onset phase, which ships).
+- **C is kept (opt-in model dir) only if**, pooled over the 38 songs:
+  1. the paired song-bootstrap (10 000 resamples) 95% upper bound of Δ cost/min (C − B) is below 0;
+  2. the missing count does not rise, or the upper bound stays below 0 with missing re-weighted to 4;
+  3. clean measures do not fall (point Δ ≥ 0);
+  4. any decoding parameter C has is chosen cross-fitted (for each fold, by the other folds' out-of-sample
+     cost), never on the fold it scores.
+- Noise floor: B retrained with seed 1 under F, against B, reported beside the result.
+- Cell accuracy is reported, not a criterion. The shipped default stays the current model either way; a C
+  that passes stays opt-in until holdout4.
+- **K = 10** (timing: one epoch on 20 songs takes 12 s on 8 threads, so a 15-epoch model on ~34 songs takes
+  about 5 min; leave-one-song-out would need 38 models per recipe, ≈ 3.5 h each, and B + C + B's seed check
+  ≈ 10 h. Ten folds take ≈ 50 min per recipe.)
+- **C, named after the exploration CV and before the final CV run**: the same network trained on the onset
+  phase (what ships) with GAME lead's 8 residual features (1054 per cell), loss = cross-entropy with cells
+  next to a UST note edge weighted 3, plus 0.5 × a pairwise term (−log of the chance two neighbouring cells
+  of one UST note agree on pitch); decoded with `decode_classes` at a switch cost chosen cross-fitted from
+  {0, 0.25, 0.5, 1, 1.5, 2, 3, 4} (export: `switch_cost`, `lead_residuals`). Exploration (4 folds, seed 2,
+  38 songs, vs B under the same folds; 6 recipes × decodings looked at, so its numbers carry selection):
+  −18.0 [−23.7, −12.7] cost/min at switch 1.0, clean +1.6, missing +18.
+
+## Answer
+
+`crates/sona-eval/reports/stage-edit-cost.md`. **C passes the rule and stays opt-in** (a model folder whose
+`cellstage.json` sets `lead_residuals` and `switch_cost`); the shipped default is unchanged until holdout4.
+
+Final CV (10 folds by song, seed 1; 38 spent songs, 104.5 min; each song scored by the fold model that never
+saw it, through `sona-eval-cellstage --edit-cost --fold-models`; holdout4 not read):
+
+| | cost/min | Δ [95%] | clean | Δ [95%] | missing (Δ) | Δ upper, missing @4 |
+|---|---|---|---|---|---|---|
+| B, current recipe retrained | 275.8 | | 14.1% | | 1 297 | |
+| B, seed 1 (noise floor) | 274.9 | −0.9 [−6.2, +4.1] | 14.2% | +0.1 | 1 228 (−69) | +2.9 |
+| **C** | **254.1** | **−21.7 [−31.7, −12.1]** | **16.4%** | **+2.3 [+1.1, +3.7]** | 1 444 (+147) | **−8.4** |
+| C's training, argmax | 262.9 | −12.9 [−20.7, −5.5] | 16.3% | +2.2 | 1 276 (−21) | −6.7 |
+| B's training, C's decoding | 262.2 | −13.7 [−20.5, −6.4] | 14.9% | +0.8 | 1 459 (+162) | −3.8 |
+
+- Rule: upper bound −12.1 < 0 ✓; missing +147 but the bound holds at missing 4 (−8.4) ✓; clean +2.3 ✓;
+  switch cost cross-fitted (1.5 on 9/10 folds, 2.0 on one) ✓.
+- C = onset-phase training with GAME lead's 8 residual features, cross-entropy with UST-edge cells weighted 3
+  plus 0.5 × a pairwise same-note agreement term, decoded with a cost per note edge (`decode_classes`). Its
+  cost moves: chopped −1 880 units, length −1 172, pitch −261, shift −232, joined +1 148, missing +294.
+  Every split improves (dev −30.6, holdout −21.3, holdout2 −22.7, holdout3 −12.0); 33 of 38 songs.
+- The residual feature alone is small (−2.3 [−7.2, +2.5] in exploration); source-aware set targets are
+  worse (+28.6). The out-of-sample current recipe costs 322.3/min on dev, not the shipped model's in-sample
+  272.2.
+- Rust: opt-in `FeatureSet::lead_residuals`, `decode_classes` + `CellModel::switch_cost`, scorer flags
+  `--dump-cells` and `--fold-models`; default run byte-identical; Rust = Python on every number above.
+- Candidate trained on all 38 songs: local only, `~/.cache/sona/cellstage-19C/` (switch 1.5).
