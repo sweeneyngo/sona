@@ -1,6 +1,6 @@
 # 17 — The harness for the one holdout4 read
 
-Status: needs-triage
+Status: in progress
 Type: task
 Blocked by: lyrics-first 14 (its winner joins the bundle), ear labels for holdout4 (user)
 
