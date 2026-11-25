@@ -213,10 +213,13 @@ mod tests {
             let got = SharedCorrection { added: k.added, deleted: k.deleted, pitch_fixed: k.pitch_fixed, onset_moved: k.onset_moved, offset_moved: k.offset_moved };
             assert_eq!(got, c.correction, "{}: correction", c.name);
             let e = edit_cost(&ust, &out, &CellGrid { spacing_s: c.spacing_s, anchor_s: c.anchor_s, cells_per_measure: 16 });
-            let got = SharedEditCost { extra: e.count(ErrorClass::Extra), missing: e.count(ErrorClass::Missing), pitch: e.count(ErrorClass::Pitch), length: e.count(ErrorClass::Length) };
+            let got = SharedEditCost { extra: e.count(ErrorClass::Extra), missing: e.count(ErrorClass::Missing), pitch: e.count(ErrorClass::Pitch) + e.count(ErrorClass::Octave), length: e.count(ErrorClass::Length) };
             assert_eq!(got, c.edit_cost, "{}: edit cost", c.name);
             assert_eq!((got.extra, got.missing, got.pitch, got.length), (k.deleted, k.added, k.pitch_fixed, k.offset_moved), "{}: shared classes", c.name);
-            assert_eq!(e.cost(), (k.deleted + 2 * k.added + k.pitch_fixed + k.offset_moved) as u64, "{}: no other class", c.name);
+            let w = |c: ErrorClass| u64::from(c.weight());
+            let pitch = w(ErrorClass::Pitch) * e.count(ErrorClass::Pitch) as u64 + w(ErrorClass::Octave) * e.count(ErrorClass::Octave) as u64;
+            let rest = w(ErrorClass::Extra) * k.deleted as u64 + w(ErrorClass::Missing) * k.added as u64 + w(ErrorClass::Length) * k.offset_moved as u64;
+            assert_eq!(e.cost(), pitch + rest, "{}: no other class", c.name);
         }
     }
 

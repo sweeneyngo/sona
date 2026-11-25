@@ -13,6 +13,13 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, **weights revised (user)**: off-time start or end 4, near-miss pitch 3, octave 1, missing
+  kept at 2 (`spec.md`). Rescored on dev (cost/min): pYIN 518.0, GAME lead 303.0, stage 272.2 (scratch ≈
+  380). Timing (length + shift + moved) is 45% of GAME lead's cost and 40% of the stage's; joined 32–35%.
+  The aligned-line lyric fit is flat now (lead 304.2, stage 271.5): its mora splits miss by a cell often
+  enough to cost what the joins did. Trim releases (12): lead 294.4, stage 281.4. Merge pieces (11): lead
+  301.2, stage 267.2. Every number before this line uses the old weights. Guard: report missing counts
+  beside cost, since an off-time note (4) now costs more than delete + redraw (3).
 - 2026-11-24, **targets (user: "yes the intent behind the targets are correct"; "try to get it down to the
   floor")**. Edit cost/min against drawing every note from scratch (~190 UST notes/min × missing 2 ≈ 380):
   - **usable**: ≤ 190 (half of scratch), *and* the frame (bar 1, tempo) right on nearly every song;

@@ -17,9 +17,17 @@ expensive errors.
 
 | Tier | Error | Weight |
 |---|---|---|
-| Easy | Wrong pitch or octave (OpenUtau transposes, in batches too); wrong length; one note a cell early or late; an extra note to delete | 1 |
+| Easy | An octave error (OpenUtau transposes, in batches too); an extra note to delete | 1 |
 | Harder | A missing note that has to be drawn | 2 |
-| Tedious | One held note chopped into several; two notes joined into one | 4 |
+| Annoying | A near-miss pitch (not whole octaves; fixed note by note, by ear) | 3 |
+| Tedious | A note that starts off-time (any distance); a note that ends off-time (wrong length); one held note chopped into several; two notes joined into one | 4 |
+
+Revised 2026-11-24 (user): "the most annoying experience when transcribing is when things are off-time,
+because manually adjusting notes or sections of notes to be on-time is not trivial. Same when a note is off
+tune." Off-time starts and ends went from 1 to 4, a near-miss pitch from 1 to 3, octave errors stayed 1,
+and missing stayed 2 although an off-time note now costs more than deleting and redrawing it (user: keep
+missing at 2). Watch the missing count beside the cost so no change wins by dropping notes. Numbers
+before this date use the old weights (all 1 except missing 2, chopped and joined 4).
 | Hard | A passage in the wrong measures (bar offset); a wrong BPM (multiple or drift) | per-song pass/fail, reported separately ("frame") |
 
 Users usually know their song's exact BPM. Finding beat 1 of the measure therefore matters more than

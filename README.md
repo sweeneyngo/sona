@@ -311,6 +311,18 @@ The metric is the share of grid cells that match the UST.
   hard it is to fix there. The shipped stack costs 180.2 edits per minute and leaves 23.8% of 4/4 measures
   clean; pYIN grid mode 338.4 and 3.1%. Notes joined into one are half the cost. The stack was trained on
   these songs, so its numbers flatter it ([ticket](.scratch/utau-edit-cost/issues/01-edit-cost-metric.md)).
+- **Weights revised** (user, 2026-11-24): off-time notes and near-miss pitches are the annoying fixes, so a
+  start or end off by any distance now costs 4, a near-miss pitch 3, an octave error 1, and a missing note
+  still 2 ([spec](.scratch/utau-edit-cost/spec.md)). Under these weights:
+  - the shipped stack costs 272.2 per minute, GAME lead 303.0 and pYIN 518.0; drawing every note from
+    scratch costs about 380;
+  - note starts and ends are 40–45% of the cost, and joined notes 32–35%;
+  - the line-placed lyric fit no longer pays (GAME lead 303.0 → 304.2): a split a cell off costs as much as
+    the join it fixed;
+  - the release trim cuts GAME lead 303.0 → 294.4;
+  - the unheard-piece merge cuts GAME lead 303.0 → 301.2, and the stage 272.2 → 267.2.
+
+  The bullets below use the old weights.
 - **Joined notes need the lyrics** (opt-in, dev only): no spectral detector finds the hidden same-pitch
   mora changes well enough to pay, and aligning a whole song's lyric to the notes makes things worse. A
   user pasting each phrase's kana onto its notes, fitted by `sona_core::lyric_fit`, cuts GAME lead's cost

@@ -1,8 +1,9 @@
 """Python port of sona_eval::correction::edit_cost, with the components exposed for diagnosis."""
 import math
 
-CLASSES = ["extra", "pitch", "length", "shift", "moved", "missing", "chopped", "joined"]
-W = dict(extra=1, pitch=1, length=1, shift=1, moved=1, missing=2, chopped=4, joined=4)
+CLASSES = ["extra", "pitch", "octave", "length", "shift", "moved", "missing", "chopped", "joined"]
+# The user's revised tiers (2026-11-24): off-time starts and ends 4, near-miss pitch 3, octave 1.
+W = dict(extra=1, pitch=3, octave=1, length=4, shift=4, moved=4, missing=2, chopped=4, joined=4)
 
 
 def rround(x):
@@ -83,7 +84,9 @@ def analyse(ref_notes, out_notes, spacing, anchor, cpm):
         elif len(rs) == 1 and len(os_) == 1:
             r, o = refs[rs[0]], outs[os_[0]]
             sh = abs(o[0] - r[0])
-            c["counts"]["pitch"] = int(r[2] != o[2])
+            d = r[2] - o[2]
+            c["counts"]["pitch"] = int(d != 0 and d % 12 != 0)
+            c["counts"]["octave"] = int(d != 0 and d % 12 == 0)
             c["counts"]["length"] = int(r[1] - r[0] != o[1] - o[0])
             c["counts"]["shift"] = int(sh == 1)
             c["counts"]["moved"] = int(sh > 1)

@@ -21,10 +21,12 @@
 //! - a lone UST note: **missing** (has to be drawn);
 //! - a lone output note: **extra** (has to be deleted);
 //! - one UST note and one output note, a **pair**, which can carry, independently:
-//!   - **pitch**: the pitches differ (any interval, octave included);
-//!   - **length**: the lengths in cells differ;
+//!   - **pitch**: the pitches differ by an interval that is not whole octaves (a near miss: fixed one
+//!     note at a time, by ear);
+//!   - **octave**: the pitches differ by whole octaves (OpenUtau transposes a passage in one go);
+//!   - **length**: the lengths in cells differ (the end has to be dragged);
 //!   - **shift**: the starts differ by exactly one cell;
-//!   - **moved**: the starts differ by two cells or more (outside the user's tiers; see [`WEIGHTS`]);
+//!   - **moved**: the starts differ by two cells or more;
 //! - anything larger (`a` UST notes, `b` output notes, `a + b − 1` edges): a UST note with `d` edges is
 //!   **chopped** into `d − 1` extra pieces, and an output note with `d` edges is **joined** over `d − 1`
 //!   hidden UST notes. Over the component that is `a + b − 2` restructurings in all. Pitch, length and
@@ -47,6 +49,7 @@ use super::EditNote;
 pub enum ErrorClass {
     Extra,
     Pitch,
+    Octave,
     Length,
     Shift,
     Moved,
@@ -55,15 +58,17 @@ pub enum ErrorClass {
     Joined,
 }
 
-/// The cost of one edit of each class: the user's OpenUtau tiers (2026-11-24). `Moved` (a start two or
-/// more cells off) is not in the tiers; it is priced like a one-cell shift, since a drag is one action
-/// whatever its distance, and counted apart so its weight can change.
-pub const WEIGHTS: [(ErrorClass, u32); 8] = [
+/// The cost of one edit of each class: the user's OpenUtau tiers (2026-11-24), revised the same day.
+/// Off-time notes and near-miss pitches are the annoying fixes (user): a start off by any distance, and
+/// an end off (length), cost 4, like a chopped or joined note; a near-miss pitch costs 3; an octave error
+/// stays 1 (batch transpose); an extra note stays 1 and a missing one 2 (user: "keep missing at 2").
+pub const WEIGHTS: [(ErrorClass, u32); 9] = [
     (ErrorClass::Extra, 1),
-    (ErrorClass::Pitch, 1),
-    (ErrorClass::Length, 1),
-    (ErrorClass::Shift, 1),
-    (ErrorClass::Moved, 1),
+    (ErrorClass::Pitch, 3),
+    (ErrorClass::Octave, 1),
+    (ErrorClass::Length, 4),
+    (ErrorClass::Shift, 4),
+    (ErrorClass::Moved, 4),
     (ErrorClass::Missing, 2),
     (ErrorClass::Chopped, 4),
     (ErrorClass::Joined, 4),
@@ -71,9 +76,10 @@ pub const WEIGHTS: [(ErrorClass, u32); 8] = [
 
 impl ErrorClass {
     /// Every class, in report order.
-    pub const ALL: [ErrorClass; 8] = [
+    pub const ALL: [ErrorClass; 9] = [
         ErrorClass::Extra,
         ErrorClass::Pitch,
+        ErrorClass::Octave,
         ErrorClass::Length,
         ErrorClass::Shift,
         ErrorClass::Moved,
@@ -91,6 +97,7 @@ impl ErrorClass {
         match self {
             ErrorClass::Extra => "extra",
             ErrorClass::Pitch => "pitch",
+            ErrorClass::Octave => "octave",
             ErrorClass::Length => "length",
             ErrorClass::Shift => "shift",
             ErrorClass::Moved => "moved",
@@ -119,7 +126,7 @@ pub struct CellGrid {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EditCost {
     /// Edits per class, indexed like [`ErrorClass::ALL`].
-    pub counts: [usize; 8],
+    pub counts: [usize; 9],
     pub measures: usize,
     pub clean_measures: usize,
     /// Length of the UST's span, in seconds.
@@ -243,7 +250,7 @@ pub fn edit_cost(reference: &[EditNote], output: &[EditNote], g: &CellGrid) -> E
     }
 
     let ix = ErrorClass::index;
-    let mut counts = [0usize; 8];
+    let mut counts = [0usize; 9];
     let (mut bad_r, mut bad_o) = (vec![true; n], vec![true; m]);
     for (rs, os) in members.values() {
         match (rs.as_slice(), os.as_slice()) {
@@ -253,7 +260,8 @@ pub fn edit_cost(reference: &[EditNote], output: &[EditNote], g: &CellGrid) -> E
                 let (r, o) = (&refs[*ri], &outs[*oi]);
                 let shift = (o.start - r.start).abs();
                 let errors = [
-                    (r.pitch != o.pitch, ErrorClass::Pitch),
+                    (r.pitch != o.pitch && (r.pitch - o.pitch) % 12 != 0, ErrorClass::Pitch),
+                    (r.pitch != o.pitch && (r.pitch - o.pitch) % 12 == 0, ErrorClass::Octave),
                     (r.len() != o.len(), ErrorClass::Length),
                     (shift == 1, ErrorClass::Shift),
                     (shift > 1, ErrorClass::Moved),
@@ -413,7 +421,10 @@ mod tests {
         let cases: Vec<(ErrorClass, Vec<EditNote>, Vec<EditNote>)> = vec![
             (ErrorClass::Extra, vec![n(0, 4, 60), n(12, 16, 62)], vec![n(0, 4, 60), n(6, 10, 70), n(12, 16, 62)]),
             (ErrorClass::Pitch, vec![n(0, 4, 60)], vec![n(0, 4, 61)]),
-            (ErrorClass::Pitch, vec![n(0, 4, 60)], vec![n(0, 4, 72)]),
+            (ErrorClass::Pitch, vec![n(0, 4, 60)], vec![n(0, 4, 58)]),
+            (ErrorClass::Pitch, vec![n(0, 4, 60)], vec![n(0, 4, 71)]),
+            (ErrorClass::Octave, vec![n(0, 4, 60)], vec![n(0, 4, 72)]),
+            (ErrorClass::Octave, vec![n(0, 4, 60)], vec![n(0, 4, 36)]),
             (ErrorClass::Length, vec![n(0, 4, 60)], vec![n(0, 6, 60)]),
             (ErrorClass::Length, vec![n(0, 8, 60)], vec![n(0, 3, 60)]),
             (ErrorClass::Shift, vec![n(4, 8, 60)], vec![n(5, 9, 60)]),
@@ -433,7 +444,7 @@ mod tests {
     #[test]
     fn the_weights_are_the_users_tiers() {
         let w: Vec<u32> = ErrorClass::ALL.iter().map(|c| c.weight()).collect();
-        assert_eq!(w, vec![1, 1, 1, 1, 1, 2, 4, 4]);
+        assert_eq!(w, vec![1, 3, 1, 4, 4, 4, 2, 4, 4]);
     }
 
     #[test]
@@ -488,9 +499,9 @@ mod tests {
         let e = edit_cost(&reference, &output, &G);
         assert_eq!(
             only(&e),
-            vec![("extra", 1), ("pitch", 1), ("length", 2), ("shift", 1), ("missing", 1), ("chopped", 1)]
+            vec![("extra", 1), ("octave", 1), ("length", 2), ("shift", 1), ("missing", 1), ("chopped", 1)]
         );
-        assert_eq!(e.cost(), 1 + 1 + 2 + 1 + 2 + 4);
+        assert_eq!(e.cost(), 1 + 1 + 2 * 4 + 4 + 2 + 4);
         assert_eq!((e.measures, e.clean_measures), (3, 0));
     }
 
@@ -531,7 +542,7 @@ mod tests {
 
     #[test]
     fn the_bootstrap_interval_brackets_the_pooled_value() {
-        let song = |cost: usize, minutes: f64| EditCost { counts: [cost, 0, 0, 0, 0, 0, 0, 0], measures: 10, clean_measures: 5, span_s: minutes * 60.0 };
+        let song = |cost: usize, minutes: f64| EditCost { counts: [cost, 0, 0, 0, 0, 0, 0, 0, 0], measures: 10, clean_measures: 5, span_s: minutes * 60.0 };
         let songs = [song(10, 1.0), song(30, 1.0), song(20, 2.0), song(5, 0.5)];
         let mut pool = EditCost::default();
         songs.iter().for_each(|s| pool.add(s));
