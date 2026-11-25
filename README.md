@@ -319,8 +319,14 @@ The metric is the share of grid cells that match the UST.
   - note starts and ends are 40–45% of the cost, and joined notes 32–35%;
   - the line-placed lyric fit no longer pays (GAME lead 303.0 → 304.2): a split a cell off costs as much as
     the join it fixed;
-  - the release trim cuts GAME lead 303.0 → 294.4;
-  - the unheard-piece merge cuts GAME lead 303.0 → 301.2, and the stage 272.2 → 267.2.
+  - the release trim cuts GAME lead 303.0 → 294.4, but the interval now includes 0 (−8.6 [−19.7, +4.3]): part of
+    the gain comes from cutting quiet sung moras, which leaves 55 notes missing;
+  - the unheard-piece merge cuts GAME lead 303.0 → 301.2, and the stage 272.2 → 267.2;
+  - off-time starts and ends are almost all one-cell jitter at legato boundaries, and no audio source says
+    which way to move them. GAME's own rounding residual helps a little: moving an edge that rounded from
+    nearly halfway to where GAME's run on the full vocals puts it (`sona_core::near_ties`, opt-in) cuts GAME
+    lead 303.0 → 297.8 (−5.2 [−8.4, −2.3]). It does nothing for the stage
+    ([report](crates/sona-eval/reports/timing-errors.md)).
 
   The bullets below use the old weights.
 - **Joined notes need the lyrics** (opt-in, dev only): no spectral detector finds the hidden same-pitch

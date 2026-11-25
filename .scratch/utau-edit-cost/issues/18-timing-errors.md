@@ -1,6 +1,6 @@
 # 18 — Off-time starts and ends under the revised weights
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: —
 
@@ -51,3 +51,45 @@ behaviour tests through the public interface with a mutant shown to be caught. N
 with their numbers; knobs that earn nothing are deleted.
 
 ## Comments
+
+## Answer
+
+Report: `crates/sona-eval/reports/timing-errors.md`. Dev only; no holdout read. Baseline reproduced byte for byte
+(GAME lead 303.0, stage 272.2; default run `cmp`-identical after the port).
+
+- **Taxonomy.** Timing is 45.7% of GAME lead's cost and 40.2% of the stage's. Almost all of it is one-cell
+  jitter at legato boundaries: one boundary a cell off costs up to 12. Fixing only the one-cell errors is worth
+  −93.4 cost/min on GAME lead (stage −93.3), against −134.2 / −105.1 for every start and end. The rest is GAME's
+  release: 225 notes run into the UST's short rest (−38.1). The stage has mostly learned that (−7.9).
+- **No audio source says which way the jitter goes.** At GAME lead's legato boundaries (6.6% wrong), GAME on the
+  vocals, sona's grid, the pitch track, voicing and energy each break more right boundaries than they fix. The one
+  informative signal is GAME's own rounding residual: boundaries 0.4–0.5 cell from their cell are wrong 40% of the
+  time, and 84% of those lean toward the UST.
+- **Passes the rule, ported opt-in: `sona_core::near_ties::settle_near_ties` (`--settle-near-ties`).**
+  - The rule: an edge whose raw GAME-lead time leans ≥ 0.35 cell one way moves a cell that way when GAME's run on
+    the full vocals has an edge there.
+  - GAME lead 303.0 → **297.8 (−5.2 [−8.4, −2.3])**. Clean measures +0.4 [+0.0, +1.0]. Missing +2 (upper bound
+    −2.2 with missing at 4). Leave-one-song-out picks 0.35 on 9/9 folds; 7/9 songs improve.
+  - It adds the same on top of 12's trim: −5.1 [−8.3, −2.2].
+  - Stage: −0.6 [−3.1, +1.5], clean −0.3 (in-sample). That is not a rise, so the rule does not restrict it, but
+    it earns nothing there. It is for GAME notes.
+  - Port = prototype on 18/18 song rows. 9 behaviour tests; 5 mutants caught.
+  - A first version measured −6.8 / −2.6. That included an artefact: overlapping notes that the scorer's trim
+    turned into fewer one-cell pieces. The port keeps one voice, and the rule was re-swept and re-chosen
+    leave-one-song-out on the valid version.
+- **Fails the rule: 12's release trim retuned for the new weights.** Every setting also cuts quiet sung
+  (devoiced) moras, turning joined into missing.
+  - Leave-one-song-out: −9.5 [−18.7, +2.3], missing +39. 12's own setting is now −8.6 [−19.7, +4.3], missing +55.
+  - Never on the stage. The lead stem's energy is no better.
+  - So `--trim-releases` no longer meets its own bar under the revised weights. That is the user's call; it was
+    left in place.
+- **Negative:** GAME-latency correction (−8.2 [−22.9, +1.6], clean −0.4); averaging the two GAME listens (LOSO −2.2
+  [−5.2, +1.4]); near-tie moves toward sona's edges (+1.8 … +22.0).
+- **Recommendation, not done.**
+  - The stage's timing ceiling from a better choice among its own sources is −41.7 (every edge or one-cell edges:
+    −105.1 / −93.3, in-sample).
+  - A retrain that charges a boundary error as the edit cost does (12 per legato boundary, not one cell of
+    cross-entropy), with GAME lead's rounding residual as a feature, is the lever. It needs non-dev training data
+    and a holdout4 read.
+  - The residual is also a timing doubt mark for 14. Lead boundaries with a residual of 0.3 cell or more are 10.8%
+    of boundaries and hold 49% of the wrong ones.

@@ -24,6 +24,7 @@ pub mod grid;
 pub mod hmm;
 pub mod lyric_fit;
 pub mod midi;
+pub mod near_ties;
 pub mod onnx_seed;
 pub mod onset;
 pub mod pipeline;
