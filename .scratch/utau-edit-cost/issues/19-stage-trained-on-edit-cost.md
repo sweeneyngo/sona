@@ -1,6 +1,6 @@
 # 19 — Train the cell stage on edit cost
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 18
 
