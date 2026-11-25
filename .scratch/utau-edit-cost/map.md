@@ -22,6 +22,15 @@ a line below.
   (`lead_residuals`, `switch_cost`), model local only. **It joins the holdout4 bundle as the stage**; joined
   notes are now its largest class.
 
+- 2026-11-24, lead, on 19: verified (dev fold-model report byte-identical from my build; CV table recomputed
+  from the Rust reports; folds partition the 38 songs, the switch cost is chosen on other folds; 2 mutants of my
+  own caught; full suite green). From now on **stage comparisons use the retrained baseline B (275.8, out of
+  sample), not 272.2**. The residual columns' own share is unconfirmed (−2.3 [−7.2, +2.5] in exploration); they
+  stay in C because the rule ran with them. Holdout4's stage is `~/.cache/sona/cellstage-19C` (all 38 songs,
+  switch 1.5). Before the read, the bundle is measured together on dev with C's fold models (merge pieces,
+  near ties, 14's fit + 17's S1), since winners can interfere. Joined notes are the next lever: they are C's
+  largest class and the lyric is the only thing that splits them.
+
 - 2026-11-24, lead, after 18: **`--trim-releases` (12) is out of the holdout4 bundle.** Under the revised
   weights it is −8.6 [−19.7, +4.3] on GAME lead and leaves 55 more notes missing, so it fails its own bar;
   delete the knob once the bundle is fixed, unless holdout4 asks for it. `--settle-near-ties` (18) goes in
