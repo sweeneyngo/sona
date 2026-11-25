@@ -63,6 +63,12 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   nothing ships. Which comparator start moves should face is the user's call.
   [17](issues/17-vowel-onsets.md), `crates/sona-eval/reports/vowel-onsets.md`.
 
+- 2026-11-24, lead, on 17's questions: the declared rule stands (against no lyric), so nothing ships from
+  dev. S1 (three CTCs, abstain on spread > 3 cells; MIT/Apache weights, the only licence-clean source) is a
+  candidate for the one holdout4 read, stacked on 14's fit, after it is re-measured on top of utau 18's
+  timing fixes. S3 and SOFA/MMS are out on licences (SOFA JPN "Commercial Use: Not Approved", MMS
+  CC-BY-NC). The extra runtime (~2 min/song on 4 cores) is the user's call only if S1 survives holdout4.
+
 ## Fog
 
 - Do users' line breaks match sung phrases? Partly (01): 59% of a lyric site's line breaks are UST rests,
