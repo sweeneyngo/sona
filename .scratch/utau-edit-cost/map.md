@@ -13,6 +13,16 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, **17 round 3 (the user's option c: the lyric step later). Three reads, each once.**
+  - **The edit-cost read** (rules 1 and 3, no lyric at all) can run as soon as the lead commits the rules.
+  - **The lyric read** (rule 2, `--lyric-only`) runs when every aligned song has a text, from the user or a later
+    fetch, never the UST. Its D, C and C+T must equal the edit-cost read's.
+  - **The frame read** (rule 4) runs after the labels.
+  - Rule 3 is decided after the lyric read.
+  - Dev: the edit-cost read gives b-full's rows. The lyric read gives 255.7, −13.8 [−43.0, +10.7], equal to 21.
+  - The holdout4 preflights refuse the lyric and frame reads, and the ledger is unchanged.
+  - [17](issues/17-holdout4-read-harness.md).
+
 - 2026-11-25, **17 round 2 (option B in the read; rule 4 split off; lyric texts).**
   - The edit-cost read builds L's inputs inside the read from D's dump. On dev it reproduces 01's and 14's
     inputs, and C+L 255.7 (−13.8 [−43.0, +10.7]) equals 21.

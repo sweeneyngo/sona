@@ -1,36 +1,44 @@
-"""utau-edit-cost 17: the pre-registered holdout4 reads (rehearse them on dev). Two invocations, each run once:
+"""utau-edit-cost 17: the pre-registered holdout4 reads (rehearse them on dev). Three invocations, each run once:
 
-The edit-cost read (rules 1-3), in order; nothing is scored before step 1 has dropped the songs it flags:
-  0. preflight, reads nothing: binaries, models, every song's lyric text and the audio-only lyric inputs
-     (`audio_inputs.py`: the three CTCs' emissions, the lead's loudness), the frozen S1 offsets, a clean tree at
-     or after the rules' commit, and no earlier read of the set;
+The edit-cost read (rules 1 and 3), now; nothing is scored before step 1 has dropped the songs it flags:
+  0. preflight, reads nothing: binaries, models, a clean tree at or after the rules' commit, and no earlier
+     read of the set;
   1. the alignment check (`sona-eval-ust-align --split S --write`: 35 ms shift / 30 ms drift): the read's ledger
      entry; flagged songs are dropped, and fewer than MIN_SONGS aligned songs stop the read;
   3. the shipped stage D (`sona-eval-cellstage --model cellstage-D --edit-cost --dump`);
-  3b. the lyric inputs, built only now (option B: no UST content before the read), for the aligned songs that
-     have a lyric text, from D's dump (the UST's moras): 01's lines (`align_lines.py`), 14's texts (`texts.py`),
-     the three Viterbis on the cached emissions (`ctc_align.py`), 14's energy line ends (`line_times.py`, no
-     scoring), then S1's member onsets (`s1_onsets.py check` + `produce`, offsets frozen from dev);
-  4. stage C with T (`--model cellstage-19C --edit-cost --settle-near-ties --dump`) and, in the same run when
-     every aligned song has a lyric text, 14's fit and L (`--lyric-placement --lyric-lines --lyric-line-times
-     --lyric-onsets`; C+L is the row ending "(S1)"); otherwise L runs on the songs with a text (`SONA_ONLY`);
-  5. the rows: D, C and C+T from the dumps (Python, checked equal to the Rust reports), C+L14 and C+L from the
-     Rust report;
-  6. rules 1-3's verdicts (issue 17, "Pre-registered rules"), printed and written to OUT/verdicts.json.
+  4. stage C with T (`--model cellstage-19C --edit-cost --settle-near-ties --dump`): no lyric at all;
+  5. the rows: D, C and C+T from the dumps (Python, checked equal to the Rust reports), kept per song in
+     OUT/verdicts.json for the lyric read;
+  6. rule 1's verdict (it applies at once) and rule 3's (recorded; applied after the lyric read).
 
-The frame read (rule 4), `--frame-only`, later, once `labels.py check` passes: bar 1 (`sona-eval-frame
---estimate-bar-one`, arms A today / B harmony / C Beat This) on the songs step 1 kept (read back from the
-manifest, never re-checked), its own ledger entry; verdict in OUT/verdicts-frame.json.
+The lyric read (rule 2), `--lyric-only --edit-read DIR`, once every song step 1 kept has a lyric text:
+  0. preflight: the edit-cost read in the ledger and committed, a lyric text for every aligned song, the
+     audio-only lyric inputs (`audio_inputs.py`), the frozen S1 offsets, the edit-cost read's verdicts;
+  3. stage D again, for its dump (deterministic);
+  3b. the lyric inputs, built only now from D's dump (the UST's moras): 01's lines (`align_lines.py`), 14's texts
+     (`texts.py`), the three Viterbis on the cached emissions (`ctc_align.py`), 14's energy line ends
+     (`line_times.py`, no scoring), S1's member onsets (`s1_onsets.py check` + `produce`, offsets frozen from dev);
+  4. stage C with T, 14's fit and L in one run (`--settle-near-ties --lyric-placement --lyric-lines
+     --lyric-line-times --lyric-onsets`; C+L is the row ending "(S1)");
+  5. the rows; D, C and C+T must equal the edit-cost read's per song, or the read stops;
+  6. rule 2's verdict, rule 3's final application, and the reported rows with L; OUT/verdicts-lyric.json.
+Step 1's alignment is read back from the manifest, never re-checked.
 
-Ledger: the first tool of the edit-cost read logs the read; the others log "same sitting" re-reads. `--resume`
-(after a failed run, only when the ledger already holds this set) re-runs from step 1 if it never finished, else
-from step 3, every tool logging a re-read marked "(resumed after a failed run)". On dev nothing is logged, the
-alignment check must leave the manifest unchanged (checked), and `--stop-after STEP` simulates a crash.
+The frame read (rule 4), `--frame-only`, once `labels.py check` passes: bar 1 (`sona-eval-frame
+--estimate-bar-one`, arms A today / B harmony / C Beat This) on the songs step 1 kept; OUT/verdicts-frame.json.
+
+Ledger: the edit-cost read's first tool logs the read, its other tools "same sitting" re-reads; the lyric and frame
+reads log re-reads naming their rule. `--resume` (after a failed run): the edit-cost read re-runs from step 1 if it
+never finished, else from step 3; the lyric read re-runs from step 3; each tool then logs a re-read marked "resumed
+after a failed run". On dev nothing is logged, the alignment check must leave the manifest unchanged (checked),
+and `--stop-after STEP` simulates a crash.
 
 Usage (see issue 17 for the full commands):
-  python3 -I read.py --split holdout4 --reason "…" --rules-commit SHA --out DIR --audio-work DIR [--resume]
+  python3 -I read.py --split holdout4 --reason "…" --rules-commit SHA --out DIR [--resume]
+  python3 -I read.py --split holdout4 --lyric-only --edit-read DIR --reason "…" --rules-commit SHA --out DIR \\
+      --audio-work DIR [--resume]
   python3 -I read.py --split holdout4 --frame-only --reason "…" --rules-commit SHA --labels FILE --out DIR
-Options: --allow-partial-lyrics (holdout: let rule 2 read only the songs with a lyric text), --lyrics DIR (lyric texts and index.json; default $SONA_LYRICS_DIR, else data/pifuyuu-lyrics),
+Options: --preflight-only (step 0 alone: reads nothing, logs nothing), --lyrics DIR (lyric texts and index.json; default $SONA_LYRICS_DIR, else data/pifuyuu-lyrics),
   --s1-offsets FILE, --bin DIR, --stage-d DIR, --stage-c DIR, --beat-this PROGRAM, --fugashi-python, --ctc-python.
 Everything it writes under OUT holds UST- or lyric-derived content: keep OUT outside the repo.
 """
@@ -107,17 +115,27 @@ def tool(cmd, out_path, env_extra=None):
 
 # ---- the ledger: who may read, and what each tool logs (pure; tests in test_read.py) ----
 
-def ledger_policy(mode, holdout, resume, prior_reads, unverified, songs):
+LYRIC_READ = "rule 2, the lyric read"
+
+
+def ledger_policy(mode, holdout, resume, prior_reads, unverified, songs, prior_lyric_reads=0):
     """Whether this invocation may start, and where: (errors, first step). `prior_reads`: the ledger's entries for
-    this set; `unverified`: the split's songs whose alignment step 1 has not settled; `songs`: the split's size."""
+    this set; `unverified`: the split's songs whose alignment step 1 has not settled; `songs`: the split's size;
+    `prior_lyric_reads`: the entries the lyric read logged."""
     if not holdout:
-        return [], "2" if mode == "frame" else "3" if resume else "1"
+        return [], {"frame": "2", "lyric": "3"}.get(mode, "3" if resume else "1")
+    if mode in ("frame", "lyric") and (prior_reads == 0 or unverified):
+        return [f"the {mode} read reuses step 1's alignment: run the edit-cost read first (and commit its ledger entry)"], None
     if mode == "frame":
         if resume:
-            return ["--resume is for the edit-cost read; the frame read runs once"], None
-        if prior_reads == 0 or unverified:
-            return ["the frame read reuses step 1's alignment: run the edit-cost read first (and commit its ledger entry)"], None
+            return ["--resume is for the edit-cost and lyric reads; the frame read runs once"], None
         return [], "2"
+    if mode == "lyric":
+        if resume and not prior_lyric_reads:
+            return ["nothing to resume: the ledger has no lyric read of this set"], None
+        if not resume and prior_lyric_reads:
+            return [f"the lyric read already ran ({prior_lyric_reads} ledger entries): --resume only after a failed run"], None
+        return [], "3"
     if not resume:
         if prior_reads:
             return [f"this set was already read {prior_reads} time(s): this is not the one read (--resume only after a failed run)"], None
@@ -127,6 +145,12 @@ def ledger_policy(mode, holdout, resume, prior_reads, unverified, songs):
     if not prior_reads:
         return ["nothing to resume: the ledger has no read of this set"], None
     return [], ("1" if unverified else "3")
+
+
+def missing_texts(aligned, has_text):
+    """The lyric read needs a text for every song step 1 kept: no partial mode."""
+    missing = [sid for sid in aligned if not has_text(sid)]
+    return [f"{len(missing)} of {len(aligned)} aligned songs have no lyric text ({', '.join(missing)}): the lyric read waits for them"] if missing else []
 
 
 class Ledger:
@@ -142,9 +166,9 @@ class Ledger:
         self.calls += 1
         if self.mode == "edit" and not self.resume and self.calls == 1:
             return ["--reason", self.reason]
-        why = {"frame": "rule 4, bar 1: the frame read", "edit": "same sitting"}[self.mode]
+        why = {"frame": "rule 4, bar 1: the frame read", "lyric": LYRIC_READ, "edit": "same sitting"}[self.mode]
         if self.resume:
-            why = "resumed after a failed run"
+            why = f"{LYRIC_READ}, resumed after a failed run" if self.mode == "lyric" else "resumed after a failed run"
         return ["--reason", f"{self.reason} ({why}: {step})", "--reread"]
 
 
@@ -185,17 +209,26 @@ def preflight(o):
         for m in (o["stage_d"], o["stage_c"]):
             if not os.path.exists(os.path.join(m, "cellstage.json")):
                 errs.append(f"no model in {m}")
+    if o["mode"] == "lyric":
+        aligned = [s["id"] for s in songs if status(s).startswith("aligned")]
+        errs += missing_texts(aligned, lambda sid: has_text(o, sid))
+        edit = os.path.join(o["edit_read"] or "", "verdicts.json")
+        if not o["edit_read"] or not os.path.exists(edit):
+            errs.append("--edit-read DIR: the edit-cost read's output folder (its verdicts.json) is required")
+        else:
+            v = json.load(open(edit))
+            if v.get("mode") != "edit" or v.get("split") != o["split"] or "stopped" in v or "rows" not in v:
+                errs.append(f"{edit} is not a finished edit-cost read of {o['split']}")
+            elif sorted(v.get("aligned", [])) != sorted(aligned):
+                errs.append(f"{edit}: its aligned songs differ from the manifest's")
         if not os.path.exists(o["s1_offsets"]):
             errs.append(f"no frozen S1 offsets {o['s1_offsets']} (ticket 21: s1_onsets.py freeze, on dev)")
         for py in (o["fugashi_python"], o["ctc_python"]):
             if not os.access(py, os.X_OK):
                 errs.append(f"no python {py}")
-        live = [s["id"] for s in songs if not status(s).startswith("flagged")]
-        o["texts"] = [sid for sid in live if has_text(o, sid)]
-        if o["holdout"] and len(o["texts"]) < len(live) and not o["partial_lyrics"]:
-            errs.append(f"{len(live) - len(o['texts'])} of {len(live)} songs have no lyric text, so rule 2 would read only "
-                        f"{len(o['texts'])}: fetch them, or pass --allow-partial-lyrics if the rules say so")
-        for sid in o["texts"]:
+        if not o["audio_work"]:
+            errs.append("--audio-work DIR (audio_inputs.py's emissions and loudness) is required")
+        for sid in aligned if o["audio_work"] else []:
             need = [os.path.join("rms", sid + ".json")] + [os.path.join("emis", f"{m}-lead", sid + ".npy.json") for m in S1_MODELS]
             errs += [f"audio input missing: {os.path.join(o['audio_work'], n)}" for n in need if not os.path.exists(os.path.join(o["audio_work"], n))]
     if o["holdout"]:
@@ -209,7 +242,8 @@ def preflight(o):
             errs.append("--reason is required")
     prior = sum(json.loads(l).get("set") == song_set(o["split"]) for l in ledger_lines())
     unverified = sum(status(s).startswith("unverified") for s in songs)
-    pol, start = ledger_policy(o["mode"], o["holdout"], o["resume"], prior, unverified, len(songs))
+    prior_lyric = sum(json.loads(l).get("set") == song_set(o["split"]) and LYRIC_READ in json.loads(l).get("reason", "") for l in ledger_lines())
+    pol, start = ledger_policy(o["mode"], o["holdout"], o["resume"], prior, unverified, len(songs), prior_lyric)
     return errs + pol, st, start
 
 
@@ -348,11 +382,11 @@ def frame_read(o, aligned):
 
 # ---- steps 3-6: edit cost ----
 
-def cellstage(o, name, model, extra, only=None):
+def cellstage(o, name, model, extra):
     dump = os.path.join(o["out"], "dump-" + name)
     report = os.path.join(o["out"], f"cellstage-{name}.txt")
     cmd = [os.path.join(o["bin"], "sona-eval-cellstage"), "--model", model, "--edit-cost", "--split", o["split"], "--dump", dump] + extra
-    tool(cmd + o["ledger"].args(f"stage {name}"), report, {"SONA_ONLY": ",".join(only)} if only is not None else None)
+    tool(cmd + o["ledger"].args(f"stage {name}"), report)
     return dump, report
 
 
@@ -411,49 +445,64 @@ def check_rows(M, rows, songs, report, keys):
         raise ReadStopped("read stopped: the Python rows do not reproduce the Rust report:\n  " + "\n  ".join(bad))
 
 
-def edit_cost_rules(M, rows, ids, lyric_ids, low_ids):
+def judge(M, ref, new, names):
+    """One arm against its reference: the paired song bootstrap, criteria (a) and (b), and the reported extras."""
     B = M.B
+    ok, hi, d = B.passes(ref, new)
+    _, lo, _ = M.L.paired(ref, new, B.cpm, pool_fn=M.S.pool_e)
+    _, _, hi4 = M.L.paired(ref, new, B.cpm4, pool_fn=M.S.pool_e)
+    dc, dclo, dchi = M.L.paired(ref, new, B.clean, pool_fn=M.S.pool_e)
+    miss = lambda rs: M.S.pool_e(rs)["counts"].get("missing", 0)
+    moved = [abs(B.cost_w(n["counts"]) - B.cost_w(r["counts"])) for r, n in zip(ref, new)]
+    k = max(range(len(moved)), key=moved.__getitem__)
+    keep = [i for i in range(len(ref)) if i != k]
+    wd, wlo, whi = M.L.paired([ref[i] for i in keep], [new[i] for i in keep], B.cpm, pool_fn=M.S.pool_e)
+    return {"songs": len(ref), "ref": B.cpm(M.S.pool_e(ref)), "new": B.cpm(M.S.pool_e(new)), "delta": d, "ci": [lo, hi], "upper_at_missing_4": hi4,
+            "missing": [miss(ref), miss(new)], "clean": [B.clean(M.S.pool_e(ref)), B.clean(M.S.pool_e(new))], "clean_delta": [dc, dclo, dchi],
+            "criteria": {"upper bound < 0": hi < 0, "missing does not rise, or upper bound < 0 at missing 4": miss(new) <= miss(ref) or hi4 < 0},
+            "passes": ok, "without_largest": {"song": names[k], "delta": wd, "ci": [wlo, whi]}}
 
-    def judge(ref, new, names):
-        ok, hi, d = B.passes(ref, new)
-        _, lo, _ = M.L.paired(ref, new, B.cpm, pool_fn=M.S.pool_e)
-        _, _, hi4 = M.L.paired(ref, new, B.cpm4, pool_fn=M.S.pool_e)
-        dc, dclo, dchi = M.L.paired(ref, new, B.clean, pool_fn=M.S.pool_e)
-        miss = lambda rs: M.S.pool_e(rs)["counts"].get("missing", 0)
-        moved = [abs(B.cost_w(n["counts"]) - B.cost_w(r["counts"])) for r, n in zip(ref, new)]
-        k = max(range(len(moved)), key=moved.__getitem__)
-        keep = [i for i in range(len(ref)) if i != k]
-        wd, wlo, whi = M.L.paired([ref[i] for i in keep], [new[i] for i in keep], B.cpm, pool_fn=M.S.pool_e)
-        return {"songs": len(ref), "ref": B.cpm(M.S.pool_e(ref)), "new": B.cpm(M.S.pool_e(new)), "delta": d, "ci": [lo, hi], "upper_at_missing_4": hi4,
-                "missing": [miss(ref), miss(new)], "clean": [B.clean(M.S.pool_e(ref)), B.clean(M.S.pool_e(new))], "clean_delta": [dc, dclo, dchi],
-                "criteria": {"upper bound < 0": hi < 0, "missing does not rise, or upper bound < 0 at missing 4": miss(new) <= miss(ref) or hi4 < 0},
-                "passes": ok, "without_largest": {"song": names[k], "delta": wd, "ci": [wlo, whi]}}
 
-    sub = [ids.index(i) for i in lyric_ids]
-    pick = lambda rs: [rs[i] for i in sub]
-    r1 = judge(rows["D"], rows["C"], ids)
-    r2 = judge(pick(rows["C"]), rows["C+L"], lyric_ids)
-    r3 = judge(rows["C"], rows["C+T"], ids)
+def rule3_applies(rule1_passes, rule2_passes, rule3_passes):
+    """Rule 3 after the lyric read: T ships iff rule 1 passes, rule 2 fails and T passes."""
+    if not rule1_passes:
+        return "T does not ship: C does not ship (rule 1)"
+    if rule2_passes:
+        return "T stays opt-in: L passed (rule 2)"
+    return "T ships on C" if rule3_passes else "T stays opt-in: it fails rule 3"
+
+
+def edit_rules(M, rows, ids):
+    """Rules 1 and 3 from the edit-cost read; rule 3 is recorded and applied after the lyric read."""
+    r1 = judge(M, rows["D"], rows["C"], ids)
+    r3 = judge(M, rows["C"], rows["C+T"], ids)
     r1["verdict"] = "C becomes the default stage" if r1["passes"] else "D stays the default stage; C stays opt-in"
-    if not r1["passes"]:
-        r2["verdict"] = f"recorded only: L {'passes' if r2['passes'] else 'fails'} on C, but C does not ship, so nothing ships from L"
-        r3["verdict"] = "recorded only (C does not ship)"
+    r3["verdict"] = (f"recorded: T {'passes' if r3['passes'] else 'fails'} on C; applied after the lyric read "
+                     "(T ships iff rule 1 passes and rule 2 fails)")
+    return {"1: C vs D": r1, "3: T on C vs C (decided after the lyric read)": r3}
+
+
+def lyric_rules(M, rows, ids, low_ids, edit):
+    """Rule 2, rule 3's final application, and the reported rows with L."""
+    r1_passes = edit["edit_cost"]["1: C vs D"]["passes"]
+    r3_passes = edit["edit_cost"]["3: T on C vs C (decided after the lyric read)"]["passes"]
+    r2 = judge(M, rows["C"], rows["C+L"], ids)
+    if not r1_passes:
+        r2["verdict"] = f"recorded only: L {'passes' if r2['passes'] else 'fails'} on C, but C does not ship (rule 1), so nothing ships from L"
     elif r2["passes"]:
         r2["verdict"] = "L (14's fit + S1) ships on C; the lyric runtime (three CTCs) is the user's call"
-        r3["verdict"] = "not judged (L passed); T stays opt-in"
     else:
         r2["verdict"] = "L fails: stays opt-in"
-        r3["verdict"] = "T ships on C" if r3["passes"] else "T fails: stays opt-in"
-    extra = {"D -> C+L (the bundle vs today)": judge(pick(rows["D"]), rows["C+L"], lyric_ids),
-             "C -> C+L14 (14's fit alone)": judge(pick(rows["C"]), rows["C+L14"], lyric_ids),
-             "C+L14 -> C+L (S1 on top)": judge(rows["C+L14"], rows["C+L"], lyric_ids)}
-    sure = [j for j, sid in enumerate(lyric_ids) if sid not in low_ids]
+    extra = {"D -> C+L (the bundle vs today)": judge(M, rows["D"], rows["C+L"], ids),
+             "C -> C+L14 (14's fit alone)": judge(M, rows["C"], rows["C+L14"], ids),
+             "C+L14 -> C+L (S1 on top)": judge(M, rows["C+L14"], rows["C+L"], ids)}
+    sure = [j for j, sid in enumerate(ids) if sid not in low_ids]
     if low_ids and sure:
         extra[f"L on C without the low-confidence lyric texts ({', '.join(low_ids)})"] = judge(
-            [pick(rows["C"])[j] for j in sure], [rows["C+L"][j] for j in sure], [lyric_ids[j] for j in sure])
+            M, [rows["C"][j] for j in sure], [rows["C+L"][j] for j in sure], [ids[j] for j in sure])
     else:
         extra["L on C without the low-confidence lyric texts"] = {"note": "no lyric text is low-confidence: the same as rule 2" if not low_ids else "every text is low-confidence"}
-    return {"1: C vs D": r1, "2: L on C vs C": r2, "3: T on C vs C (only if L fails)": r3}, extra
+    return {"2: L on C vs C": r2}, {"rule 3, applied": rule3_applies(r1_passes, r2["passes"], r3_passes)}, extra
 
 
 def fmt_rule(name, r):
@@ -468,6 +517,30 @@ def fmt_rule(name, r):
             + ("".join(f"\n      [{'x' if v else ' '}] {k}" for k, v in r["criteria"].items()) + f"\n      verdict: {r['verdict']}" if "verdict" in r else ""))
 
 
+def row_json(ids, rows):
+    return [dict(id=sid, **r) for sid, r in zip(ids, rows)]
+
+
+def scored_rows(o, M, dump_d, report_d, dump_c, report_c, aligned):
+    songs_d, songs_c = M.load(dump_d), M.load(dump_c)
+    ids = [s["id"] for s in songs_c]
+    if [s["id"] for s in songs_d] != ids or sorted(ids) != sorted(aligned):
+        raise ReadStopped(f"read stopped: scored songs differ from the aligned ones: D {[s['id'] for s in songs_d]} C {ids}")
+    rows = {"D": M.plain(songs_d, "stage"), "C": M.plain(songs_c, "stage"), "C+T": M.plain(songs_c, "stage_settled")}
+    check_rows(M, {"C": rows["D"]}, songs_d, report_d, ["C"])
+    check_rows(M, rows, songs_c, report_c, ["C", "C+T"])
+    return ids, songs_c, rows
+
+
+def print_rules(rules, extra=None):
+    for k, r in rules.items():
+        say(fmt_rule(k, r))
+    if extra:
+        say("  reported, deciding nothing:")
+        for k, r in extra.items():
+            say(fmt_rule(k, r))
+
+
 def edit_read(o, start, verdicts):
     say("\n1. alignment check (35 ms shift / 30 ms drift): flagged songs are dropped before any score")
     if start != "1":
@@ -480,59 +553,60 @@ def edit_read(o, start, verdicts):
             raise ReadStopped(f"READ STOPS: {len(aligned)} aligned songs < {MIN_SONGS} (ticket 08)")
         say(f"  (rehearsal on {o['split']}: {len(aligned)} < {MIN_SONGS} is expected; going on)")
     stop_at(o, "1")
-
     say("\n3. stage D (shipped)")
     dump_d, report_d = cellstage(o, "D", o["stage_d"], [])
     stop_at(o, "3")
-    lyric_ids = [sid for sid in aligned if has_text(o, sid)]
-    say(f"\n3b. the lyric inputs, built now from D's dump, for the {len(lyric_ids)} aligned songs with a lyric text"
-        + (f" (none for {', '.join(sid for sid in aligned if sid not in lyric_ids)})" if len(lyric_ids) < len(aligned) else ""))
-    if not lyric_ids:
-        raise ReadStopped("read stopped: no aligned song has a lyric text")
-    lyric_args = build_lyric_inputs(o, dump_d, lyric_ids)
-    stop_at(o, "3b")
-
-    say("\n4. stage C with T" + (", 14's fit and L in one run" if len(lyric_ids) == len(aligned) else "; then 14's fit and L on the songs with a text"))
-    if len(lyric_ids) == len(aligned):
-        dump_c, report_c = cellstage(o, "C", o["stage_c"], ["--settle-near-ties"] + lyric_args)
-        report_l = report_c
-    else:
-        dump_c, report_c = cellstage(o, "C", o["stage_c"], ["--settle-near-ties"])
-        _, report_l = cellstage(o, "C-L", o["stage_c"], lyric_args, only=lyric_ids)
+    say("\n4. stage C with T (no lyric in this read)")
+    dump_c, report_c = cellstage(o, "C", o["stage_c"], ["--settle-near-ties"])
     stop_at(o, "4")
-
     say("\n5. rows")
     M = Model(o)
-    songs_d, songs_c = M.load(dump_d), M.load(dump_c)
-    ids = [s["id"] for s in songs_c]
-    if [s["id"] for s in songs_d] != ids or sorted(ids) != sorted(aligned):
-        raise ReadStopped(f"read stopped: scored songs differ from the aligned ones: D {[s['id'] for s in songs_d]} C {ids}")
-    lyric_ids = [sid for sid in ids if sid in lyric_ids]
-    rows = {"D": M.plain(songs_d, "stage"), "C": M.plain(songs_c, "stage"), "C+T": M.plain(songs_c, "stage_settled")}
-    check_rows(M, {"C": rows["D"]}, songs_d, report_d, ["C"])
-    check_rows(M, rows, songs_c, report_c, ["C", "C+T"])
-    songs_l = [s for s in songs_c if s["id"] in lyric_ids]
-    plain_l = [rows["C"][ids.index(s["id"])] for s in songs_l]
-    if report_l != report_c:
-        check_rows(M, {"C": plain_l}, songs_l, report_l, ["C"])
-    rows["C+L14"] = M.rust_rows(report_l, "C+L14", songs_l, plain_l)
-    rows["C+L"] = M.rust_rows(report_l, "C+L", songs_l, plain_l)
-    say(f"  D, C, C+T: Python rows = Rust reports on {len(ids)} songs; C+L14 and C+L from the Rust report on {len(lyric_ids)}")
-
-    say("\n6. verdicts (rules 1-3: issue 17, 'Pre-registered rules')")
-    index = lyric_index(o)
-    low = [sid for sid in lyric_ids if index.get(sid, {}).get("confidence") == "low"]
-    rules, extra = edit_cost_rules(M, rows, ids, lyric_ids, low)
-    verdicts.update(lyric_songs=lyric_ids, low_confidence_lyrics=low, edit_cost=rules, edit_cost_reported=extra)
-    for k, r in rules.items():
-        say(fmt_rule(k, r))
-    say("  reported, deciding nothing:")
-    for k, r in extra.items():
-        say(fmt_rule(k, r))
-    say("\n  per song (cost/min): D · C · C+T · C+L")
+    ids, _, rows = scored_rows(o, M, dump_d, report_d, dump_c, report_c, aligned)
+    say(f"  D, C, C+T: Python rows = Rust reports on {len(ids)} songs")
+    verdicts["rows"] = {k: row_json(ids, v) for k, v in rows.items()}
+    say("\n6. verdicts (rules 1 and 3: issue 17, 'Pre-registered rules')")
+    rules = edit_rules(M, rows, ids)
+    verdicts["edit_cost"] = rules
+    print_rules(rules)
+    say("\n  per song (cost/min): D · C · C+T")
     for i, sid in enumerate(ids):
-        cl = f"{M.B.cpm(M.S.pool_e([rows['C+L'][lyric_ids.index(sid)]])):6.1f}" if sid in lyric_ids else "     -"
-        say(f"    {sid:34} " + "  ".join(f"{M.B.cpm(M.S.pool_e([rows[k][i]])):6.1f}" for k in ("D", "C", "C+T")) + "  " + cl)
+        say(f"    {sid:34} " + "  ".join(f"{M.B.cpm(M.S.pool_e([rows[k][i]])):6.1f}" for k in ("D", "C", "C+T")))
+
+
+def lyric_read(o, verdicts):
+    edit = json.load(open(os.path.join(o["edit_read"], "verdicts.json")))
+    aligned, _ = alignment(o, False)
+    verdicts.update(aligned=aligned, edit_read=o["edit_read"], edit_commit=edit.get("commit"))
+    say(f"  step 1 kept {len(aligned)} songs (from the manifest); every one has a lyric text")
+    say("\n3. stage D again, for its dump (deterministic)")
+    dump_d, report_d = cellstage(o, "D", o["stage_d"], [])
+    stop_at(o, "3")
+    say(f"\n3b. the lyric inputs, built now from D's dump, for the {len(aligned)} aligned songs")
+    lyric_args = build_lyric_inputs(o, dump_d, aligned)
+    stop_at(o, "3b")
+    say("\n4. stage C with T, 14's fit and L in one run")
+    dump_c, report_c = cellstage(o, "C", o["stage_c"], ["--settle-near-ties"] + lyric_args)
+    stop_at(o, "4")
+    say("\n5. rows")
+    M = Model(o)
+    ids, songs_c, rows = scored_rows(o, M, dump_d, report_d, dump_c, report_c, aligned)
+    bad = [f"{k} {r['id']}" for k in ("D", "C", "C+T") for r, mine in zip(edit["rows"][k], row_json(ids, rows[k])) if r != mine]
+    if [r["id"] for r in edit["rows"]["C"]] != ids or bad:
+        raise ReadStopped(f"read stopped: D, C or C+T differ from the edit-cost read's rows ({', '.join(bad) or 'song order'})")
+    say(f"  D, C, C+T: Python rows = Rust reports = the edit-cost read's rows, on {len(ids)} songs")
+    rows["C+L14"] = M.rust_rows(report_c, "C+L14", songs_c, rows["C"])
+    rows["C+L"] = M.rust_rows(report_c, "C+L", songs_c, rows["C"])
+    say("\n6. verdicts (rule 2, and rule 3 applied: issue 17, 'Pre-registered rules')")
+    index = lyric_index(o)
+    low = [sid for sid in ids if index.get(sid, {}).get("confidence") == "low"]
+    rules, applied, extra = lyric_rules(M, rows, ids, low, edit)
+    verdicts.update(low_confidence_lyrics=low, lyric=rules, applied=applied, lyric_reported=extra,
+                    rows={k: row_json(ids, rows[k]) for k in ("C+L14", "C+L")})
+    print_rules(rules, extra)
+    say(f"  rule 3, applied: {applied['rule 3, applied']}")
+    say("\n  per song (cost/min): D · C · C+L14 · C+L")
+    for i, sid in enumerate(ids):
+        say(f"    {sid:34} " + "  ".join(f"{M.B.cpm(M.S.pool_e([rows[k][i]])):6.1f}" for k in ("D", "C", "C+L14", "C+L")))
 
 
 def stop_at(o, step):
@@ -542,25 +616,27 @@ def stop_at(o, step):
 
 def main():
     split = arg("--split", "dev")
-    mode = "frame" if "--frame-only" in sys.argv else "edit"
+    mode = "frame" if "--frame-only" in sys.argv else "lyric" if "--lyric-only" in sys.argv else "edit"
+    if "--frame-only" in sys.argv and "--lyric-only" in sys.argv:
+        sys.exit("--frame-only and --lyric-only are two separate reads")
     o = {"split": split, "holdout": split != "dev", "mode": mode, "reason": arg("--reason"), "rules_commit": arg("--rules-commit"),
          "labels": arg("--labels"), "out": arg("--out"), "bin": arg("--bin", os.path.join(REPO, "target/release")), "resume": "--resume" in sys.argv,
          "stage_d": arg("--stage-d", os.path.expanduser("~/.cache/sona/cellstage-D")),
          "stage_c": arg("--stage-c", os.path.expanduser("~/.cache/sona/cellstage-19C")),
          "beat_this": arg("--beat-this", os.path.expanduser("~/.local/share/sona/separator-venv/bin/sona-beat-this")),
          "lyrics": arg("--lyrics", os.environ.get("SONA_LYRICS_DIR") or os.path.join(REPO, "crates/sona-eval/data/pifuyuu-lyrics")),
-         "audio_work": arg("--audio-work"), "stop_after": arg("--stop-after"), "partial_lyrics": "--allow-partial-lyrics" in sys.argv,
+         "audio_work": arg("--audio-work"), "stop_after": arg("--stop-after"), "edit_read": arg("--edit-read"),
          "fugashi_python": arg("--fugashi-python", os.path.expanduser("~/.cache/sona/lyric-asr/venv/bin/python")),
          "ctc_python": arg("--ctc-python", os.path.expanduser("~/.cache/sona/line-align/venv/bin/python")),
          "s1_offsets": arg("--s1-offsets", os.path.expanduser("~/.cache/sona/lyric-onsets/offsets.json"))}
-    if not o["out"] or (mode == "edit" and not o["audio_work"]):
+    if not o["out"]:
         sys.exit(__doc__)
     if o["stop_after"] and (o["holdout"] or o["stop_after"] not in STEPS):
         sys.exit(f"--stop-after is for rehearsals on dev, one of {', '.join(STEPS)}")
     os.makedirs(o["out"], exist_ok=True)
     o["ledger"] = Ledger(o["holdout"], o["reason"], mode, o["resume"])
     started = time.time()
-    name = "edit-cost read (rules 1-3)" if mode == "edit" else "frame read (rule 4)"
+    name = {"edit": "edit-cost read (rules 1 and 3)", "lyric": "lyric read (rule 2)", "frame": "frame read (rule 4)"}[mode]
     say(f"== the {split} {name}{' (resumed)' if o['resume'] else ''}, {time.strftime('%Y-%m-%d %H:%M')}, commit {git('rev-parse', '--short', 'HEAD')} ==")
     say("\n0. preflight (reads nothing)")
     errs, st, start = preflight(o)
@@ -568,13 +644,18 @@ def main():
         say("  " + e)
     if errs:
         sys.exit("read not started: fix the above")
+    if "--preflight-only" in sys.argv:
+        say(f"  preflight ok: the read would start at step {start} (--preflight-only: nothing read)")
+        return
     ledger0 = len(ledger_lines())
     verdicts = {"split": split, "mode": mode, "commit": git("rev-parse", "--short", "HEAD"), "rules_commit": o["rules_commit"], "resumed": o["resume"]}
-    out_name = "verdicts.json" if mode == "edit" else "verdicts-frame.json"
+    out_name = {"edit": "verdicts.json", "lyric": "verdicts-lyric.json", "frame": "verdicts-frame.json"}[mode]
     try:
         if mode == "edit":
-            say(f"  ok: {len(LB.songs_of(split))} songs, {len(o['texts'])} with a lyric text; starting at step {start}")
+            say(f"  ok: {len(LB.songs_of(split))} songs; starting at step {start}")
             edit_read(o, start, verdicts)
+        elif mode == "lyric":
+            lyric_read(o, verdicts)
         else:
             aligned, _ = alignment(o, False)
             say(f"  ok: labels {len(st['4/4'])} in 4/4 ({len(st['confirmed'])} confirmed), {len(st['other'])} not 4/4; step 1 kept {len(aligned)} songs")

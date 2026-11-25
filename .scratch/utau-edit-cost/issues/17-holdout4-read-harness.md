@@ -23,47 +23,81 @@ holdout4 until the user has labelled and the rules are final.
 
 ## Comments
 
-### Pre-registered rules (approved by the lead 2026-11-25 with the edits below; agent, 2026-11-25)
+### Pre-registered rules (approved by the lead 2026-11-25; agent, 2026-11-25)
 
-Status: **approved, final once the lead commits them** (one question first: rule 2 and the missing lyric texts, in "Round 2" below). The commit that makes them final
-is the reads' `--rules-commit`; `read.py` refuses to run on holdout4 from any commit that does not descend from
-it. The lead's edits: clean measures stay reported and do not decide; the reported rows gain L without the songs
-whose lyric text is low-confidence; L's inputs are built inside the read (option B); rule 4 is read separately,
-after the user labels. Holdout4 has not been read: the ledger has no holdout4 entry, no holdout4 UST note, onset
-or lyric has been opened, and no scorer has run on it.
+Status: **approved, final once the lead commits them.** The commit that makes them final is every read's
+`--rules-commit`, and `read.py` refuses to run on holdout4 from a commit that does not descend from it.
 
-**Two reads, each run once** by `crates/sona-eval/scripts/holdout4-read/read.py`.
+The lead's edits of 2026-11-25:
 
-**The edit-cost read (rules 1–3), now:**
+- clean measures are reported and do not decide;
+- the reported rows add L without the songs whose lyric text is low-confidence;
+- L's inputs are built inside the read (option B);
+- rule 4 is read after the user labels;
+- rule 2 is read after every aligned song has a lyric text (the user's option c, "lyric step later").
 
-0. **Preflight, reading nothing.** Binaries, models, every song's lyric text and audio-only inputs (the three
-   CTCs' emissions and the lead's loudness, `audio_inputs.py`), the frozen S1 offsets, a clean tree descending
-   from the rules' commit, and no earlier read of the set.
+Holdout4 has not been read. The ledger has no holdout4 entry, no holdout4 UST note, onset or lyric has been
+opened, and no scorer has run on it.
+
+**Three reads, each run once** by `crates/sona-eval/scripts/holdout4-read/read.py`:
+
+1. **The edit-cost read** (rules 1 and 3), now.
+2. **The lyric read** (rule 2), once every aligned song has a lyric text.
+3. **The frame read** (rule 4), after the user labels.
+
+The later two reuse the edit-cost read's step-1 alignment from the manifest and never re-check it. Each is its
+own logged re-read, with the same `--rules-commit`, and each is refused until the edit-cost read is in the
+ledger and committed.
+
+**The edit-cost read: no lyric of any kind.**
+
+0. **Preflight, reading nothing.** Binaries, models, a clean tree descending from the rules' commit, and no
+   earlier read of the set.
 1. **Alignment (08).** `sona-eval-ust-align --split holdout4 --write` flags a song for `|median delta| > 35 ms`,
-   `|drift| > 30 ms` or fewer than 30 matched onsets. This writes the read's ledger entry. Flagged songs are
-   dropped before any score; **fewer than 20 aligned songs stop the read**, and the split counts as spent.
-3. **Stage D:** `sona-eval-cellstage --model ~/.cache/sona/cellstage-D --edit-cost --split holdout4 --dump …`.
-3b. **The lyric inputs, built now (option B)**, for the aligned songs that have a lyric text, from D's dump (the
-   UST's moras), exactly as 01, 14 and 21 built dev's: 01's lines (`align_lines.py`), 14's texts (`texts.py`), the
-   three Viterbis on the cached emissions (`ctc_align.py`), 14's energy line ends (`line_times.py`, which only
-   writes them), then `s1_onsets.py check` and `produce`.
-4. **Stage C:** `sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost --settle-near-ties
-   --lyric-placement --lyric-lines … --lyric-line-times … --lyric-onsets … --split holdout4 --dump …`. C+L is the
-   row ending "split and started at the moras' onsets (S1)", and C+L14 the row before it. When some aligned songs
-   have no lyric text, C and T run on all of them and 14's fit and L in a second run on the songs with a text
-   (`SONA_ONLY`).
-5. **Rows.** D, C and C+T from the dumps; before any verdict they must equal the Rust reports per song and class.
-6. **Verdicts** for rules 1–3, printed and written to `verdicts.json`.
+   `|drift| > 30 ms` or fewer than 30 matched onsets. This step writes the read's ledger entry.
+   - Flagged songs are dropped before any score.
+   - **Fewer than 20 aligned songs stop the read**, and the split counts as spent.
+2. **Stage D:** `sona-eval-cellstage --model ~/.cache/sona/cellstage-D --edit-cost --split holdout4 --dump …`.
+3. **Stage C with T only:** `sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost
+   --settle-near-ties --split holdout4 --dump …`. There is no 14 fit, no L and no `--lyric-onsets`. No L or C+L14
+   number for any holdout4 song is printed or written before the lyric read.
+4. **Rows.** D, C and C+T come from the dumps. They must equal the Rust reports per song and class, and they are
+   kept per song in `verdicts.json`.
+5. **Verdicts.**
+   - **Rule 1 applies at once:** if it passes, C becomes the default stage after this read.
+   - **Rule 3 is computed and recorded now, and applied after the lyric read.**
 
-Steps 3 and 4 log same-sitting re-reads. After a crash, `--resume` re-runs from step 1 if it never finished,
-else from step 3 (step 1's result read back from the manifest); every tool then logs a re-read marked "resumed
-after a failed run".
+Steps 2 and 3 log same-sitting re-reads. After a crash, `--resume` re-runs from step 1 if it never finished,
+else from step 2, with step 1's result read back from the manifest. Every tool then logs a re-read marked
+"resumed after a failed run".
 
-**The frame read (rule 4), later**, once the user has labelled (`labels.py check` passes, at least 5 confirmed):
-`read.py --frame-only` runs `sona-eval-frame --estimate-bar-one --split holdout4 --music-frames LABELS
---beat-this …` on the songs step 1 kept, read back from the manifest (never re-checked). It is its own ledger
-entry (a re-read naming rule 4), with the same `--rules-commit`. The Python copy of `frame::song_bootstrap` must
-equal the interval the Rust report prints, or the read stops.
+**The lyric read (`--lyric-only --edit-read DIR`), later.** It needs a lyric text for **every** song step 1
+kept; there is no partial mode.
+
+- **Where the 13 missing texts come from.** The user, or a later fetch, never the UST. They are gathered only
+  before the lyric read, without looking at any holdout4 score.
+- **Steps:**
+  1. Stage D again, for its dump (deterministic).
+  2. The lyric inputs, built from D's dump (the UST's moras), exactly as 01, 14 and 21 built dev's:
+     - 01's lines (`align_lines.py`);
+     - 14's texts (`texts.py`);
+     - the three Viterbis on the cached emissions (`ctc_align.py`);
+     - 14's energy line ends (`line_times.py`, which only writes them);
+     - `s1_onsets.py check` and `produce`.
+  3. Stage C with T, 14's fit and L in one run (`--settle-near-ties --lyric-placement --lyric-lines …
+     --lyric-line-times … --lyric-onsets …`). C+L is the row ending "split and started at the moras' onsets
+     (S1)", and C+L14 is the row before it.
+- **Before any verdict,** its D, C and C+T rows must equal the edit-cost read's `verdicts.json` per song and
+  class, or the read stops.
+- **It prints** rule 2's verdict, rule 3's final application and the reported rows that involve L.
+- **Ledger:** every tool logs a re-read naming rule 2. `--resume` re-runs it after a failed lyric read.
+
+**The frame read (`--frame-only`), after the labels** (`labels.py check` passes, at least 5 confirmed):
+
+- It runs `sona-eval-frame --estimate-bar-one --split holdout4 --music-frames LABELS --beat-this …` on the songs
+  step 1 kept.
+- Its ledger entry is a re-read naming rule 4.
+- The Python copy of `frame::song_bootstrap` must equal the interval the Rust report prints, or the read stops.
 
 **Statistic for rules 1–3.** Pooled edit cost per minute over the aligned songs, with the revised weights (extra
 1, pitch 3, octave 1, length 4, shift 4, moved 4, missing 2, chopped 4, joined 4). The stage runs on the onset
@@ -76,12 +110,12 @@ An arm **passes** when both of these hold:
 
 Clean measures are reported with their interval but do not decide (lead, 2026-11-25).
 
-- **Rule 1: C against today's shipped stage D.** `cellstage-19C` (switch cost 1.5, as in its `cellstage.json`)
-  against `cellstage-D`, on the same songs. **If C passes, it becomes the app's default stage.** If not, D stays
-  the default and C stays opt-in.
-- **Rule 2: L on top of C, against C with no lyric** (17's rule), on the aligned songs that have a lyric text
-  (their number is reported; C's rows are restricted to the same songs). L is 14's line fit (`fit_lines`) with
-  17's S1 start moves on top:
+- **Rule 1 (edit-cost read): C against today's shipped stage D.** `cellstage-19C` (switch cost 1.5, as in its
+  `cellstage.json`) against `cellstage-D`, on the same songs.
+  - If C passes, it becomes the app's default stage after the edit-cost read.
+  - If not, D stays the default and C stays opt-in.
+- **Rule 2 (lyric read): L on top of C, against C with no lyric** (17's rule), on every song step 1 kept. L is
+  14's line fit (`fit_lines`) with 17's S1 start moves on top:
   - the fit uses the lyrics CTC's line and space times with energy ends (`lyrics-lead-energy`);
   - S1 is ticket 21's port (`fit_lines_with_onsets`, `OnsetRule::S1`, `consensus_onsets`): the three CTCs'
     median, with per-class offsets frozen from dev, the lattice prior from GAME lead's starts, and abstention on
@@ -90,11 +124,13 @@ Clean measures are reported with their interval but do not decide (lead, 2026-11
   If rules 1 and 2 both pass, L ships on C as the default whenever a lyric is given. Its runtime (three CTCs,
   about 2 minutes per song on 4 cores) stays the user's call (lyrics-first map). If rule 1 fails, L's result is
   recorded but nothing ships from it, because it was measured on C and not on D.
-- **Rule 3: T (`--settle-near-ties`, `NearTieRule::default()`) on top of C, against C.** It is judged only if
-  rule 1 passes and rule 2 fails. If it passes, T ships on C. If L passes, T's row is reported, decides nothing,
-  and T stays opt-in: 20 showed it earns nothing on top of L. M (`--merge-unheard-pieces`) and 12's trim are not
-  read. They are deleted after the read (20).
-- **Rule 4: bar 1 (05 and 16), unchanged, read separately by the frame read.** The text is ticket 05's "Pre-registered decision rule for holdout4"
+- **Rule 3 (computed in the edit-cost read, decided after the lyric read): T (`--settle-near-ties`,
+  `NearTieRule::default()`) on top of C, against C.**
+  - T ships iff rule 1 passes, rule 2 fails and T passes.
+  - If L passes, T's row is reported, decides nothing, and T stays opt-in: 20 showed it earns nothing on top of L.
+  - Until the lyric read, T stays opt-in.
+  - M (`--merge-unheard-pieces`) and 12's trim are not read; they are deleted after the reads (20).
+- **Rule 4 (frame read): bar 1 (05 and 16), unchanged.** The text is ticket 05's "Pre-registered decision rule for holdout4"
   with arm C as added by 16: A today, B `bar_one::estimate`, C Beat This on B's beat, with criteria 1–3 and the
   default choice as written there. Three details are fixed here:
   - **Reference:** the ear labels in `~/.cache/sona/holdout4/labels.json`. That file is local and never
@@ -104,14 +140,14 @@ Clean measures are reported with their interval but do not decide (lead, 2026-11
     are needed; otherwise the frame rules decide nothing.
   - **"On the music's beat":** |residual| < ⅛ beat, from each arm's own bar offset.
 
-**Reported, deciding nothing:**
+**Reported, deciding nothing.** The rows with L are printed only by the lyric read.
 
 - D → C+L, the bundle against today.
 - C → C+L14 (14's fit alone) and C+L14 → C+L (S1 on top).
 - Rule 2's test again without the songs whose lyric text has `"confidence": "low"` in
   `data/pifuyuu-lyrics/index.json` (the lead, 2026-11-25).
 - Each judged Δ again without the song whose cost moved most (20's amaten check).
-- Every song's cost/min under D, C, C+T and C+L.
+- Every song's cost/min: D, C and C+T in the edit-cost read; D, C, C+L14 and C+L in the lyric read.
 - The dropped songs, with the reason for each.
 - B's passes split by confidence (≥ 0.75 and below) and C's split by vote share; C − B with its interval; the
   songs where B and C disagree.
@@ -275,7 +311,7 @@ above. Holdout4 is still unread: the ledger has no holdout4 entry, and no holdou
   instructed, I stopped there.
 - The holdout4 USTs were not opened.
 
-**The question before the rules are final: rule 2 on 11 songs at most.** With 13 texts missing, rule 2 would
+**The question before the rules are final: rule 2 on 11 songs at most** (answered 2026-11-25: option c, round 3). With 13 texts missing, rule 2 would
 read only the aligned songs among the 11, which is underpowered. Dev's 9 songs gave [−43.0, +10.7]. The options:
 
 - **a.** Read rule 2 on the songs with a text: pass `--allow-partial-lyrics`, and write it into rule 2.
@@ -286,33 +322,90 @@ read only the aligned songs among the 11, which is underpowered. Dev's 9 songs g
 Rules 1, 3 and 4 do not depend on this. I left the "final" commit to you, since rule 2's wording depends on the
 choice.
 
+### Round 3: the lyric step later (agent, 2026-11-25)
+
+The user chose option c: the lyric step comes later. `read.py` now has three reads.
+
+- **The edit-cost read runs no lyric at all.** There is no step 3b, and C runs with `--settle-near-ties` only.
+  Rule 1 applies at once. Rule 3 is recorded, and applied only after the lyric read. The rows (D, C and C+T per
+  song and class) go into `verdicts.json`.
+- **`--lyric-only --edit-read DIR`** is rule 2.
+  - It needs a text for every aligned song (`missing_texts`; there is no partial mode, and
+    `--allow-partial-lyrics` and the `SONA_ONLY` run are gone).
+  - It re-runs D, then 3b, then C with T, 14's fit and L.
+  - It stops unless D, C and C+T equal the edit-cost read's rows per song.
+  - It prints rule 2, rule 3 as applied (`rule3_applies`) and the L rows.
+  - Every tool logs a re-read naming "rule 2, the lyric read". It is refused a second time unless `--resume`
+    follows a failed lyric read.
+- **`--preflight-only`** runs step 0 alone, for any read. It reads and logs nothing.
+- **Tests and mutant.** `test_read.py` has 13 tests:
+  - the lyric read refused before the edit-cost read;
+  - refused a second time, and resumable only after a lyric read;
+  - refused with a missing text;
+  - the reason strings;
+  - rule 3's application.
+
+  My mutant (the lyric read no longer gated on the edit-cost read) was caught by
+  `test_the_lyric_read_waits_for_the_edit_cost_read`.
+
+**Dev rehearsals** (logs: scratchpad `t17/r3-*.log`):
+
+- **Edit-cost read** (37 s).
+  - D, C and C+T are identical per song and class to b-full's Rust rows.
+  - The report has no lyric row.
+  - Rule 1: −2.7 [−7.9, +6.8], fails. Rule 3: −1.6 [−4.3, +1.1], recorded as failing.
+- **Lyric read** (61 s).
+  - D, C and C+T equal the edit-cost read's rows.
+  - **Rule 2: 255.7, −13.8 [−43.0, +10.7]**. C+L and C+L14 are identical per song to b-full.
+  - Rule 3 applied: "T does not ship: C does not ship (rule 1)".
+- **Against a tampered edit-cost read** (one count changed in C+T), the lyric read stops before printing any L
+  number.
+- **Holdout4 preflights** (`--preflight-only`) refuse the lyric and frame reads (no edit-cost read yet, no
+  labels). The ledger and manifest are unchanged.
+
 ## Answer
 
-**Status stays in progress until the reads.** The harness is built and rehearsed on dev (round 2 above).
+**Status stays in progress until the reads.** The harness is built and rehearsed on dev (rounds 2 and 3 above).
 Holdout4 is unread: there is no ledger entry, and no holdout4 UST note, onset or lyric was opened.
 
-Left before the edit-cost read:
+**Order:**
 
-1. The lead answers rule 2's question (round 2) and commits the rules as final. That commit is `--rules-commit`.
-2. (Done: the emissions job wrote `~/.cache/sona/holdout4/l14/DONE` at 02:29.)
-3. The read runs once from a clean checkout (command below), and then the ledger and the manifest are committed.
+1. The lead commits the rules as final. That commit is `--rules-commit`.
+2. The edit-cost read runs once from a clean checkout. Then its ledger entries and the manifest's alignment
+   statuses are committed, and the manifest test that pins holdout4 as `unverified` is updated.
+3. The lyric read runs once every aligned song has a lyric text in `data/pifuyuu-lyrics` (user or later fetch,
+   never the UST).
+4. The frame read runs once the user has labelled.
 
-The holdout4 commands. Run them from the repo checkout, with `ORT_DYLIB_PATH`, `SONA_GAME_DIR`, `SONA_DEV_CACHE`,
-`SONA_UST_DIR`, `SONA_UST_STEMS_DIR`, `SONA_UST_AUDIO_DIR` and `SONA_LYRICS_DIR` set as for dev, and the binaries
-built with `--features game`. Keep `OUT` outside the repo.
+The emissions job finished (`~/.cache/sona/holdout4/l14/DONE`, 02:29).
+
+**The holdout4 commands.**
+
+- Run them from the repo checkout with the binaries built with `--features game`.
+- Set `ORT_DYLIB_PATH`, `SONA_GAME_DIR`, `SONA_DEV_CACHE`, `SONA_UST_DIR`, `SONA_UST_STEMS_DIR`,
+  `SONA_UST_AUDIO_DIR` and `SONA_LYRICS_DIR` as for dev.
+- Keep every `--out` outside the repo.
+- Add `--preflight-only` to any of them to check it without reading.
+- After a crash, add `--resume` to the edit-cost or lyric read.
 
 ```sh
+# 1. the edit-cost read (rules 1 and 3), now:
 python3 -I crates/sona-eval/scripts/holdout4-read/read.py --split holdout4 \
-  --reason "utau-edit-cost 17: the holdout4 edit-cost read (rules 1-3), rules at SHA" --rules-commit SHA \
-  --out ~/.cache/sona/holdout4/read --audio-work ~/.cache/sona/holdout4/l14 [--allow-partial-lyrics]
-# later, after the user labels:
+  --reason "utau-edit-cost 17: the holdout4 edit-cost read (rules 1 and 3), rules at SHA" --rules-commit SHA \
+  --out ~/.cache/sona/holdout4/read-edit
+# 2. the lyric read (rule 2), when every aligned song has a lyric text:
+python3 -I crates/sona-eval/scripts/holdout4-read/read.py --split holdout4 --lyric-only \
+  --edit-read ~/.cache/sona/holdout4/read-edit \
+  --reason "utau-edit-cost 17: the holdout4 lyric read (rule 2), rules at SHA" --rules-commit SHA \
+  --out ~/.cache/sona/holdout4/read-lyric --audio-work ~/.cache/sona/holdout4/l14
+# 3. the frame read (rule 4), after the user labels:
 python3 -I crates/sona-eval/scripts/holdout4-read/read.py --split holdout4 --frame-only \
   --reason "utau-edit-cost 17: the holdout4 frame read (rule 4), rules at SHA" --rules-commit SHA \
-  --labels ~/.cache/sona/holdout4/labels.json --out ~/.cache/sona/holdout4/read-frame --beat-this PROGRAM
+  --labels ~/.cache/sona/holdout4/labels.json --out ~/.cache/sona/holdout4/read-frame \
+  --beat-this ~/.cache/sona/beat-trackers/separator-venv-t16/bin/sona-beat-this
 ```
 
-The frame read waits for the user's labels. The first-round notes follow; where they differ from round 2, round
-2 holds.
+The first-round notes follow; where they differ from rounds 2 and 3, the later round holds.
 
 **Built:**
 
