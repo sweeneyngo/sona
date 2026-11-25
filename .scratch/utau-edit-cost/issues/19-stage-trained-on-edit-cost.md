@@ -1,6 +1,6 @@
 # 19 — Train the cell stage on edit cost
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: 18
 
@@ -64,3 +64,32 @@ reads exactly what sona gives it.
   {0, 0.25, 0.5, 1, 1.5, 2, 3, 4} (export: `switch_cost`, `lead_residuals`). Exploration (4 folds, seed 2,
   38 songs, vs B under the same folds; 6 recipes × decodings looked at, so its numbers carry selection):
   −18.0 [−23.7, −12.7] cost/min at switch 1.0, clean +1.6, missing +18.
+
+## Answer
+
+`crates/sona-eval/reports/stage-edit-cost.md`. **C passes the rule and stays opt-in** (a model folder whose
+`cellstage.json` sets `lead_residuals` and `switch_cost`); the shipped default is unchanged until holdout4.
+
+Final CV (10 folds by song, seed 1; 38 spent songs, 104.5 min; each song scored by the fold model that never
+saw it, through `sona-eval-cellstage --edit-cost --fold-models`; holdout4 not read):
+
+| | cost/min | Δ [95%] | clean | Δ [95%] | missing (Δ) | Δ upper, missing @4 |
+|---|---|---|---|---|---|---|
+| B, current recipe retrained | 275.8 | | 14.1% | | 1 297 | |
+| B, seed 1 (noise floor) | 274.9 | −0.9 [−6.2, +4.1] | 14.2% | +0.1 | 1 228 (−69) | +2.9 |
+| **C** | **254.1** | **−21.7 [−31.7, −12.1]** | **16.4%** | **+2.3 [+1.1, +3.7]** | 1 444 (+147) | **−8.4** |
+| C's training, argmax | 262.9 | −12.9 [−20.7, −5.5] | 16.3% | +2.2 | 1 276 (−21) | −6.7 |
+| B's training, C's decoding | 262.2 | −13.7 [−20.5, −6.4] | 14.9% | +0.8 | 1 459 (+162) | −3.8 |
+
+- Rule: upper bound −12.1 < 0 ✓; missing +147 but the bound holds at missing 4 (−8.4) ✓; clean +2.3 ✓;
+  switch cost cross-fitted (1.5 on 9/10 folds, 2.0 on one) ✓.
+- C = onset-phase training with GAME lead's 8 residual features, cross-entropy with UST-edge cells weighted 3
+  plus 0.5 × a pairwise same-note agreement term, decoded with a cost per note edge (`decode_classes`). Its
+  cost moves: chopped −1 880 units, length −1 172, pitch −261, shift −232, joined +1 148, missing +294.
+  Every split improves (dev −30.6, holdout −21.3, holdout2 −22.7, holdout3 −12.0); 33 of 38 songs.
+- The residual feature alone is small (−2.3 [−7.2, +2.5] in exploration); source-aware set targets are
+  worse (+28.6). The out-of-sample current recipe costs 322.3/min on dev, not the shipped model's in-sample
+  272.2.
+- Rust: opt-in `FeatureSet::lead_residuals`, `decode_classes` + `CellModel::switch_cost`, scorer flags
+  `--dump-cells` and `--fold-models`; default run byte-identical; Rust = Python on every number above.
+- Candidate trained on all 38 songs: local only, `~/.cache/sona/cellstage-19C/` (switch 1.5).

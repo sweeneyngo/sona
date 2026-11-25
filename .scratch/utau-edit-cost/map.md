@@ -13,6 +13,15 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-24, **19 resolved (stage retrained for edit cost, opt-in)**: song-level 10-fold CV over the 38
+  spent songs, the current recipe retrained under the same folds as baseline (275.8 cost/min out of sample;
+  the shipped stage's dev 272.2 was in-sample, out of sample the recipe costs 322.3 there). C (onset-phase
+  training + GAME lead's rounding residuals, edge-weighted CE + pairwise same-note term, decoding with a cost
+  per note edge, cross-fitted at 1.5): **254.1, −21.7 [−31.7, −12.1], clean 14.1% → 16.4%, missing +147
+  (bound −8.4 at 4)**; seed noise −0.9 [−6.2, +4.1]. Passes its rule; opt-in via `cellstage.json`
+  (`lead_residuals`, `switch_cost`), model local only. **It joins the holdout4 bundle as the stage**; joined
+  notes are now its largest class.
+
 - 2026-11-24, lead, after 18: **`--trim-releases` (12) is out of the holdout4 bundle.** Under the revised
   weights it is −8.6 [−19.7, +4.3] on GAME lead and leaves 55 more notes missing, so it fails its own bar;
   delete the knob once the bundle is fixed, unless holdout4 asks for it. `--settle-near-ties` (18) goes in
