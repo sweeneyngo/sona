@@ -37,6 +37,9 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   with particles scored equal). Laid in order, only ー and おう are held. The USTs give えい (67%) and a
   repeated vowel (68%) their own note, and skipping every tail is worse (6.7% vs 8.3%). Edit → Lyrics…
   is hiragana-only now. [08](issues/08-japanese-sound-units.md)
+- 2026-11-24: the fallback recogniser is Whisper large-v3-turbo with fugashi/unidic-lite readings and the VAD
+  at 0.2: 37.1% mora error on dev, against 20.7% for pasted lyric-site text. It gives a draft to review,
+  not a finished lyric (05, `crates/sona-eval/reports/lyric-transcription.md`).
 
 ## Fog
 
