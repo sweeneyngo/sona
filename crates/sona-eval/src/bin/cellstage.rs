@@ -43,6 +43,12 @@
 //! `--lyric-line-times DIR` (lyrics-first 14), the lines and pieces are placed in time by an aligner instead
 //! of the UST: `DIR/<id>.json` holds `lines` and `pieces`, each `[first UST note, start s, end s, …]`, and
 //! each is fitted by `sona_core::lyric_fit::fit_lines` (`scripts/line-alignment/`; lyric-derived too).
+//! With `--lyric-onsets DIR` too (utau-edit-cost 21), the aligned lines and spaces are also fitted with
+//! lyrics-first 17's S1 (`sona_core::lyric_fit::fit_lines_with_onsets`, `OnsetRule::S1`): `DIR/<id>.json`
+//! holds, per UST note's mora, either the aligners' onsets (`members`: one list of seconds or null per
+//! aligner, the frozen per-class offsets applied; `scripts/vowel-onsets/s1_onsets.py produce`), agreed here
+//! by `consensus_onsets` (`OnsetConsensus::S1`, lattice prior from GAME lead's starts), or the onsets
+//! themselves (`on`: seconds or null). Lyric-derived; keep it out of the repo.
 //!
 //! `--dump-cells DIR` (utau-edit-cost 19) writes the stage's training rows for each song on the onset phase
 //! and on the UST's phase: the features with GAME lead's rounding residuals appended, candidates, sources
@@ -59,7 +65,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use sona_core::cellstage::{cell_features_with, cells_to_notes, decode_classes, snap_notes, EncoderChunk, FeatureSet, StageInputs, StageNote};
-use sona_core::lyric_fit::{fit_lines, fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, LineSpan, Mora};
+use sona_core::lyric_fit::{consensus_onsets, fit_lines, fit_lines_with_onsets, fit_phrase, fit_phrase_moras, fit_span_moras, lattice_prior, mora_of, CellNote, LineSpan, Mora, OnsetConsensus, OnsetRule};
 use sona_core::near_ties::{settle_near_ties, NearTieRule};
 use sona_core::release::{trim_releases, ReleaseRule};
 use sona_core::tempo::grid_phase;
@@ -126,6 +132,8 @@ enum Landing<'a> {
     Groups { starts: &'a [usize], rests: bool },
     /// Lines placed in time by an aligner: (first UST note, start s, end s), fitted by `fit_lines`.
     Timed { lines: &'a [TimedLine] },
+    /// [`Landing::Timed`] with each UST note's mora's onset cell (S1), fitted by `fit_lines_with_onsets`.
+    TimedOnsets { lines: &'a [TimedLine], onsets: &'a [Option<i64>] },
 }
 
 /// `notes` on the grid at `anchor` once `sung`'s moras land on them as `how` says.
@@ -185,11 +193,40 @@ fn land_lyric(notes: &Notes, sung: &[Lyric], how: Landing<'_>, spacing: f64, anc
             placed.sort_by_key(|(n, _)| (n.start, n.end));
         }
         Landing::Timed { lines } => {
-            let spans: Vec<LineSpan> = lines.iter().map(|&(first, a, b)| LineSpan { first, start: (a - anchor) / spacing, end: (b - anchor) / spacing }).collect();
-            placed = fit_lines(&cells, &kinds, &spans);
+            placed = fit_lines(&cells, &kinds, &line_spans(lines, spacing, anchor));
+        }
+        Landing::TimedOnsets { lines, onsets } => {
+            placed = fit_lines_with_onsets(&cells, &kinds, &line_spans(lines, spacing, anchor), onsets, OnsetRule::S1);
         }
     }
     placed.into_iter().map(|(n, m)| (time(n.start), time(n.end), n.pitch, m)).collect()
+}
+
+fn line_spans(lines: &[TimedLine], spacing: f64, anchor: f64) -> Vec<LineSpan> {
+    lines.iter().map(|&(first, a, b)| LineSpan { first, start: (a - anchor) / spacing, end: (b - anchor) / spacing }).collect()
+}
+
+/// `path` (`--lyric-onsets`): each of the `moras` UST notes' onset cell on the grid at `anchor`, from the
+/// onsets themselves (`on`) or agreed from the aligners' (`members`) with the lattice prior of `lead`'s
+/// starts.
+fn onset_cells(path: &Path, moras: usize, lead: &Notes, division: u32, spacing: f64, anchor: f64) -> Result<Vec<Option<i64>>, String> {
+    let at = |e: String| format!("{}: {e}", path.display());
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| at(e.to_string()))?).map_err(|e| at(e.to_string()))?;
+    let seconds = |x: &serde_json::Value| -> Result<Vec<Option<f64>>, String> {
+        let list = x.as_array().ok_or_else(|| at("not a list of seconds".into()))?;
+        if list.len() != moras {
+            return Err(at(format!("{} onsets for {moras} moras", list.len())));
+        }
+        list.iter().map(|t| if t.is_null() { Ok(None) } else { t.as_f64().map(Some).ok_or_else(|| at(format!("not seconds or null: {t}"))) }).collect()
+    };
+    let cell = |t: f64| ((t - anchor) / spacing).round() as i64;
+    if let Some(members) = v.get("members").and_then(|m| m.as_array()) {
+        let members = members.iter().map(seconds).collect::<Result<Vec<_>, _>>()?;
+        let starts: Vec<i64> = lead.iter().map(|n| cell(n.0)).collect();
+        let prior = lattice_prior(&starts, (division / 4) as usize);
+        return Ok(consensus_onsets(&members, anchor, spacing, &prior, OnsetConsensus::S1));
+    }
+    Ok(seconds(v.get("on").ok_or_else(|| at("neither members nor on".into()))?)?.into_iter().map(|t| t.map(cell)).collect())
 }
 
 /// `v[key]`: a list of `[first UST note, start s, end s, …]` (any further fields, such as the aligner's
@@ -416,6 +453,10 @@ fn run() -> Result<(), String> {
     let with_placement = args.iter().any(|a| a == "--lyric-placement");
     let lyric_lines = flag("--lyric-lines").map(PathBuf::from);
     let line_times = flag("--lyric-line-times").map(PathBuf::from);
+    let lyric_onsets = flag("--lyric-onsets").map(PathBuf::from);
+    if lyric_onsets.is_some() && line_times.is_none() {
+        return Err("--lyric-onsets needs --lyric-line-times".into());
+    }
     let mut placements: LandingRows = Vec::new();
     let dump = flag("--dump").map(PathBuf::from);
     if let Some(dir) = &dump {
@@ -526,6 +567,13 @@ fn run() -> Result<(), String> {
                             ("fitted per aligned lyric line, rests hold moras", Landing::Timed { lines }),
                             ("fitted per aligned lyric line and space, rests hold moras", Landing::Timed { lines: pieces }),
                         ]);
+                    }
+                    let onsets: Option<Vec<Option<i64>>> = match &lyric_onsets {
+                        Some(dir) => Some(onset_cells(&dir.join(format!("{}.json", song.id)), lyrics.len(), &lead_only, division, spacing, anchor)?),
+                        None => None,
+                    };
+                    if let (Some((_, pieces)), Some(onsets)) = (&timed, &onsets) {
+                        landings.push(("fitted per aligned lyric line and space, rests hold moras, split and started at the moras' onsets (S1)", Landing::TimedOnsets { lines: pieces, onsets }));
                     }
                     for (out, ns) in [("GAME lead + octave rule", &lead_only), ("learned cell stage", &stage)] {
                         for (how, landing) in &landings {
