@@ -1,12 +1,16 @@
 """Export a trained cell-stage checkpoint (train_cells.py SAVE=…) to the folder sona loads with --cell-model.
 
-    python export_onnx.py CHECKPOINT.pt OUT_DIR
+    python export_onnx.py CHECKPOINT.pt OUT_DIR [SWITCH_COST]
 
 Writes OUT_DIR/cellstage.onnx (input `x` [1, cells, F] raw features, output `logits` [1, cells, NC]; the
 feature normalisation is part of the graph) and OUT_DIR/cellstage.json (shapes, candidate order, the
-songs it was trained on). The weights derive from Pifuyuu's USTs: keep OUT_DIR local, never commit it.
+songs it was trained on; utau-edit-cost 19's opt-ins: `lead_residuals` for a checkpoint trained with GAME
+lead's rounding residuals, `switch_cost` when SWITCH_COST > 0 is given). The weights derive from Pifuyuu's USTs: keep OUT_DIR local, never commit it.
+
+Parity: ONNX Runtime (when installed) must give PyTorch's logits on random features, within 1e-4.
 """
 import json, sys, pathlib
+import numpy as np
 import torch, torch.nn as nn
 
 ck = torch.load(sys.argv[1], weights_only=False)
@@ -38,7 +42,7 @@ net = Normalised(m, ck["mu"], ck["sd"]).eval()
 x = torch.zeros(1, 37, F)
 torch.onnx.export(net, (x,), str(out / "cellstage.onnx"), input_names=["x"], output_names=["logits"],
                   dynamic_axes={"x": {1: "cells"}, "logits": {1: "cells"}}, opset_version=17, dynamo=False)
-json.dump({
+meta = {
     "format": 1,
     "features": F,
     "choices": NC,
@@ -46,5 +50,22 @@ json.dump({
     "octave_features": True,
     "trained_on": ck.get("songs", []),
     "epochs": ck.get("EPOCHS"), "hidden": HID, "seed": ck.get("SEED"),
-}, open(out / "cellstage.json", "w"), indent=1)
+}
+if ck.get("lead_residuals"):
+    meta["lead_residuals"] = True
+if len(sys.argv) > 3 and float(sys.argv[3]) > 0:
+    meta["switch_cost"] = float(sys.argv[3])  # decode with a cost per note edge (utau-edit-cost 19)
+json.dump(meta, open(out / "cellstage.json", "w"), indent=1)
+try:
+    import onnxruntime
+except ImportError:
+    onnxruntime = None
+if onnxruntime is not None:
+    probe = torch.from_numpy(np.random.RandomState(0).randn(1, 300, F).astype(np.float32)) * torch.tensor(ck["sd"]) + torch.tensor(ck["mu"])
+    with torch.no_grad():
+        want = net(probe).numpy()
+    got = onnxruntime.InferenceSession(str(out / "cellstage.onnx")).run(["logits"], {"x": probe.numpy()})[0]
+    worst = float(np.abs(got - want).max())
+    assert worst < 1e-4, f"ONNX Runtime differs from PyTorch by {worst}"
+    print(f"parity: ONNX Runtime = PyTorch on 300 random cells (max logit difference {worst:.1e})")
 print("wrote", out)

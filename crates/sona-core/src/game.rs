@@ -162,7 +162,7 @@ pub fn cell_stage_notes(
     anchor: f64,
     cells: (i64, usize),
 ) -> Result<StageNotes, GameError> {
-    use crate::cellstage::{cell_features, cells_to_notes, choose_class, note_confidence, note_doubt, StageInputs};
+    use crate::cellstage::{cell_features_with, cells_to_notes, decode_classes, note_confidence, note_doubt, StageInputs};
     let inputs = StageInputs {
         spacing,
         anchor,
@@ -176,12 +176,12 @@ pub fn cell_stage_notes(
         rms,
     };
     let (k0, n) = cells;
-    let (x, cands, sources) = cell_features(&inputs, k0, n);
+    let (x, cands, sources) = cell_features_with(&inputs, k0, n, model.features);
     if n > 0 && x.len() != n * model.width {
         return Err(GameError::Ort(format!("the cell model expects {} features per cell, sona built {}", model.width, x.len() / n)));
     }
     let logits = model.logits(&x, n)?;
-    let notes = cells_to_notes(&choose_class(&logits, &cands), &cands, &sources, k0, spacing, anchor);
+    let notes = cells_to_notes(&decode_classes(&logits, &cands, &sources, model.switch_cost), &cands, &sources, k0, spacing, anchor);
     let confidence = note_confidence(&logits, k0, spacing, anchor, &notes);
     let doubt = note_doubt(&logits, k0, spacing, anchor, &notes);
     Ok(StageNotes { notes, confidence, doubt })
@@ -228,11 +228,15 @@ pub struct CellModel {
     session: Mutex<Session>,
     /// Features per cell the model expects.
     pub width: usize,
+    /// Which features beyond the prototype's it reads (`cellstage.json`'s `lead_residuals`).
+    pub features: crate::cellstage::FeatureSet,
+    /// Each note edge's cost when decoding the cells (`cellstage.json`'s `switch_cost`; 0, the masked argmax, when absent).
+    pub switch_cost: f64,
 }
 
 impl std::fmt::Debug for CellModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CellModel").field("width", &self.width).finish_non_exhaustive()
+        f.debug_struct("CellModel").field("width", &self.width).field("features", &self.features).field("switch_cost", &self.switch_cost).finish_non_exhaustive()
     }
 }
 
@@ -247,7 +251,9 @@ impl CellModel {
         let (Some(1), Some(6), Some(width)) = (format, choices, width) else {
             return Err(GameError::Ort(format!("{}: not a cell model sona can run (format {format:?}, {choices:?} choices)", path.display())));
         };
-        Ok(Self { session: Mutex::new(session(Graph::File(&dir.join("cellstage.onnx")), threads)?), width: width as usize })
+        let features = crate::cellstage::FeatureSet { lead_residuals: meta["lead_residuals"].as_bool().unwrap_or(false) };
+        let switch_cost = meta["switch_cost"].as_f64().unwrap_or(0.0);
+        Ok(Self { session: Mutex::new(session(Graph::File(&dir.join("cellstage.onnx")), threads)?), width: width as usize, features, switch_cost })
     }
 
     /// Logits, `cells` × 6, for row-major features `cells` × [`width`](Self::width).

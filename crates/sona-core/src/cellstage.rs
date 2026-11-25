@@ -176,8 +176,47 @@ fn hz_to_midi(hz: f64) -> f64 {
 /// the chosen source starts a new note on the same pitch.
 pub type Sources = [Option<usize>; 6];
 
+/// Which features a cell model reads beyond the confirmed prototype's (ADR-0026). The default is the
+/// prototype's set, so a model without the extras gets exactly the features it was trained on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FeatureSet {
+    /// GAME lead's rounding residuals at each cell's two edges (utau-edit-cost 19): [`RESIDUAL_WIDTH`]
+    /// more per cell, after the prototype's.
+    pub lead_residuals: bool,
+}
+
+/// Features [`FeatureSet::lead_residuals`] adds per cell: for the cell's start edge and then its end edge,
+/// whether a snapped GAME-lead note starts there and how far (in cells) its raw onset sat from it, and
+/// the same for a note that ends there.
+pub const RESIDUAL_WIDTH: usize = 8;
+
+/// The largest residual a feature carries, in cells: a note the snap trimmed against its neighbour can
+/// sit further from its raw time than a rounding does.
+const RESIDUAL_CLAMP: f64 = 2.0;
+
+/// Each snapped GAME-lead note edge, by the grid edge it sits on: the residual (raw − snapped) / spacing
+/// of the notes starting there and of the notes ending there.
+fn lead_edge_residuals(inp: &StageInputs<'_>) -> (std::collections::HashMap<i64, f64>, std::collections::HashMap<i64, f64>) {
+    let (sp, anc) = (inp.spacing, inp.anchor);
+    let edge = |t: f64| ((t - anc) / sp).round() as i64;
+    let resid = |raw: f64, snapped: f64| ((raw - snapped) / sp).clamp(-RESIDUAL_CLAMP, RESIDUAL_CLAMP);
+    let (mut starts, mut ends) = (std::collections::HashMap::new(), std::collections::HashMap::new());
+    for (on, off, _, i) in snap_notes_indexed(inp.lead_notes, sp, anc) {
+        let raw = inp.lead_notes[i];
+        starts.insert(edge(on), resid(raw.onset_s, on));
+        ends.insert(edge(off), resid(raw.offset_s, off));
+    }
+    (starts, ends)
+}
+
 /// The cells' features (row-major, `n` × width), candidates and their sources, for cells `k0 .. k0 + n`.
 pub fn cell_features(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec<Candidates>, Vec<Sources>) {
+    cell_features_with(inp, k0, n, FeatureSet::default())
+}
+
+/// [`cell_features`] with the extra features `set` asks for appended to every cell's row.
+pub fn cell_features_with(inp: &StageInputs<'_>, k0: i64, n: usize, set: FeatureSet) -> (Vec<f32>, Vec<Candidates>, Vec<Sources>) {
+    let residuals = set.lead_residuals.then(|| lead_edge_residuals(inp));
     let (sp, anc) = (inp.spacing, inp.anchor);
     let lead = on_grid(&snap_notes(inp.lead_notes, sp, anc), sp, anc, k0, n);
     let voc = on_grid(&snap_notes(inp.vocals_notes, sp, anc), sp, anc, k0, n);
@@ -229,6 +268,14 @@ pub fn cell_features(inp: &StageInputs<'_>, k0: i64, n: usize) -> (Vec<f32>, Vec
         x.extend([lead.pos[c], lead.len[c], voc.pos[c], voc.len[c], son.pos[c], son.len[c]]);
         x.extend([k.rem_euclid(4) as f64, k.rem_euclid(16) as f64 / 16.0]);
         x.extend([ratio_at(a + sp / 2.0), song_ratio]);
+        if let Some((starts, ends)) = &residuals {
+            for e in [k, k + 1] {
+                for side in [starts, ends] {
+                    let r = side.get(&e);
+                    x.extend([f64::from(u8::from(r.is_some())), r.copied().unwrap_or(0.0)]);
+                }
+            }
+        }
     }
     (x.into_iter().map(|v| v as f32).collect(), cands, sources)
 }
@@ -245,6 +292,63 @@ pub fn choose_class(logits: &[f32], cands: &[Candidates]) -> Vec<usize> {
             (0..nc).filter(|&j| j == 0 || cp[j] >= 0).max_by(|&a, &b| row[a].total_cmp(&row[b]).then(b.cmp(&a))).unwrap_or(0)
         })
         .collect()
+}
+
+/// The cells' choices when every note edge costs `switch_cost` (utau-edit-cost 19): the sequence that
+/// maximises the sum of the cells' log-probabilities (over the candidates that exist) minus `switch_cost`
+/// for each cell where [`cells_to_notes`] would start a new note or end one. A one-cell flicker then has
+/// to be more likely than two edges cost. `switch_cost` 0 is [`choose_class`] exactly; ties go to the
+/// lower class.
+pub fn decode_classes(logits: &[f32], cands: &[Candidates], sources: &[Sources], switch_cost: f64) -> Vec<usize> {
+    if switch_cost == 0.0 {
+        return choose_class(logits, cands);
+    }
+    const NC: usize = 6;
+    let n = cands.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let log_probs = |i: usize| -> [f64; NC] {
+        let row = &logits[i * NC..(i + 1) * NC];
+        let valid = |j: usize| j == 0 || cands[i][j] >= 0;
+        let top = (0..NC).filter(|&j| valid(j)).map(|j| f64::from(row[j])).fold(f64::NEG_INFINITY, f64::max);
+        let z: f64 = (0..NC).filter(|&j| valid(j)).map(|j| (f64::from(row[j]) - top).exp()).sum();
+        std::array::from_fn(|j| if valid(j) { f64::from(row[j]) - top - z.ln() } else { f64::NEG_INFINITY })
+    };
+    let continues = |c: usize, a: usize, b: usize| -> bool {
+        let (pa, pb) = (cands[c - 1][a], cands[c][b]);
+        (a == 0 && b == 0) || (pa >= 0 && pa == pb && !(a == b && sources[c][b] != sources[c - 1][a]))
+    };
+    let mut score = log_probs(0);
+    let mut back = vec![[0usize; NC]; n];
+    for (c, back_c) in back.iter_mut().enumerate().skip(1) {
+        let lp = log_probs(c);
+        let mut next = [f64::NEG_INFINITY; NC];
+        for b in 0..NC {
+            let (mut best, mut arg) = (f64::NEG_INFINITY, 0);
+            for (a, &s) in score.iter().enumerate() {
+                let t = s - if continues(c, a, b) { 0.0 } else { switch_cost };
+                if t > best {
+                    (best, arg) = (t, a);
+                }
+            }
+            next[b] = best + lp[b];
+            back_c[b] = arg;
+        }
+        score = next;
+    }
+    let mut out = vec![0usize; n];
+    let (mut best, mut arg) = (f64::NEG_INFINITY, 0);
+    for (b, &s) in score.iter().enumerate() {
+        if s > best {
+            (best, arg) = (s, b);
+        }
+    }
+    out[n - 1] = arg;
+    for c in (1..n).rev() {
+        out[c - 1] = back[c][out[c]];
+    }
+    out
 }
 
 /// Notes from the cells' choices: a note runs while the pitch holds, and splits where the pitch changes,

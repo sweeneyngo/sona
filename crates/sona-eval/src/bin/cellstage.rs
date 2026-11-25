@@ -44,13 +44,19 @@
 //! of the UST: `DIR/<id>.json` holds `lines` and `pieces`, each `[first UST note, start s, end s, …]`, and
 //! each is fitted by `sona_core::lyric_fit::fit_lines` (`scripts/line-alignment/`; lyric-derived too).
 //!
+//! `--dump-cells DIR` (utau-edit-cost 19) writes the stage's training rows for each song on the onset phase
+//! and on the UST's phase: the features with GAME lead's rounding residuals appended, candidates, sources
+//! and the lead UST's notes (`scripts/cellstage/`). `--fold-models DIR` scores each song with the one model
+//! under `DIR` whose `cellstage.json` `trained_on` leaves it out, so a song-level CV is scored out of sample.
+//! Both are opt-in; without them the run is unchanged.
+//!
 //! `--dump DIR` also writes each song's inputs and outputs to `DIR/<id>.json` for offline analysis:
 //! the lead UST's notes with their lyrics, the three outputs and their edit costs, the stage's cells
 //! (candidates, sources, probabilities), each shipped note's confidence, GAME's raw notes and the
 //! vocals' pitch track. The dump holds UST content: keep it out of the repository.
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use sona_core::cellstage::{cell_features, cells_to_notes, choose_class, snap_notes, EncoderChunk, StageInputs, StageNote};
+use sona_core::cellstage::{cell_features_with, cells_to_notes, decode_classes, snap_notes, EncoderChunk, FeatureSet, StageInputs, StageNote};
 use sona_core::lyric_fit::{fit_lines, fit_phrase, fit_phrase_moras, fit_span_moras, mora_of, CellNote, LineSpan, Mora};
 use sona_core::near_ties::{settle_near_ties, NearTieRule};
 use sona_core::release::{trim_releases, ReleaseRule};
@@ -380,7 +386,15 @@ fn run() -> Result<(), String> {
     }
     let game_dir = std::env::var("SONA_GAME_DIR").map_err(|_| "set SONA_GAME_DIR")?;
     let game = GameModel::load(Path::new(&game_dir), GameParams::default()).map_err(|e| e.to_string())?;
+    let fold_models = match flag("--fold-models") {
+        Some(dir) => load_fold_models(Path::new(&dir))?,
+        None => Vec::new(),
+    };
     let model = CellModel::load(&model_dir, GameParams::default().threads).map_err(|e| e.to_string())?;
+    let dump_cells = flag("--dump-cells").map(PathBuf::from);
+    if let Some(dir) = &dump_cells {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     let (cache, stems) = (ust::corpus_dir(), stems_dir());
     let songs: Vec<_> = manifest
         .songs
@@ -423,6 +437,7 @@ fn run() -> Result<(), String> {
         let rms: Vec<(f64, f64)> = a.energy_envelope.iter().map(|e| (e.time_s, f64::from(e.rms))).collect();
         let duration = vocals.len() as f64 / f64::from(sr);
         let runs = stage_runs_cached(&game, Path::new(&game_dir), &song.id, &lead, &vocals, sr)?;
+        let model = if fold_models.is_empty() { &model } else { held_out_model(&fold_models, &song.id)? };
         let truth = offset.rem_euclid(spacing);
         let off = |p: f64| {
             let d = (p - truth).rem_euclid(spacing) / spacing;
@@ -440,7 +455,7 @@ fn run() -> Result<(), String> {
         }
         for (j, (anchor, notes)) in [(estimated, &sona), (onset, &sona_on), (offset.rem_euclid(spacing), &sona)].into_iter().enumerate() {
             let lead_only = snap_notes(&runs.lead_notes, spacing, anchor);
-            let scored = cell_stage_notes(&model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
+            let scored = cell_stage_notes(model, &runs, notes, &f0, &rms, spacing, anchor, cells_covering(duration, spacing, anchor)).map_err(|e| e.to_string())?;
             let stage = scored.notes.clone();
             row[2 * j] = cells(&reference, &lead_only, spacing, offset);
             row[2 * j + 1] = cells(&reference, &stage, spacing, offset);
@@ -561,11 +576,16 @@ fn run() -> Result<(), String> {
                     }
                 }
             }
+            if let (Some(dir), 1 | 2) = (&dump_cells, j) {
+                let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
+                let phase = if j == 1 { "onset" } else { "true" };
+                dump_cells_of(dir, &song.id, phase, &inputs, cells_covering(duration, spacing, anchor), &reference, offset, division, &stage)?;
+            }
             if let (Some(dir), 1) = (&dump, j) {
                 let outputs = [("pyin", &sona), ("lead", &lead_only), ("stage", &stage)];
                 let costs: Vec<_> = outputs.iter().map(|(name, ns)| (*name, edit_cost(&edit_notes(&reference), &edit_notes(ns), &grid))).collect();
                 let inputs = StageInputs { spacing, anchor, lead_notes: &runs.lead_notes, lead_ratios: &runs.lead_ratios, vocals_notes: &runs.vocals_notes, sona_notes: notes, lead_frames: &runs.lead_frames, vocals_frames: &runs.vocals_frames, f0: &f0, rms: &rms };
-                let song_dump = dump_song(&model, &inputs, cells_covering(duration, spacing, anchor), &scored, &lead, sr, &usts, offset)?;
+                let song_dump = dump_song(model, &inputs, cells_covering(duration, spacing, anchor), &scored, &lead, sr, &usts, offset)?;
                 let value = json!({
                     "id": song.id, "bpm": bpm, "division": division, "spacing": spacing, "ust_anchor": offset, "onset_phase": anchor,
                     "reference": reference, "outputs": outputs.iter().map(|(name, ns)| (name.to_string(), json!(ns))).collect::<serde_json::Map<_, _>>(),
@@ -614,14 +634,59 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// `--fold-models DIR` (utau-edit-cost 19): every subfolder of `DIR` that holds a cell model, each with
+/// the songs it was trained on (its `cellstage.json`'s `trained_on`).
+fn load_fold_models(dir: &Path) -> Result<Vec<(CellModel, Vec<String>)>, String> {
+    let mut folds: Vec<PathBuf> = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.join("cellstage.json").is_file()).collect();
+    folds.sort();
+    folds
+        .iter()
+        .map(|p| {
+            let meta: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p.join("cellstage.json")).map_err(|e| format!("{}: {e}", p.display()))?).map_err(|e| format!("{}: {e}", p.display()))?;
+            let songs = meta["trained_on"].as_array().ok_or(format!("{}: no trained_on", p.display()))?.iter().filter_map(|s| s.as_str().map(str::to_string)).collect();
+            Ok((CellModel::load(p, GameParams::default().threads).map_err(|e| e.to_string())?, songs))
+        })
+        .collect()
+}
+
+/// The one fold model that was not trained on `id`: its out-of-sample score. Refuses a song every model
+/// saw, or one more than one model left out (the folds would not partition the songs).
+fn held_out_model<'a, M>(folds: &'a [(M, Vec<String>)], id: &str) -> Result<&'a M, String> {
+    let mut unseen = folds.iter().filter(|(_, songs)| !songs.iter().any(|s| s == id));
+    match (unseen.next(), unseen.next()) {
+        (Some((m, _)), None) => Ok(m),
+        (None, _) => Err(format!("--fold-models: every fold model was trained on {id}")),
+        (Some(_), Some(_)) => Err(format!("--fold-models: more than one fold model left out {id}")),
+    }
+}
+
+/// `--dump-cells DIR` (utau-edit-cost 19): the stage's training rows for one song on one grid phase.
+/// `DIR/<id>.<phase>.f32` holds the features with GAME lead's residuals appended (little-endian, cells ×
+/// width); `DIR/<id>.<phase>.json` the grid, candidates, sources, the lead UST's notes and the stage's
+/// notes. Derived from the UST and GAME: keep it out of the repository.
+#[allow(clippy::too_many_arguments)]
+fn dump_cells_of(dir: &Path, id: &str, phase: &str, inputs: &StageInputs<'_>, (k0, n): (i64, usize), reference: &Notes, ust_anchor: f64, division: u32, stage: &Notes) -> Result<(), String> {
+    let (x, cands, sources) = cell_features_with(inputs, k0, n, FeatureSet { lead_residuals: true });
+    let bytes: Vec<u8> = x.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let path = dir.join(format!("{id}.{phase}.f32"));
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let value = json!({
+        "id": id, "phase": phase, "k0": k0, "n": n, "width": if n > 0 { x.len() / n } else { 0 },
+        "spacing": inputs.spacing, "anchor": inputs.anchor, "ust_anchor": ust_anchor, "division": division,
+        "cands": cands, "sources": sources, "reference": reference, "stage": stage,
+    });
+    let path = dir.join(format!("{id}.{phase}.json"));
+    std::fs::write(&path, value.to_string()).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// The stage's cells and notes in detail, for `--dump`: candidates, sources, class probabilities and
 /// each shipped note's confidence and sub-scores (as `sona transcribe` gives them, on the lead's energy).
 #[allow(clippy::too_many_arguments)]
 fn dump_song(model: &CellModel, inputs: &StageInputs<'_>, (k0, n): (i64, usize), scored: &StageNotes, lead: &[f32], sr: u32, usts: &SongUsts, offset: f64) -> Result<serde_json::Value, String> {
     let stage = &scored.notes;
-    let (x, cands, sources) = cell_features(inputs, k0, n);
+    let (x, cands, sources) = cell_features_with(inputs, k0, n, model.features);
     let logits = model.logits(&x, n).map_err(|e| e.to_string())?;
-    let classes = choose_class(&logits, &cands);
+    let classes = decode_classes(&logits, &cands, &sources, model.switch_cost);
     if &cells_to_notes(&classes, &cands, &sources, k0, inputs.spacing, inputs.anchor) != stage {
         return Err("the dump's stage notes differ from cell_stage_notes".into());
     }
@@ -673,6 +738,17 @@ mod tests {
 
     fn same(a: &StageRuns, b: &StageRuns) -> bool {
         a.lead_notes == b.lead_notes && a.lead_ratios == b.lead_ratios && a.lead_frames == b.lead_frames && a.vocals_notes == b.vocals_notes && a.vocals_frames == b.vocals_frames
+    }
+
+    #[test]
+    fn each_song_is_scored_by_the_one_fold_model_that_never_saw_it() {
+        let songs = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let folds = vec![("fold0", songs(&["b", "c"])), ("fold1", songs(&["a", "c"])), ("fold2", songs(&["a", "b"]))];
+        assert_eq!(held_out_model(&folds, "a"), Ok(&"fold0"));
+        assert_eq!(held_out_model(&folds, "b"), Ok(&"fold1"));
+        assert_eq!(held_out_model(&folds, "c"), Ok(&"fold2"));
+        assert!(held_out_model(&folds[..2], "c").is_err(), "every model saw c: no out-of-sample score");
+        assert!(held_out_model(&folds, "d").is_err(), "no model saw d: the folds don't partition the songs");
     }
 
     #[test]
