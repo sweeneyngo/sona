@@ -54,3 +54,6 @@ reads exactly what sona gives it.
 - Noise floor: B retrained with seed 1 under F, against B, reported beside the result.
 - Cell accuracy is reported, not a criterion. The shipped default stays the current model either way; a C
   that passes stays opt-in until holdout4.
+- **K = 10** (timing: one epoch on 20 songs takes 12 s on 8 threads, so a 15-epoch model on ~34 songs takes
+  about 5 min; leave-one-song-out would need 38 models per recipe, ≈ 3.5 h each, and B + C + B's seed check
+  ≈ 10 h. Ten folds take ≈ 50 min per recipe.)
