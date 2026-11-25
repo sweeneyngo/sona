@@ -54,6 +54,14 @@ Spec: `spec.md`. Tickets: `issues/NN-*.md`, claimed and resolved as in `docs/age
   219.4), and nearly all of that is starts, not splits. It needs onsets on the right cell ~90% of the time;
   the aligner manages 57.6%. A vowel-onset source at that precision is the next lever.
   [16](issues/16-split-at-mora-times.md), `crates/sona-eval/reports/mora-split.md`.
+- 2026-11-24 (17, negative under 16's rule): no single vowel-onset source reaches 85% of moras on the UST start
+  cell. The lyrics CTC gets 57.6%, the hiragana CTC 68.8% and SOFA's Japanese singing model 64.1%. Per-class
+  offsets, the median of the three CTCs and a beat-position prior from sona's own output give 82.1%. Abstaining
+  where the CTCs disagree gives 90.5% on 78.4% of moras (MIT and Apache weights). Start moves at those onsets
+  cut GAME lead to 292.6 cost/min: −11.6 [−18.1, −5.5] against today's aligned fit. Five members (non-commercial
+  weights) give 287.6 (−16.6). Against no lyric the upper bound stays above 0 (+7.8; +4.5), so rule 1 fails and
+  nothing ships. Which comparator start moves should face is the user's call.
+  [17](issues/17-vowel-onsets.md), `crates/sona-eval/reports/vowel-onsets.md`.
 
 ## Fog
 

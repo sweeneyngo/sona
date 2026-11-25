@@ -10,7 +10,7 @@ the start when the onset cell is the UST's, breaks it when the fitted start was 
 Usage: L01_DUMP=… L01_WORK=… L14_WORK=… L17_WORK=… python3 precision.py SOURCE… [--per-song] [--tol 1]
 Everything it reads is lyric-derived and stays outside the repo; it prints pooled numbers and per-song rates.
 """
-import bisect, collections, json, os, statistics, sys
+import bisect, collections, json, os, random, statistics, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "mora-split"))
@@ -91,6 +91,18 @@ def moves(rows, tol):
     return fix, brk, other
 
 
+def boot_exact(per_song, iters=10000, seed=1):
+    """Song-bootstrap 95% interval of the pooled exact-cell rate."""
+    rng = random.Random(seed)
+    ex = [(sum(1 for r in rows if r["d"] == 0), len(rows)) for rows in per_song]
+    v = []
+    for _ in range(iters):
+        pick = [ex[rng.randrange(len(ex))] for _ in ex]
+        v.append(100 * sum(a for a, _ in pick) / max(1, sum(b for _, b in pick)))
+    v.sort()
+    return v[int(0.025 * (iters - 1) + 0.5)], v[int(0.975 * (iters - 1) + 0.5)]
+
+
 def main():
     names = [a for a in sys.argv[1:] if not a.startswith("--") and not a.replace(".", "").isdigit()]
     tol = int(S.arg("--tol", "1"))
@@ -123,8 +135,9 @@ def main():
             per[s["id"]] = rows
             allrows += rows
         cover = len(allrows) / sum(len(base[s["id"]][0]["moras"]) for s in songs)
+        lo, hi = boot_exact(list(per.values()))
         fix, brk, oth = moves(allrows, tol)
-        print(f"\n{name}: {summarize(allrows)}  coverage {100 * cover:.1f}%  moves ±{tol}: fix {fix} break {brk} other {oth} net {fix - brk:+d}")
+        print(f"\n{name}: {summarize(allrows)}  exact [{lo:.1f}, {hi:.1f}]  coverage {100 * cover:.1f}%  moves ±{tol}: fix {fix} break {brk} other {oth} net {fix - brk:+d}")
         by = collections.defaultdict(list)
         for r in allrows:
             by[r["cls"]].append(r)
