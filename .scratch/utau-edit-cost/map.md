@@ -13,6 +13,18 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, **17 built, in progress until the read (the holdout4 read harness, rehearsed on dev).**
+  - `read.py` runs the whole read once. Preflight with S1's onsets, then the alignment check (the ledger entry;
+    fewer than 20 songs stop the read), bar 1 A/B/C on the ear labels, D, then C + T + L in one scored run, then
+    every rule's verdict.
+  - `sona-eval-frame --estimate-bar-one` gained `--split`, `--music-frames` and `--rows`. Checking an
+    unverified split's alignment now goes through the ledger.
+  - Dev rehearsal: D 272.2, C + L −13.8 [−43.0, +10.7] (= 21), ledger untouched, defaults byte-identical.
+  - Draft rules in the ticket, for the lead.
+  - Beat overlays and the labels file are ready (`~/.cache/sona/holdout4/`); the CTC emissions are computing.
+  - **Needs a decision:** L's inputs are keyed to the UST's moras, and holdout4 has no lyric texts (options A–D
+    in [17](issues/17-holdout4-read-harness.md)).
+
 - 2026-11-25, lead, on 21: verified (offsets re-frozen byte-identical; leak check passes; my onset files and
   fold-model report byte-identical, C+L 271.7; default report unchanged; my mutant on the abstain threshold
   caught; full suite green). The consensus runs inside the scorer, so the read is one scored run. Caution for

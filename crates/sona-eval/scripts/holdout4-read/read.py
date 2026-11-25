@@ -3,13 +3,17 @@
 Steps, in order; nothing is scored before step 1 has dropped the songs it flags:
   0. preflight, reads nothing: binaries, models, ear labels (`labels.py check`), every lyric input present
      for every song of the split, a clean tree at or after the rules' commit, and no earlier read of the set;
+     then S1's member onsets (`vowel-onsets/s1_onsets.py check` and `produce` with the offsets frozen from dev:
+     they read the aligners' output, the kana and the offsets, no UST time and no score; ticket 21);
   1. the alignment check (`sona-eval-ust-align --split S --write`: 35 ms shift / 30 ms drift) — the read's
      ledger entry; flagged songs are dropped, and fewer than MIN_SONGS aligned songs stop the read;
   2. bar 1 (`sona-eval-frame --estimate-bar-one`, arms A today / B harmony / C Beat This) on the ear labels;
   3. the shipped stage D (`sona-eval-cellstage --model cellstage-D --edit-cost --dump`);
-  4. stage C with T and 14's fit (`--model cellstage-19C --edit-cost --settle-near-ties --lyric-placement
-     --lyric-lines --lyric-line-times --dump`);
-  5. the lyric arm L = 14's fit + 17's S1 on C's notes: the one replaceable stage (`LYRIC_STAGES`);
+  4. stage C with T, 14's fit and L in the same run (`--model cellstage-19C --edit-cost --settle-near-ties
+     --lyric-placement --lyric-lines --lyric-line-times --lyric-onsets --dump`); L = 14's fit + 17's S1 is the
+     report's row ending "(S1)" (`sona_core::lyric_fit::fit_lines_with_onsets`, the consensus in the scorer);
+  5. the rows: D, C and C+T from the dumps (Python, checked equal to the Rust reports), C+L14 and C+L from the
+     Rust report;
   6. every pre-registered rule's verdict (issue 17, "Pre-registered rules"), printed and written to
      OUT/verdicts.json. The Python rows are checked against the Rust reports before any verdict.
 
@@ -18,17 +22,16 @@ manifest must come back unchanged (checked).
 
 Usage (see issue 17 for the full command):
   python3 -I read.py --split holdout4 --reason "…" --rules-commit SHA --labels FILE --out DIR \\
-      --lyric-lines DIR --lyric-times DIR --lyric-work DIR --lyric-onsets DIR [--lyric-stage python|rust] \\
-      [--s1-producer CMD] [--lyric-row TITLE] [--bin DIR] [--stage-d DIR] [--stage-c DIR] [--beat-this PROGRAM] [--resume]
-`--s1-producer CMD` runs after step 4 with S1_DUMP (C's dump), S1_SPLIT and S1_OUT (= --lyric-onsets) in its
-environment and must write S1_OUT/<id>.json for every scored song: for an onset producer that needs sona's own
-notes (the lattice prior). With `--lyric-stage rust` the C run is then repeated with `--lyric-onsets` (4b).
+      --lyric-lines DIR --lyric-times DIR --lyric-work DIR [--s1-offsets FILE] [--bin DIR] [--stage-d DIR] \\
+      [--stage-c DIR] [--beat-this PROGRAM] [--resume]
+--lyric-work is 14's work dir for the split (`text/<id>.json` and `align/{lyrics,hira,jg}-lead/<id>.json`), the
+input of `s1_onsets.py produce`; --s1-offsets defaults to ~/.cache/sona/lyric-onsets/offsets.json.
 Everything it writes under OUT holds UST- or lyric-derived content: keep OUT outside the repo.
 """
 import sys
 
 sys.dont_write_bytecode = True  # never leave __pycache__ beside the scripts
-import json, os, re, shlex, subprocess, time  # noqa: E402
+import json, os, re, subprocess, time  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
@@ -37,12 +40,14 @@ import labels as LB  # noqa: E402
 
 MIN_SONGS = 20
 MIN_CONFIRMED = 5
-S1_VARIANT = "file-m3+adaptmora+abst3.0:split+start1"
+S1_ALIGNERS = ("lyrics-lead", "hira-lead", "jg-lead")
+S1_SCRIPT = os.path.join(HERE, "..", "vowel-onsets", "s1_onsets.py")
 BOOT_ITERS = 10_000
 TITLES = {
     "C": "learned cell stage, onset phase (ships)",
     "C+T": "learned cell stage, near ties settled (opt-in)",
     "C+L14": "learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras",
+    "C+L": "learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras, split and started at the moras' onsets (S1)",
 }
 
 
@@ -105,12 +110,13 @@ def preflight(o):
         errs.append(f"labels: {len(st['unlabelled'])} songs not labelled yet ({', '.join(st['unlabelled'])})")
     if o["holdout"] and len(st["confirmed"]) < MIN_CONFIRMED:
         errs.append(f"labels: {len(st['confirmed'])} confirmed by the user, the rule needs {MIN_CONFIRMED}")
-    for sid in (s["id"] for s in LB.songs_of(o["split"]) if not (s.get("alignment_status") or "").startswith("flagged")):
-        for d, f in LYRIC_STAGES[o["lyric_stage"]].inputs(o, sid):
-            if o["s1_producer"] and d == o["lyric_onsets"]:
-                continue
-            if not os.path.exists(os.path.join(d, f)):
-                errs.append(f"lyric input missing: {os.path.join(d, f)}")
+    if not os.path.exists(o["s1_offsets"]):
+        errs.append(f"no frozen S1 offsets {o['s1_offsets']} (ticket 21: s1_onsets.py freeze, on dev)")
+    for sid in lyric_songs(o):
+        w = o["lyric_work"]
+        for d in [o["lyric_lines"], o["lyric_times"], os.path.join(w, "text")] + [os.path.join(w, "align", a) for a in S1_ALIGNERS]:
+            if not os.path.exists(os.path.join(d, sid + ".json")):
+                errs.append(f"lyric input missing: {os.path.join(d, sid + '.json')}")
     if o["holdout"]:
         if git("status", "--porcelain", "--untracked-files=no"):
             errs.append("the tree has uncommitted changes: commit first, so the ledger's commit is the code that ran")
@@ -122,6 +128,21 @@ def preflight(o):
         if not o["reason"]:
             errs.append("--reason is required")
     return errs, st
+
+
+def lyric_songs(o):
+    """The songs the lyric arm needs inputs for: every song of the split not already flagged."""
+    return [s["id"] for s in LB.songs_of(o["split"]) if not (s.get("alignment_status") or "").startswith("flagged")]
+
+
+def s1_onsets(o):
+    """Ticket 21's member onsets: `check` (blind to UST times, frozen dev offsets), then `produce`."""
+    out = os.path.join(o["out"], "s1-onsets")
+    env = {"L14_WORK": o["lyric_work"]}
+    py = [sys.executable, "-I", "-B", S1_SCRIPT]
+    tool(py + ["check", "--offsets", o["s1_offsets"]], os.path.join(o["out"], "s1-check.txt"), env)
+    tool(py + ["produce", "--offsets", o["s1_offsets"], "--out", out] + lyric_songs(o), os.path.join(o["out"], "s1-produce.txt"), env)
+    return out
 
 
 # ---- step 1 ----
@@ -218,65 +239,20 @@ def cellstage(o, name, model, extra):
     return dump, report
 
 
-class PythonS1:
-    """Today's lyric stage: 14's fit (`fit_lines`) with 17's S1 start moves, in Python (`scripts/mora-split/split.py`,
-    variant S1_VARIANT), on stage C's dumped notes, with the onsets read from per-song files."""
-    name = "python"
-
-    @staticmethod
-    def inputs(o, sid):
-        w = o["lyric_work"]
-        return [(o["lyric_lines"], sid + ".json"), (os.path.join(w, "text"), sid + ".json"), (os.path.join(w, "align", "lyrics-lead"), sid + ".json"),
-                (o["lyric_times"], sid + ".json"), (o["lyric_onsets"], sid + ".json")]
-
-    @staticmethod
-    def cellstage_args(o):
-        return []
-
-    @staticmethod
-    def rows(o, M, songs, report):
-        data = {s["id"]: M.S.song_data(s) for s in songs}
-        return [M.S.score(s, M.notes_for(s, data, "stage", "L"))[0] for s in songs]
-
-
-class RustS1:
-    """After ticket 21: the same arm from `sona-eval-cellstage --lyric-onsets DIR` (its row title in `--lyric-row`)."""
-    name = "rust"
-
-    @staticmethod
-    def inputs(o, sid):
-        return [(o["lyric_lines"], sid + ".json"), (o["lyric_times"], sid + ".json"), (o["lyric_onsets"], sid + ".json")]
-
-    @staticmethod
-    def cellstage_args(o):
-        return ["--lyric-onsets", o["lyric_onsets"]]
-
-    @staticmethod
-    def rows(o, M, songs, report):
-        title = o["lyric_row"]
-        rust = M.rust_full_rows(report).get(title) or sys.exit(f"read stopped: no Rust row {title!r} (--lyric-row)")
-        plain = {s["id"]: M.S.score(s, M.notes_for(s, {}, "stage", ""))[0] for s in songs}
-        return [dict(counts=dict(zip(M.ec.CLASSES, rust[s["id"]][0])), span_s=plain[s["id"]]["span_s"], measures=rust[s["id"]][2], clean=rust[s["id"]][1])
-                for s in songs]
-
-
-LYRIC_STAGES = {"python": PythonS1, "rust": RustS1}
-
-
 class Model:
     """The edit-cost rows from the dumps, through the dev scripts (`bundle.py`, `split.py`, `lib01.py`)."""
 
     def __init__(self, o):
-        onsets, times = os.path.abspath(o["lyric_onsets"]), os.path.abspath(o["lyric_times"])
-        if o["lyric_stage"] == "python" and (os.path.basename(os.path.dirname(onsets)) != "onsets" or os.path.dirname(times) != os.path.join(os.path.abspath(o["lyric_work"]), "times")):
-            sys.exit("the Python lyric stage reads WORK/times/<name> and L17/onsets/<name>: pass --lyric-times and --lyric-onsets in those layouts")
-        os.environ["L14_WORK"] = o["lyric_work"]
-        os.environ["L17_WORK"] = os.path.dirname(os.path.dirname(onsets))
-        os.environ["L16_TIMES"] = os.path.basename(times)
+        os.environ["L14_WORK"] = o["lyric_work"]  # split.py reads it at import; no lyric row is computed in Python
         sys.path.insert(0, os.path.join(HERE, "..", "bundle"))
         import bundle as B  # noqa: E402
         self.B, self.S, self.L, self.ec = B, B.S, B.L, B.ec
-        self.B.LYRIC["L"] = "file-" + os.path.basename(o["lyric_onsets"].rstrip("/")) + S1_VARIANT[S1_VARIANT.index(":"):]
+
+    def rust_rows(self, report, name, songs, plain):
+        """Rows of one Rust report row, the span from the plain Python row of the same song (the UST's span)."""
+        rust = self.rust_full_rows(report).get(TITLES[name]) or sys.exit(f"read stopped: no Rust row {TITLES[name]!r}")
+        return [dict(counts=dict(zip(self.ec.CLASSES, rust[s["id"]][0])), span_s=p["span_s"], measures=rust[s["id"]][2], clean=rust[s["id"]][1])
+                for s, p in zip(songs, plain)]
 
     def load(self, dump):
         self.L.DUMP = dump
@@ -373,10 +349,9 @@ def main():
          "stage_d": arg("--stage-d", os.path.expanduser("~/.cache/sona/cellstage-D")),
          "stage_c": arg("--stage-c", os.path.expanduser("~/.cache/sona/cellstage-19C")),
          "beat_this": arg("--beat-this", os.path.expanduser("~/.local/share/sona/separator-venv/bin/sona-beat-this")),
-         "lyric_stage": arg("--lyric-stage", "python"), "lyric_lines": arg("--lyric-lines"), "lyric_times": arg("--lyric-times"),
-         "lyric_work": arg("--lyric-work"), "lyric_onsets": arg("--lyric-onsets"), "lyric_row": arg("--lyric-row"),
-         "s1_producer": arg("--s1-producer")}
-    if not o["out"] or not o["labels"] or not o["lyric_lines"] or not o["lyric_times"] or not o["lyric_onsets"]:
+         "lyric_lines": arg("--lyric-lines"), "lyric_times": arg("--lyric-times"), "lyric_work": arg("--lyric-work"),
+         "s1_offsets": arg("--s1-offsets", os.path.expanduser("~/.cache/sona/lyric-onsets/offsets.json"))}
+    if not o["out"] or not o["labels"] or not o["lyric_lines"] or not o["lyric_times"] or not o["lyric_work"]:
         sys.exit(__doc__)
     os.makedirs(o["out"], exist_ok=True)
     sitting = 0
@@ -399,8 +374,9 @@ def main():
         say("  " + e)
     if errs:
         sys.exit("read not started: fix the above")
-    say(f"  ok: {len(LB.songs_of(split))} songs; labels {len(st['4/4'])} in 4/4 ({len(st['confirmed'])} confirmed), {len(st['other'])} not 4/4; "
-        f"lyric stage {o['lyric_stage']}")
+    say(f"  ok: {len(LB.songs_of(split))} songs; labels {len(st['4/4'])} in 4/4 ({len(st['confirmed'])} confirmed), {len(st['other'])} not 4/4")
+    say("  S1's member onsets (no UST time, no score):")
+    onsets = s1_onsets(o)
     ledger0 = len(ledger_lines())
 
     say("\n1. alignment check (35 ms shift / 30 ms drift) — flagged songs are dropped before any score")
@@ -426,21 +402,11 @@ def main():
 
     say("\n3. stage D (shipped)")
     dump_d, report_d = cellstage(o, "D", o["stage_d"], [])
-    say("\n4. stage C, with T and 14's fit")
-    c_args = ["--settle-near-ties", "--lyric-placement", "--lyric-lines", o["lyric_lines"], "--lyric-line-times", o["lyric_times"]]
-    stage = LYRIC_STAGES[o["lyric_stage"]]
-    dump_c, report_c = cellstage(o, "C", o["stage_c"], c_args + ([] if o["s1_producer"] else stage.cellstage_args(o)))
-    if o["s1_producer"]:
-        say("\n4b. S1's onsets from C's notes (--s1-producer)")
-        tool(shlex.split(o["s1_producer"]), os.path.join(o["out"], "s1-producer.txt"),
-             {"S1_DUMP": dump_c, "S1_SPLIT": split, "S1_OUT": o["lyric_onsets"]})
-        missing = [sid for sid in aligned if not os.path.exists(os.path.join(o["lyric_onsets"], sid + ".json"))]
-        if missing:
-            sys.exit(f"read stopped: the S1 producer wrote no onsets for {missing}")
-        if stage.cellstage_args(o):
-            _, report_c = cellstage(o, "C-L", o["stage_c"], c_args + stage.cellstage_args(o))
+    say("\n4. stage C, with T, 14's fit and L (14's fit + S1) in one run")
+    c_args = ["--settle-near-ties", "--lyric-placement", "--lyric-lines", o["lyric_lines"], "--lyric-line-times", o["lyric_times"], "--lyric-onsets", onsets]
+    dump_c, report_c = cellstage(o, "C", o["stage_c"], c_args)
 
-    say(f"\n5. the lyric arm on C ({o['lyric_stage']} S1)")
+    say("\n5. rows")
     M = Model(o)
     songs_d, songs_c = M.load(dump_d), M.load(dump_c)
     if [s["id"] for s in songs_d] != [s["id"] for s in songs_c] or sorted(s["id"] for s in songs_c) != sorted(aligned):
@@ -448,14 +414,11 @@ def main():
     rows = {"D": [M.S.score(s, M.notes_for(s, {}, "stage", ""))[0] for s in songs_d],
             "C": [M.S.score(s, M.notes_for(s, {}, "stage", ""))[0] for s in songs_c],
             "C+T": [M.S.score(s, M.notes_for(s, {}, "stage_settled", ""))[0] for s in songs_c]}
-    data = {s["id"]: M.S.song_data(s) for s in songs_c} if o["lyric_stage"] == "python" else {}
-    rows["C+L14"] = [M.S.score(s, M.notes_for(s, data, "stage", "L14"))[0] for s in songs_c] if data else None
-    rows["C+L"] = LYRIC_STAGES[o["lyric_stage"]].rows(o, M, songs_c, report_c)
     check_rows(M, {"C": rows["D"]}, songs_d, report_d, ["C"])
-    check_rows(M, rows, songs_c, report_c, ["C", "C+T"] + (["C+L14"] if data else []))
-    say(f"  Python rows = Rust reports on {len(songs_c)} songs (D, C, C+T{', C+L14' if data else ''})")
-    if rows["C+L14"] is None:
-        rows["C+L14"] = rows["C+L"]
+    check_rows(M, rows, songs_c, report_c, ["C", "C+T"])
+    say(f"  D, C, C+T: Python rows = Rust reports on {len(songs_c)} songs; C+L14 and C+L from the Rust report")
+    rows["C+L14"] = M.rust_rows(report_c, "C+L14", songs_c, rows["C"])
+    rows["C+L"] = M.rust_rows(report_c, "C+L", songs_c, rows["C"])
 
     say("\n6. verdicts (rules: issue 17, 'Pre-registered rules')")
     rules, extra = edit_cost_rules(M, rows, [s["id"] for s in songs_c])
