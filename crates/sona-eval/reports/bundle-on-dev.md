@@ -75,40 +75,127 @@ Arms, applied to C's notes in the app's order:
     wrong cell or on the next note's pitch.
   - After the bundle, **length is the largest class (32%)**, then joined (26%). Timing as a whole (length +
     shift + moved) is 43%.
-- **Python-only arm: S1.** Everything else in the bundle is Rust: C's stage (`--model`, `cellstage.json`) and
-  14's fit (`fit_lines`, `--lyric-placement --lyric-lines --lyric-line-times`). Port plans are below.
+- **S1 was Python-only here; 21 ports it.** Everything else in the bundle was already Rust: C's stage
+  (`--model`, `cellstage.json`) and 14's fit (`fit_lines`, `--lyric-placement --lyric-lines
+  --lyric-line-times`). S1 is now `--lyric-onsets` (below).
 
-## The bundle as holdout4 will run it
+## The bundle as holdout4 will run it (utau-edit-cost 21)
 
-The stage is `~/.cache/sona/cellstage-19C` (all 38 spent songs, switch 1.5).
+The stage is `~/.cache/sona/cellstage-19C` (all 38 spent songs, switch 1.5). S1 is now in Rust, and its
+per-class offsets are frozen from dev. The bundle's rows come from one Python step and then one scorer run.
 
-1. **Rust**: C's notes, 14's fit (as a Rust row) and the dump S1 needs.
+1. **Inputs (14's pipeline, unchanged).** These are:
+   - the three CTC alignments of the song's moras on the lead stem (`align/{lyrics,hira,jg}-lead/<id>.json`);
+   - the moras' kana (`text/<id>.json`);
+   - the aligned lines and spaces (`times/lyrics-lead-energy/<id>.json`);
+   - 01's lines (`lines/<id>.json`).
+2. **Onset files (Python, no UST).** `s1_onsets.py produce` writes each aligner's onsets with the frozen
+   per-class offsets applied. It reads the alignments, the kana and the offsets file. It reads no UST time
+   and no dump, and `s1_onsets.py check` fails if that stops being true (below).
+3. **The rows (Rust).** `--lyric-onsets DIR` first agrees one onset per mora (`consensus_onsets`):
+   - the members' median, with the adaptive sigma;
+   - the lattice prior from GAME lead's starts in the same run;
+   - the snap to a cell, and the abstention.
 
-   ```sh
-   sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost --split holdout4 --reason "…" \
-     --lyric-placement --lyric-lines LINES --lyric-line-times TIMES --dump DUMP
-   ```
+   Then it fits (`fit_lines_with_onsets`, `OnsetRule::S1`). It adds the row "learned cell stage, lyric fitted
+   per aligned lyric line and space, rests hold moras, split and started at the moras' onsets (S1)", which
+   is C + L.
 
-2. **Python**: S1 onsets on the holdout4 lead stems, then S1 on C's notes.
-   - The three CTCs come from 14's `align_lines.py` pipeline. `sources.py` builds the median, the lattice
-     prior from GAME lead's starts, and the abstention.
-   - **Before the read, `sources.py`'s per-class offsets must be frozen from dev.** Today `debias()` fits them
-     leave-one-song-out on the songs being scored, which reads those songs' UST onsets. On holdout4 that would
-     be a leak.
-   - Then run:
+```sh
+L14_WORK=<14's work dir> python3 -I crates/sona-eval/scripts/vowel-onsets/s1_onsets.py check \
+  --offsets ~/.cache/sona/lyric-onsets/offsets.json
+L14_WORK=<14's work dir> python3 -I crates/sona-eval/scripts/vowel-onsets/s1_onsets.py produce \
+  --offsets ~/.cache/sona/lyric-onsets/offsets.json --out ONSETS [ID …]
+sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost --split holdout4 --reason "…" \
+  --lyric-placement --lyric-lines LINES --lyric-line-times TIMES --lyric-onsets ONSETS
+```
 
-     ```sh
-     python3 crates/sona-eval/scripts/mora-split/split.py --variants none,tail,file-m3+adaptmora+abst3.0:split+start1
-     ```
+The rows to compare are "learned cell stage, onset phase (ships)" (C) and the S1 row (C + L).
 
-     The `stage` rows are C, C + 14's fit, and C + L.
+**Why the consensus moved into the scorer.** The ticket allowed it to stay in Python.
+- Its lattice prior needs GAME lead's note starts and the grid phase, and only a scorer run has those.
+- On holdout4 that means two scorer runs, and every scorer run on holdout4 scores against its UST.
+- In the scorer, the read is one command. Python keeps only the step that needs no audio and no UST: applying
+  the offsets. The CTCs are 14's.
+
+`--lyric-onsets` also takes `{"on": [seconds or null]}`: the onsets themselves, as 17's
+`$L17_WORK/onsets/<name>/<id>.json` holds them. That is how the fit alone was checked against `split.py`.
 
 The holdout4 rule should pre-register C + L against C, as it stands here. T and M stay out. The map
 already put `--trim-releases` out. T can still be used for GAME-only output, where 18 measured it.
 
+### The leak, closed
+
+- **Frozen offsets.** `s1_onsets.py freeze` fits each aligner's per-class offset on all 9 dev songs. The offset
+  is the median signed error of the aligner's onsets against the UST's note starts, per consonant class. It
+  writes `~/.cache/sona/lyric-onsets/offsets.json`, which is UST-derived, local only and never committed.
+  - `freeze` refuses any song outside dev. `produce` and `sources.py --offsets` refuse a file that was not
+    fitted on dev songs only.
+  - Each aligner has seven classes. Dev has no mora of the "other" class, so that offset stays 0, as before.
+- **Leave-one-out is gone from the path holdout4 uses.** `produce` never fits anything. `sources.py` now needs
+  `--offsets FILE` (frozen) or `--loso` (17's exploration, refused unless every song is dev).
+- **The check.** `s1_onsets.py check --offsets FILE` runs `produce` three times: on the real text files, on
+  kana-only copies, and with every offset moved by 50 ms. It fails unless all three hold:
+  - the kana-only output is byte-identical (no UST time is read);
+  - the moved offsets change every song (the file is read);
+  - the file was fitted on dev songs only.
+
+  On dev: 9/9 identical, 9/9 moved, ok. Two mutants of `produce`, both caught:
+  - leave-one-out offsets from the text's UST onsets: it reads `on`, 0/9 identical;
+  - the offsets ignored: 0/9 moved.
+
+### Dev with frozen offsets (in sample for the offsets now)
+
+The freeze barely moves S1. Of 5 336 moras, 24 get a different onset: 22 move a cell and 2 switch between an
+onset and abstaining. 1 154 abstain both ways.
+
+| row (9 dev songs) | cost/min [95%] | Δ vs C [paired 95%] | clean | missing (Δ) | Δ upper, missing @4 |
+|---|---|---|---|---|---|
+| *C's fold models (stage out of sample)* | | | | | |
+| C | 291.7 [191.7, 410.5] | | 18.6% | 362 | |
+| C + L, 17's leave-one-out offsets (20) | 271.8 [180.6, 383.0] | −19.8 [−41.0, −1.5] | 20.3% | 358 (−4) | −1.9 |
+| **C + L, frozen offsets** | **271.7** [180.4, 381.9] | **−20.0 [−41.1, −1.5]** | 20.3% | 358 (−4) | −1.8 |
+| C + L frozen, without amaten | | −12.5 [−26.5, +3.1] | | | |
+| *19C, the holdout4 stage (in sample on dev: trained on dev)* | | | | | |
+| C | 269.5 [167.8, 389.9] | | 24.1% | 231 | |
+| C + 14's fit (diagnostic) | 267.0 | −2.5 [−30.6, +17.0] | 23.4% | 235 (+4) | +17.4 |
+| **C + L, frozen offsets** | **255.7** [163.6, 365.9] | **−13.8 [−43.0, +10.7]** | 24.8% | 228 (−3) | +10.2 |
+| S1 on top of 14's fit | | −11.2 [−20.4, −1.8] | | (−7) | −2.2 |
+| C + L frozen, without amaten | | −2.4 [−17.6, +16.2] | | | |
+
+- **With the fold models, frozen is 0.1 below leave-one-out.** That is one length error fewer, pooled
+  (601 → 600). The offsets are now in sample on dev, so this is the most the leak was worth here, and it is
+  noise.
+- **On 19C, L's interval crosses zero.** This was not expected, and it matters for the read.
+  - 19C is in sample on dev: C costs 269.5 here, against 291.7 with the fold models.
+  - L still pays on 6 of the 9 songs: amaten −129.9, innocent-addict −27.3, fukagyakuteki −24.2, yamineko
+    −22.8, atamaro −11.5, azemichi −6.6.
+  - It loses on my-axiom (+53.6), kamaitachi (+21.3) and telescope (+5.3). The fold models lose on the
+    first two as well (+29.6, +7.9), but less.
+  - Most of my-axiom's loss is 14's fit: +47.7 alone, from 28 more length errors and 12 more shifts.
+  - S1's own share holds on 19C (−11.2 [−20.4, −1.8]). What weakens is 14's fit underneath it.
+  - Holdout4 is out of sample for 19C, so the fold-model rows are the better forecast. The in-sample stage
+    still shows one way L can fail the bound: a stage that already places notes well leaves 14's fit less to
+    fix, and its splits cost more. That is not checked note by note.
+
+### Rust = Python
+
+The port is `sona_core::lyric_fit::{fit_lines_with_onsets, consensus_onsets, lattice_prior}`, with
+`OnsetRule::S1` and `OnsetConsensus::S1`. Each check compares the scorer's per-song, per-class counts with
+`bundle.py --dump-rows`, using C's fold models:
+
+- **The fit alone.** `--lyric-onsets` on 17's leave-one-out files (`on`) equals 20's `|L` rows on 9/9 songs and
+  all nine classes (271.8). C and C + 14's fit also equal theirs.
+- **The whole path.** Two runs, equal on 9/9 songs and every class (271.7):
+  - Rust: `produce` with frozen offsets, then `--lyric-onsets`, with the consensus in the scorer (`members`);
+  - Python: `sources.py --offsets` and then `bundle.py`, with the consensus and the fit in Python.
+- `bundle.py --check` now also compares the S1 row when the Rust report has it.
+
 ## Port plans (Python-only parts)
 
-S1 has two halves. Porting the second half gives a one-command Rust bundle, given onset files.
+S1 has two halves. Done in 21: item 1, and the pure half of item 2 (the offsets frozen, the consensus in
+`sona_core::lyric_fit` rather than a new `sona_core::onsets`). Left: the three aligners, which still run in
+14's Python pipeline.
 
 1. **The fit with onsets (no model; port first).** `fit_timed` + `onset_cuts` + `move_starts` in `split.py`
    become `sona_core::lyric_fit::fit_lines_with_onsets(cells, kinds, spans, onsets: &[Option<i64>], OnsetRule {
@@ -148,8 +235,8 @@ S1 has two halves. Porting the second half gives a one-command Rust bundle, give
   moras. So L's dev gain is an upper estimate for a real paste. holdout4 has the same property, so its read
   compares like with like, but neither measures a user's typing.
 - **Selection on dev.** S1's sigma, scale and abstention, T's 0.35 and M's rule were all looked at on dev. S1's
-  per-class offsets are leave-one-song-out on dev. These Δ carry that selection, and holdout4 is the
-  confirmation.
+  per-class offsets were leave-one-song-out on dev here; since 21 they are frozen from all 9 dev songs. These Δ
+  carry that selection, and holdout4 is the confirmation.
 - **One song.** amaten carries L's interval. It has C's most joined notes (133) and most missing notes (175).
   The lyric removes 100 joined notes there and adds 28 chopped.
   - Without amaten: −12.3 [−26.1, +2.7].
@@ -185,7 +272,18 @@ S1 has two halves. Porting the second half gives a one-command Rust bundle, give
   - the backward elimination;
   - the taxonomy;
   - per-song rows;
-  - `--check` against the Rust report.
+  - `--check` against the Rust report (with S1's row too since 21).
+- 21:
+  - `sona_core::lyric_fit::{fit_lines_with_onsets, OnsetRule, consensus_onsets, OnsetConsensus, lattice_prior}`.
+    `fit_lines` and `fit_span_moras` share the code and are unchanged.
+  - `sona-eval-cellstage --lyric-onsets DIR` adds S1's rows. Without it, the default report is byte-identical
+    to `$F/C/rust_dev.txt` and to 20's run, and so is the report with 20's arm flags (`cmp`).
+  - 12 behaviour tests in `crates/sona-core/tests/lyric_onsets.rs`, kana-free. Eight mutants were caught, each
+    by at least one test: cuts allowed at a note's edges, onsets that need not increase, no legato, moves of
+    up to two cells, no cut across lines, no abstention, a fixed sigma, and no lattice prior.
+  - `scripts/vowel-onsets/s1_onsets.py` (`freeze`, `produce`, `check`). It classes moras by Unicode name,
+    which gives the same table as `precision.py` on all 364 characters tried. `sources.py` takes
+    `--offsets` or `--loso`.
 
 ## Reproduce
 
@@ -205,3 +303,24 @@ L01_DUMP=$SP/t20/dump-C L01_WORK=$SP/l01 L14_WORK=$SP/l14 L17_WORK=$SP/l17 \
 ```
 
 The C and B rows without `$ARMS` reproduce `$F/{C,B}/rust_dev.txt` byte for byte (291.7 and 322.3).
+
+21, the bundle as holdout4 will run it, on dev (same env; `T` is any scratch folder):
+
+```sh
+S=crates/sona-eval/scripts/vowel-onsets/s1_onsets.py; O=~/.cache/sona/lyric-onsets/offsets.json
+L14_WORK=$SP/l14 python3 -I $S freeze $O          # once, dev only
+L14_WORK=$SP/l14 python3 -I $S check --offsets $O
+L14_WORK=$SP/l14 python3 -I $S produce --offsets $O --out $T/onsets
+LYR="--lyric-placement --lyric-lines $SP/l01/lines --lyric-line-times $SP/l14/times/lyrics-lead-energy \
+  --lyric-onsets $T/onsets"
+target/release/sona-eval-cellstage --model ~/.cache/sona/cellstage-19C --edit-cost $LYR > $T/19C.txt
+target/release/sona-eval-cellstage --model $F/C/models/fold0 --fold-models $F/C/models --edit-cost $LYR > $T/fold.txt
+# Python reference with the same frozen offsets, and the parity check
+L01_DUMP=$SP/t20/dump-C L01_WORK=$SP/l01 L14_WORK=$SP/l14 L17_WORK=$T/l17 \
+  python3 -I crates/sona-eval/scripts/vowel-onsets/sources.py --offsets $O
+L01_DUMP=$SP/t20/dump-C L01_WORK=$SP/l01 L14_WORK=$SP/l14 L17_WORK=$T/l17 \
+  python3 -I crates/sona-eval/scripts/bundle/bundle.py --base-dump $SP/t20/dump-B --dump-rows $T/rows.json
+```
+
+The S1 row of `$T/fold.txt` equals `rows.json`'s `|L` per song and class. Rerun from fresh folders on the
+committed tree, `freeze`, the onset files and both reports came out byte-identical.

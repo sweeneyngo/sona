@@ -13,6 +13,24 @@ a line below.
 
 ## Decisions so far
 
+- 2026-11-25, lead, on 21: verified (offsets re-frozen byte-identical; leak check passes; my onset files and
+  fold-model report byte-identical, C+L 271.7; default report unchanged; my mutant on the abstain threshold
+  caught; full suite green). The consensus runs inside the scorer, so the read is one scored run. Caution for
+  the read: with 19C in sample on dev, L is −13.8 [−43.0, +10.7] and 14's fit underneath it is weak (my-axiom
+  +47.7). The fold-model row is the forecast (19C is out of sample on holdout4), but L's pass is not safe.
+
+- 2026-11-24, **21 resolved (S1 frozen and in Rust): the holdout4 bundle is one Python step, then one scorer
+  command.**
+  - S1's per-class offsets are frozen from the 9 dev songs (`~/.cache/sona/lyric-onsets/offsets.json`, local).
+    `s1_onsets.py produce` reads no UST, and its `check` fails if it does.
+  - `--lyric-onsets DIR` runs the consensus and `fit_lines_with_onsets` in Rust. It equals Python per song and
+    class.
+  - Dev, C's fold models: C + L **271.7 (−20.0 [−41.1, −1.5])**. The leak was worth 0.1.
+  - On 19C (in sample on dev): 269.5 → 255.7 (**−13.8 [−43.0, +10.7]**). S1's share holds (−11.2 [−20.4,
+    −1.8]), but 14's fit under it is flat (−2.5) and loses 47.7 on my-axiom. So holdout4's bound is less safe
+    than 20 read it.
+  - [21](issues/21-s1-in-rust.md), `crates/sona-eval/reports/bundle-on-dev.md`.
+
 - 2026-11-24, lead, on 20: verified (my build re-dumps both reports byte-identical and `bundle.py` prints the
   same table; my mutant on the settle-then-merge order caught; full suite green). **The bundle is fixed: C + L.**
   T (near ties) stays opt-in until holdout4 reads, since it passes alone on C (−2.5 [−4.8, −0.3]) and is the

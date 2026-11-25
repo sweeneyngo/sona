@@ -8,7 +8,9 @@ through `scripts/mora-split/split.py`.
 
 Arms: T (near ties settled), M (unheard pieces merged), L (14's fit + S1). Prints every subset on the candidate
 stage, the comparator stage's plain row, the ticket's backward elimination (rule in issue 20), the taxonomy by
-class, and per-song rows. `--check RUST_REPORT` compares the Python rows with the Rust report's per-song counts.
+class, and per-song rows. `--check RUST_REPORT` compares the Python rows with the Rust report's per-song counts,
+L too when the report has S1's row (`--lyric-onsets`; utau-edit-cost 21). L's onsets are
+`$L17_WORK/onsets/m3+adaptmora+abst3.0/`: since 21, `sources.py --offsets` (frozen from dev) writes them.
 
 Usage:
   L01_DUMP=<candidate dump> L01_WORK=<l01> L14_WORK=<l14> L17_WORK=<l17> \\
@@ -152,6 +154,12 @@ def check(rows, songs, path, dump_rows):
         ("learned cell stage, near ties settled, unheard pieces merged (opt-in)", ("TM", "")),
         ("learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras", ("", "L14")),
     ]
+    s1 = "learned cell stage, lyric fitted per aligned lyric line and space, rests hold moras, split and started at the moras' onsets (S1)"
+    if s1 in rust:
+        # utau-edit-cost 21: S1 in Rust (`--lyric-onsets`), against split.py on the onsets in $L17_WORK.
+        pairs.append((s1, ("", "L")))
+    else:
+        print("  check: no S1 row in the Rust report (run without --lyric-onsets); L not checked")
     bad = 0
     for title, key in pairs:
         if title not in rust:
